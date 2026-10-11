@@ -19,7 +19,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 ### Dictation
 
 - **Global hotkey** in two modes: a key combination or a single mouse button (middle or side).
-- **Recording indicator:** a small mic slides down from behind the top edge of the screen only while you dictate (recording, transcribing, pasting) and hides again.
+- **Recording indicator:** a small mic shows up only while you dictate (recording, transcribing, pasting) and hides again. It slides down from behind the top edge in the top-right corner, or up from behind the taskbar at the bottom center, whichever you choose.
 - **Clean clipboard:** the dictated text is pasted through the clipboard and stays out of the Windows clipboard history.
 - **Space after the text**, so the next phrase doesn't stick to the previous one.
 
@@ -48,8 +48,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v2.0.2
-git push origin v2.0.2
+git tag v2.0.3
+git push origin v2.0.3
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

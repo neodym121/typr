@@ -1,13 +1,15 @@
-//! Recording indicator near the top-right corner of the primary screen.
+//! Recording indicator on the primary screen: in the top-right corner, or at
+//! the bottom centre just above the taskbar (`indicatorPosition`).
 //!
-//! It waits out of sight behind the top edge of the screen and slides down
-//! only while Typr records, transcribes and pastes (or briefly after a failed
-//! dictation), then slides back up.
+//! It waits out of sight behind the top edge of the screen (or behind the
+//! taskbar) and slides in only while Typr records, transcribes and pastes (or
+//! briefly after a failed dictation), then slides back out.
 //!
 //! On Windows it is a native click-through layered window drawn in Rust, so
 //! Typr needs no WebView (and no browser process) while it sits in the tray.
 //! Other platforms keep the original WebView overlay (`src/overlay.html`).
 
+use crate::settings::IndicatorPosition;
 use std::f32::consts::{FRAC_PI_4, PI, TAU};
 use tauri::AppHandle;
 
@@ -19,11 +21,22 @@ pub enum Indicator {
     Transcribing,
 }
 
-/// Where the indicator goes, derived from the primary monitor.
-#[derive(Debug, Clone, Copy)]
+/// A rectangle in physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Where the indicator goes, derived from the primary screen's work area
+/// (the screen without the taskbar).
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
-    /// Window rectangle in physical pixels. It starts at the top edge of the
-    /// screen, so the indicator slides in from behind that edge.
+    pub position: IndicatorPosition,
+    /// Window rectangle in physical pixels. It touches the edge the indicator
+    /// slides in from: the top of the work area, or its bottom (the taskbar).
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -36,57 +49,88 @@ pub struct Placement {
 
 /// Square around the disc in logical pixels, with room for its shadow and halo
 const INDICATOR_SIZE: f64 = 50.0;
+/// Top right: from the right edge of the screen to the left side of the square
 const OFFSET_FROM_RIGHT: f64 = 60.0;
-/// Gap between the top edge of the screen and the indicator once it has slid in
-const OFFSET_FROM_TOP: f64 = 10.0;
+/// Gap between the edge the indicator slides in from and the indicator in place
+const OFFSET_FROM_EDGE: f64 = 10.0;
+/// Work area assumed when the screen can't be read
+const FALLBACK_AREA: ScreenRect = ScreenRect {
+    x: 0,
+    y: 0,
+    width: 1440,
+    height: 900,
+};
 
 impl Placement {
-    /// `x`, `y`, `width` are the monitor's physical position and width.
-    pub fn for_monitor(x: i32, y: i32, width: u32, scale: f64) -> Self {
+    /// `work_area` is the primary screen without the taskbar, in physical pixels.
+    pub fn new(position: IndicatorPosition, work_area: ScreenRect, scale: f64) -> Self {
         let scale = if scale > 0.0 { scale } else { 1.0 };
-        let left = width as f64 / scale - OFFSET_FROM_RIGHT;
+        let width = (INDICATOR_SIZE * scale).round().max(1.0) as i32;
+        let height = ((OFFSET_FROM_EDGE + INDICATOR_SIZE) * scale).round().max(1.0) as i32;
+        let (x, y) = match position {
+            IndicatorPosition::TopRight => (
+                work_area.x + work_area.width - (OFFSET_FROM_RIGHT * scale).round() as i32,
+                work_area.y,
+            ),
+            IndicatorPosition::BottomCenter => (
+                work_area.x + (work_area.width - width) / 2,
+                work_area.y + work_area.height - height,
+            ),
+        };
         Self {
-            x: x + (left * scale).round() as i32,
+            position,
+            x,
             y,
-            width: (INDICATOR_SIZE * scale).round().max(1.0) as i32,
-            height: ((OFFSET_FROM_TOP + INDICATOR_SIZE) * scale).round().max(1.0) as i32,
+            width,
+            height,
             scale,
-            logical_x: left,
-            logical_y: 0.0,
+            logical_x: x as f64 / scale,
+            logical_y: y as f64 / scale,
         }
     }
 
-    pub fn fallback() -> Self {
-        Self {
-            x: 1380,
-            y: 0,
-            width: INDICATOR_SIZE as i32,
-            height: (OFFSET_FROM_TOP + INDICATOR_SIZE) as i32,
-            scale: 1.0,
-            logical_x: 1380.0,
-            logical_y: 0.0,
-        }
+    pub fn fallback(position: IndicatorPosition) -> Self {
+        Self::new(position, FALLBACK_AREA, 1.0)
     }
 
     /// Vertical centre of the disc inside the window in physical pixels:
-    /// `shown` 0 is fully hidden above the screen edge, 1 is in place.
+    /// `shown` 0 is fully hidden beyond the window's edge (above it at the
+    /// top, below it at the bottom), 1 is in place.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     fn center_y(&self, shown: f32) -> f32 {
         let s = self.scale as f32;
-        let hidden = -(INDICATOR_SIZE / 2.0) as f32 * s;
-        let in_place = (OFFSET_FROM_TOP + INDICATOR_SIZE / 2.0) as f32 * s;
+        let half = (INDICATOR_SIZE / 2.0) as f32 * s;
+        let inset = (OFFSET_FROM_EDGE + INDICATOR_SIZE / 2.0) as f32 * s;
+        let (hidden, in_place) = match self.position {
+            IndicatorPosition::TopRight => (-half, inset),
+            IndicatorPosition::BottomCenter => {
+                let bottom = self.height as f32;
+                (bottom + half, bottom - inset)
+            }
+        };
         hidden + (in_place - hidden) * shown
     }
 }
 
-pub fn create(app: &AppHandle, placement: Placement) {
+pub fn create(app: &AppHandle, position: IndicatorPosition) {
     #[cfg(target_os = "windows")]
     {
         let _ = app;
-        native::create(placement);
+        native::create(position);
     }
     #[cfg(not(target_os = "windows"))]
-    webview::create(app, placement);
+    webview::create(app, position);
+}
+
+/// Moves the indicator to the top-right corner or the bottom centre.
+pub fn set_position(app: &AppHandle, position: IndicatorPosition) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        native::set_position(position);
+    }
+    #[cfg(not(target_os = "windows"))]
+    webview::set_position(app, position);
 }
 
 pub fn set_indicator(app: &AppHandle, indicator: Indicator) {
@@ -150,7 +194,7 @@ fn paint(r: u8, g: u8, b: u8, alpha: f32) -> Paint {
 
 /// Renders one frame as premultiplied BGRA, top-down rows, `width` × `height`
 /// pixels, with the disc centred horizontally and its centre at `center_y`
-/// (negative while it hides above the top edge).
+/// (outside the frame while it hides beyond the edge).
 /// `t` is the time in seconds since the current look appeared (drives animations).
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn render(look: Look, t: f32, width: usize, height: usize, center_y: f32, scale: f32) -> Vec<u8> {
@@ -290,17 +334,19 @@ fn to_byte(value: f32) -> u8 {
 
 #[cfg(target_os = "windows")]
 mod native {
-    use super::{render, Indicator, Look, Placement};
+    use super::{render, Indicator, IndicatorPosition, Look, Placement, ScreenRect};
     use std::cell::Cell;
     use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicU8, Ordering};
+    use std::sync::Mutex;
     use std::time::{Instant, SystemTime, UNIX_EPOCH};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC,
-        SelectObject, AC_SRC_ALPHA, AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
-        DIB_RGB_COLORS,
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetMonitorInfoW,
+        MonitorFromPoint, ReleaseDC, SelectObject, AC_SRC_ALPHA, AC_SRC_OVER, BITMAPINFO,
+        BITMAPINFOHEADER, BLENDFUNCTION, DIB_RGB_COLORS, MONITORINFO, MONITOR_DEFAULTTOPRIMARY,
     };
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer, PostMessageW,
         RegisterClassExW, SetTimer, ShowWindow, TranslateMessage, UpdateLayeredWindow, MSG,
@@ -328,8 +374,10 @@ mod native {
     static STATE: AtomicU8 = AtomicU8::new(STATE_IDLE);
     static ENABLED: AtomicBool = AtomicBool::new(true);
     static ERROR_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+    static POSITION: Mutex<IndicatorPosition> = Mutex::new(IndicatorPosition::TopRight);
 
     thread_local! {
+        // Worked out again each time the indicator appears
         static PLACEMENT: Cell<Option<Placement>> = Cell::new(None);
         // The look on screen and when it appeared (for animations)
         static SHOWN: Cell<(Look, Instant)> = Cell::new((Look::Idle, Instant::now()));
@@ -340,13 +388,19 @@ mod native {
         static ON_SCREEN: Cell<bool> = Cell::new(false);
     }
 
-    pub fn create(placement: Placement) {
+    pub fn create(position: IndicatorPosition) {
+        *POSITION.lock().unwrap() = position;
         let spawned = std::thread::Builder::new()
             .name("typr-overlay".to_string())
-            .spawn(move || unsafe { run(placement) });
+            .spawn(|| unsafe { run() });
         if let Err(e) = spawned {
             log::error!("Failed to start the overlay thread: {}", e);
         }
+    }
+
+    pub fn set_position(position: IndicatorPosition) {
+        *POSITION.lock().unwrap() = position;
+        request_refresh();
     }
 
     pub fn set_indicator(indicator: Indicator) {
@@ -394,8 +448,58 @@ mod native {
         }
     }
 
-    unsafe fn run(placement: Placement) {
-        PLACEMENT.with(|cell| cell.set(Some(placement)));
+    /// The primary screen's work area (without the taskbar) in physical
+    /// pixels and its scale, the way Tauri reads them.
+    unsafe fn primary_work_area() -> Option<(ScreenRect, f64)> {
+        let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        if monitor.is_null() {
+            return None;
+        }
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return None;
+        }
+        let (mut dpi_x, mut dpi_y) = (0u32, 0u32);
+        let scale = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) == 0 && dpi_x > 0 {
+            dpi_x as f64 / 96.0
+        } else {
+            1.0
+        };
+        let work = info.rcWork;
+        let area = ScreenRect {
+            x: work.left,
+            y: work.top,
+            width: work.right - work.left,
+            height: work.bottom - work.top,
+        };
+        Some((area, scale))
+    }
+
+    /// Places the indicator on the screen as it is now: the resolution, the
+    /// scale and the taskbar may have changed since Typr started.
+    unsafe fn place(position: IndicatorPosition) -> Placement {
+        let placement = match primary_work_area() {
+            Some((area, scale)) => Placement::new(position, area, scale),
+            None => Placement::fallback(position),
+        };
+        if PLACEMENT.with(|cell| cell.replace(Some(placement))) != Some(placement) {
+            log::info!(
+                "Recording indicator placed at ({}, {}), {}×{} px ({})",
+                placement.x,
+                placement.y,
+                placement.width,
+                placement.height,
+                position
+            );
+        }
+        placement
+    }
+
+    unsafe fn run() {
+        let placement = place(*POSITION.lock().unwrap());
 
         let class_name: Vec<u16> = "TyprOverlay"
             .encode_utf16()
@@ -433,13 +537,7 @@ mod native {
             return;
         }
         WINDOW.store(hwnd as isize, Ordering::SeqCst);
-        log::info!(
-            "Overlay created at ({}, {}), {}×{} px, hidden until a dictation starts (native, no WebView)",
-            placement.x,
-            placement.y,
-            placement.width,
-            placement.height
-        );
+        log::info!("Overlay created, hidden until a dictation starts (native, no WebView)");
 
         update(hwnd);
 
@@ -531,8 +629,17 @@ mod native {
             SetTimer(hwnd, ERROR_TIMER, remaining as u32, None);
         }
 
+        // Placed anew whenever it starts to appear, and right away when the
+        // position changes while it is on screen
+        let on_screen = ON_SCREEN.with(|on_screen| on_screen.get());
+        let position = *POSITION.lock().unwrap();
+        if !on_screen || PLACEMENT.with(|cell| cell.get()).map(|p| p.position) != Some(position) {
+            place(position);
+        }
+
         draw(hwnd, ease(shown));
-        if !ON_SCREEN.with(|on_screen| on_screen.replace(true)) {
+        if !on_screen {
+            ON_SCREEN.with(|on_screen| on_screen.set(true));
             ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         }
 
@@ -546,7 +653,7 @@ mod native {
         }
     }
 
-    /// `shown` is the eased slide position: 0 hidden above the screen edge, 1 in place.
+    /// `shown` is the eased slide position: 0 hidden beyond the edge, 1 in place.
     unsafe fn draw(hwnd: HWND, shown: f32) {
         let Some(placement) = PLACEMENT.with(|cell| cell.get()) else {
             return;
@@ -627,17 +734,18 @@ mod native {
 
 #[cfg(not(target_os = "windows"))]
 mod webview {
-    use super::{Indicator, Placement, INDICATOR_SIZE, OFFSET_FROM_TOP};
+    use super::{Indicator, IndicatorPosition, Placement, ScreenRect, INDICATOR_SIZE, OFFSET_FROM_EDGE};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Mutex;
     use std::time::Duration;
-    use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder};
 
     const ERROR_MS: u64 = 2500;
     const ERROR_JS: &str = "(function(){var m=document.getElementById('mic');if(!m)return;\
                             m.className='mic error';clearTimeout(window.__typrError);\
                             window.__typrError=setTimeout(function(){\
                             if(m.className==='mic error')m.className='mic';},2500);})();";
-    /// Replays the slide-in animation from behind the top edge
+    /// Replays the slide-in animation from behind the edge
     const SLIDE_IN_JS: &str = "(function(){var s=document.getElementById('slot');if(!s)return;\
                                s.classList.remove('enter');void s.offsetWidth;\
                                s.classList.add('enter');})();";
@@ -647,15 +755,42 @@ mod webview {
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     /// Bumped on every error flash, so only the latest one hides the window
     static ERRORS: AtomicU64 = AtomicU64::new(0);
+    static POSITION: Mutex<IndicatorPosition> = Mutex::new(IndicatorPosition::TopRight);
 
-    pub fn create(app: &AppHandle, placement: Placement) {
+    fn place(app: &AppHandle, position: IndicatorPosition) -> Placement {
+        match app.primary_monitor().ok().flatten() {
+            Some(monitor) => {
+                let area = monitor.work_area();
+                let area = ScreenRect {
+                    x: area.position.x,
+                    y: area.position.y,
+                    width: area.size.width as i32,
+                    height: area.size.height as i32,
+                };
+                Placement::new(position, area, monitor.scale_factor())
+            }
+            None => Placement::fallback(position),
+        }
+    }
+
+    /// At the bottom the page puts the mic at the top of the window and slides it up
+    fn edge_js(position: IndicatorPosition) -> String {
+        format!(
+            "document.body.classList.toggle('bottom',{});",
+            position == IndicatorPosition::BottomCenter
+        )
+    }
+
+    pub fn create(app: &AppHandle, position: IndicatorPosition) {
+        *POSITION.lock().unwrap() = position;
+        let placement = place(app, position);
         let built = WebviewWindowBuilder::new(
             app,
             "overlay",
             WebviewUrl::App("src/overlay.html".into()),
         )
         .title("")
-        .inner_size(INDICATOR_SIZE, OFFSET_FROM_TOP + INDICATOR_SIZE)
+        .inner_size(INDICATOR_SIZE, OFFSET_FROM_EDGE + INDICATOR_SIZE)
         .position(placement.logical_x, placement.logical_y)
         .resizable(false)
         .decorations(false)
@@ -687,9 +822,20 @@ mod webview {
         }
         if let Some(overlay) = app.get_webview_window("overlay") {
             if !overlay.is_visible().unwrap_or(false) {
+                let position = *POSITION.lock().unwrap();
+                let _ = overlay.eval(&edge_js(position));
                 let _ = overlay.eval(SLIDE_IN_JS);
                 let _ = overlay.show();
             }
+        }
+    }
+
+    pub fn set_position(app: &AppHandle, position: IndicatorPosition) {
+        *POSITION.lock().unwrap() = position;
+        let placement = place(app, position);
+        if let Some(overlay) = app.get_webview_window("overlay") {
+            let _ = overlay.set_position(LogicalPosition::new(placement.logical_x, placement.logical_y));
+            let _ = overlay.eval(&edge_js(position));
         }
     }
 
@@ -758,16 +904,53 @@ mod tests {
 
     #[test]
     fn test_render_hidden_indicator_is_fully_transparent() {
-        let placement = Placement::fallback();
-        let frame = render(
-            Look::Recording,
-            0.0,
-            placement.width as usize,
-            placement.height as usize,
-            placement.center_y(0.0),
-            1.0,
-        );
-        assert!(frame.chunks(4).all(|pixel| pixel[3] == 0));
+        let area = ScreenRect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1392,
+        };
+        for &position in IndicatorPosition::ALL {
+            for scale in [1.0, 1.25, 1.5, 2.0] {
+                let placement = Placement::new(position, area, scale);
+                for look in [Look::Idle, Look::Recording, Look::Transcribing, Look::Error] {
+                    // Recording's halo is widest at 0.7 s
+                    for t in [0.0, 0.35, 0.7] {
+                        let frame = render(
+                            look,
+                            t,
+                            placement.width as usize,
+                            placement.height as usize,
+                            placement.center_y(0.0),
+                            scale as f32,
+                        );
+                        assert!(
+                            frame.chunks(4).all(|pixel| pixel[3] == 0),
+                            "{} at scale {} shows {:?} while hidden",
+                            position,
+                            scale,
+                            look
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_render_indicator_in_place_is_not_cut_off() {
+        for &position in IndicatorPosition::ALL {
+            let placement = Placement::fallback(position);
+            let (width, height) = (placement.width as usize, placement.height as usize);
+            let frame = render(Look::Error, 0.0, width, height, placement.center_y(1.0), 1.0);
+            // Nothing touches the window's edges
+            for x in 0..width {
+                assert_eq!(frame[x * 4 + 3], 0, "{} is cut at the top", position);
+                assert_eq!(frame[((height - 1) * width + x) * 4 + 3], 0, "{} is cut at the bottom", position);
+            }
+            let center = (placement.center_y(1.0) as usize * width + width / 2) * 4;
+            assert!(frame[center + 3] > 200);
+        }
     }
 
     #[test]
@@ -776,14 +959,51 @@ mod tests {
         assert!(mic_sdf(2.0, 2.0) > 0.0);
     }
 
+    /// 4K at 200% with a 96 px taskbar at the bottom
+    const WORK_AREA_4K: ScreenRect = ScreenRect {
+        x: 0,
+        y: 0,
+        width: 3840,
+        height: 2064,
+    };
+
     #[test]
-    fn test_placement_for_monitor() {
-        let placement = Placement::for_monitor(0, 0, 3840, 2.0);
+    fn test_placement_top_right() {
+        let placement = Placement::new(IndicatorPosition::TopRight, WORK_AREA_4K, 2.0);
         assert_eq!(placement.width, 100);
         assert_eq!(placement.height, 120);
         assert_eq!(placement.x, 3840 - 120);
         assert_eq!(placement.y, 0);
         assert_eq!(placement.center_y(1.0), 70.0);
         assert_eq!(placement.center_y(0.0), -50.0);
+        assert_eq!((placement.logical_x, placement.logical_y), (1860.0, 0.0));
+    }
+
+    #[test]
+    fn test_placement_bottom_center_rests_on_the_taskbar() {
+        let placement = Placement::new(IndicatorPosition::BottomCenter, WORK_AREA_4K, 2.0);
+        assert_eq!(placement.width, 100);
+        assert_eq!(placement.height, 120);
+        assert_eq!(placement.x, (3840 - 100) / 2);
+        // The window ends where the taskbar starts
+        assert_eq!(placement.y + placement.height, 2064);
+        assert_eq!(placement.center_y(1.0), 50.0);
+        assert_eq!(placement.center_y(0.0), 170.0);
+    }
+
+    #[test]
+    fn test_placement_follows_the_work_area() {
+        // A taskbar at the top (Windows 10): the top-right indicator slides
+        // out from under it, the bottom one rests on the screen's bottom edge
+        let area = ScreenRect {
+            x: 0,
+            y: 40,
+            width: 1920,
+            height: 1040,
+        };
+        let top = Placement::new(IndicatorPosition::TopRight, area, 1.0);
+        assert_eq!((top.x, top.y), (1860, 40));
+        let bottom = Placement::new(IndicatorPosition::BottomCenter, area, 1.0);
+        assert_eq!((bottom.x, bottom.y), (935, 1020));
     }
 }

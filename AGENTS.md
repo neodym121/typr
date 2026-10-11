@@ -90,6 +90,7 @@ Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` ov
 - `hotkey`: default `"Ctrl+Shift+Space"`; or a single mouse button: `"MouseMiddle"` | `"MouseBack"` | `"MouseForward"`
 - `appendSpace`: adds a space after the pasted text (default `false`, switch in Post-processing; works with post-processing off too)
 - `showIndicator`: whether the recording indicator may appear at all (default `true`, switch in General)
+- `indicatorPosition`: `"top-right"` (default) | `"bottom-center"` (just above the taskbar); General, shown while the indicator is on
 - `checkUpdates`: looks for a newer GitHub release 15 s after start and every 12 h (default `true`)
 - `setupDone`: the first-run wizard was finished or skipped; `false` only for a new config (a config file without the field counts as set up)
 - `postProcess`: `enabled` (default `false`), `provider` (`"gemini"` | `"openrouter"` | `"groq"` | `"polza"`), `preset` (`"chill"` | `"proper"` | `"custom"`; the old `"official"` is migrated to `"proper"` on load), `customPrompt`, and `{ apiKey, model }` per provider, plus `providerId` for Polza (sub-provider sent as `provider.only`, omitted from the file when empty). Groq and Polza fall back to the Engine key when their own is empty (`Settings::post_process_key`)
@@ -155,7 +156,8 @@ Installed as the global `log` backend in `main()`. Use `log::info!` / `log::warn
 
 ### Memory: no WebView while idle
 - `overlay.rs` draws the recording indicator itself on Windows (`windows-sys` layered window, per-pixel alpha, SDF rendering) — no WebView. Other platforms fall back to the WebView overlay `src/overlay.html`.
-- The indicator is out of sight while idle: its window starts at the top edge of the primary screen and the disc is drawn above that edge, so it slides in from behind the screen when a dictation starts (or briefly after an error) and slides back out on `Ready`. Once fully out, the window is hidden and its timers stop, so it costs no CPU.
+- The indicator is out of sight while idle: its window touches an edge of the primary screen's work area (the screen without the taskbar) and the disc is drawn beyond that edge, so it slides in from behind it when a dictation starts (or briefly after an error) and slides back out on `Ready`. `indicatorPosition` picks the edge: the top-right corner (window at the top edge, disc above it) or the bottom centre (window ending at the taskbar, disc below it). Once fully out, the window is hidden and its timers stop, so it costs no CPU.
+- Each time the indicator starts to appear, `place()` in the native overlay reads the work area and scale again (`MonitorFromPoint`, `GetMonitorInfoW`, `GetDpiForMonitor`, as Tauri does), so a changed resolution, scale or taskbar is picked up without a restart. `overlay::set_position` (from `apply_settings`) moves it at once.
 - `overlay::set_enabled` gates it: `main.rs::sync_overlay` allows it only while `showIndicator` is on and the hotkey is on in the tray.
 - Closing the main window destroys it (and its WebView); `show_main_window` re-creates it from `tauri.conf.json` on a separate thread (building windows in event handlers deadlocks on Windows).
 - The page runs under a strict CSP (`tauri.conf.json`): scripts from the app only, styles and fonts also from Google Fonts, IPC. New external resources need a CSP entry. `RunEvent::ExitRequested` without a code is prevented, so Typr keeps running in the tray; tray → Exit calls `app.exit(0)`.

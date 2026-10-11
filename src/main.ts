@@ -39,6 +39,8 @@ interface Settings {
   hotkey: string;
   appendSpace: boolean;
   showIndicator: boolean;
+  /** "top-right" | "bottom-center" (just above the taskbar) */
+  indicatorPosition: string;
   /** "en", "ru", or empty to follow the system */
   language: string;
   postProcess: PostProcessSettings;
@@ -136,6 +138,8 @@ const statusText = document.getElementById("status-text")!;
 const statusDetail = document.getElementById("status-detail")!;
 const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
 const indicatorToggle = document.getElementById("indicator-toggle") as HTMLInputElement;
+const indicatorPositionRow = document.getElementById("indicator-position-row")!;
+const indicatorPositionButtons = document.querySelectorAll<HTMLButtonElement>("#indicator-position .segment");
 const autostartToggle = document.getElementById("autostart-toggle") as HTMLInputElement;
 const updatesToggle = document.getElementById("updates-toggle") as HTMLInputElement;
 const updatesStatus = document.getElementById("updates-status")!;
@@ -389,6 +393,8 @@ function fillForm() {
 
   // Recording indicator (on unless switched off)
   indicatorToggle.checked = currentSettings.showIndicator !== false;
+  setIndicatorPosition(currentSettings.indicatorPosition === "bottom-center" ? "bottom-center" : "top-right");
+  showIndicatorPosition();
   updatesToggle.checked = currentSettings.checkUpdates !== false;
   if (getLanguage() !== resolveLanguage(currentSettings.language || "")) {
     applyLanguage(resolveLanguage(currentSettings.language || ""));
@@ -462,6 +468,16 @@ function setRecordingMode(mode: string) {
   modePtt.classList.toggle("active", mode === "push-to-talk");
 }
 
+function setIndicatorPosition(position: string) {
+  currentSettings.indicatorPosition = position;
+  indicatorPositionButtons.forEach((b) => b.classList.toggle("active", b.dataset.position === position));
+}
+
+/** The position only matters while the indicator is on */
+function showIndicatorPosition() {
+  indicatorPositionRow.classList.toggle("hidden", !indicatorToggle.checked);
+}
+
 // The form writes every change into currentSettings (here and in the
 // modules); saving sends that object as it is.
 async function saveSettings() {
@@ -515,7 +531,10 @@ function bind(control: HTMLInputElement | HTMLSelectElement, apply: () => void) 
 }
 
 bind(micSelect, () => (currentSettings.microphone = micSelect.value));
-bind(indicatorToggle, () => (currentSettings.showIndicator = indicatorToggle.checked));
+bind(indicatorToggle, () => {
+  currentSettings.showIndicator = indicatorToggle.checked;
+  showIndicatorPosition();
+});
 bind(groqKey, () => (currentSettings.groqApiKey = groqKey.value.trim()));
 bind(groqModel, () => (currentSettings.groqModel = groqModel.value));
 bind(appendSpaceToggle, () => (currentSettings.appendSpace = appendSpaceToggle.checked));
@@ -533,6 +552,15 @@ bind(updatesToggle, () => (currentSettings.checkUpdates = updatesToggle.checked)
 
 languageButtons.forEach((button) => {
   button.addEventListener("click", () => chooseLanguage(button.dataset.lang === "ru" ? "ru" : "en"));
+});
+
+indicatorPositionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const position = button.dataset.position || "top-right";
+    if (currentSettings.indicatorPosition === position) return;
+    setIndicatorPosition(position);
+    saveQuietly();
+  });
 });
 
 autostartToggle.addEventListener("change", async () => {

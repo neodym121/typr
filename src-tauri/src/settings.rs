@@ -101,6 +101,16 @@ string_enum! {
 }
 
 string_enum! {
+    /// Where the recording indicator appears while dictating.
+    IndicatorPosition (default TopRight) {
+        /// Top-right corner, slides down from behind the top edge
+        TopRight = "top-right",
+        /// Bottom centre just above the taskbar, slides up from behind it
+        BottomCenter = "bottom-center",
+    }
+}
+
+string_enum! {
     /// Service that runs the post-processing model.
     PostProvider (default Gemini) {
         Gemini = "gemini",
@@ -224,9 +234,11 @@ pub struct Settings {
     /// Adds a space after the pasted text, so the next dictation doesn't stick to it
     #[serde(rename = "appendSpace")]
     pub append_space: bool,
-    /// Recording indicator that slides in at the top of the screen while dictating
+    /// Recording indicator that slides in at the edge of the screen while dictating
     #[serde(rename = "showIndicator")]
     pub show_indicator: bool,
+    #[serde(rename = "indicatorPosition")]
+    pub indicator_position: IndicatorPosition,
     /// Interface language: "en", "ru", or empty to follow the system
     pub language: String,
     #[serde(rename = "postProcess")]
@@ -267,6 +279,7 @@ impl Default for Settings {
             hotkey: "Ctrl+Shift+Space".to_string(),
             append_space: false,
             show_indicator: true,
+            indicator_position: IndicatorPosition::default(),
             language: String::new(),
             post_process: PostProcess::default(),
             check_updates: true,
@@ -342,7 +355,7 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, groqModel={}, groqKey={}, openaiEndpoint={}, openaiModel={}, openaiKey={}, polzaModel={}, polzaProvider={}, polzaKey={}, assemblyaiModel={}, assemblyaiKey={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, language={}, postProcess={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, groqModel={}, groqKey={}, openaiEndpoint={}, openaiModel={}, openaiKey={}, polzaModel={}, polzaProvider={}, polzaKey={}, assemblyaiModel={}, assemblyaiKey={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
@@ -364,6 +377,7 @@ impl Settings {
             or_auto(&self.local_backend),
             self.local_unload,
             self.show_indicator,
+            self.indicator_position,
             if self.language.is_empty() { "system" } else { self.language.as_str() },
             self.post_process_summary(),
             self.check_updates,
@@ -412,6 +426,7 @@ impl Settings {
         changed("language", &old.language, &self.language);
         changed("appendSpace", &old.append_space, &self.append_space);
         changed("showIndicator", &old.show_indicator, &self.show_indicator);
+        changed("indicatorPosition", &old.indicator_position, &self.indicator_position);
         changed("checkUpdates", &old.check_updates, &self.check_updates);
         changed("setupDone", &old.setup_done, &self.setup_done);
         changed("developerMode", &old.developer_mode, &self.developer_mode);
@@ -485,6 +500,7 @@ mod tests {
         assert_eq!(settings.recording_mode, RecordingMode::Toggle);
         assert_eq!(settings.hotkey, "Ctrl+Shift+Space");
         assert!(settings.show_indicator);
+        assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.check_updates);
         assert!(!settings.setup_done);
         assert!(!settings.developer_mode);
@@ -499,6 +515,7 @@ mod tests {
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.post_process, PostProcess::default());
         assert!(settings.show_indicator);
+        assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.fallback_local);
         assert!(settings.check_updates);
         assert!(!settings.developer_mode);
@@ -519,15 +536,32 @@ mod tests {
         assert_eq!(Engine::from("whatever".to_string()), Engine::Groq);
         assert_eq!(Preset::from("official".to_string()), Preset::Proper);
         assert_eq!(RecordingMode::from("push-to-talk".to_string()), RecordingMode::PushToTalk);
+        for &position in IndicatorPosition::ALL {
+            assert_eq!(IndicatorPosition::parse(position.id()), Some(position));
+        }
 
-        let settings: Settings =
-            serde_json::from_str(r#"{"engine":"nonsense","postProcess":{"provider":"openrouter"}}"#).unwrap();
+        let settings: Settings = serde_json::from_str(
+            r#"{"engine":"nonsense","indicatorPosition":"bottom-center","postProcess":{"provider":"openrouter"}}"#,
+        )
+        .unwrap();
         assert_eq!(settings.engine, Engine::Groq);
+        assert_eq!(settings.indicator_position, IndicatorPosition::BottomCenter);
         assert_eq!(settings.post_process.provider, PostProvider::OpenRouter);
 
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(json.contains(r#""engine":"groq""#));
         assert!(json.contains(r#""recordingMode":"toggle""#));
+        assert!(json.contains(r#""indicatorPosition":"top-right""#));
+    }
+
+    #[test]
+    fn test_indicator_position_change_is_logged() {
+        let old = Settings::default();
+        let mut new = Settings::default();
+        new.indicator_position = IndicatorPosition::BottomCenter;
+        let changes = new.describe_changes(&old).join("; ");
+        assert!(changes.contains("indicatorPosition: 'top-right' → 'bottom-center'"));
+        assert!(new.summary().contains("indicatorPosition=bottom-center"));
     }
 
     #[test]

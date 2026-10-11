@@ -414,6 +414,18 @@ button {
   gap: 12px;
 }
 
+/* A row whose control is wider than the usual column: the control keeps its
+   size, and in a narrow window it moves under the label */
+.setting-row.wide-control {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.setting-row.wide-control > .setting-control {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 /* ── Content Area ───────────────────────────────────── */
 
 #content {

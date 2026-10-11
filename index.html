@@ -63,7 +63,7 @@
           </button>
         </nav>
         <div class="sidebar-footer">
-          <span class="version-text" id="version-text">v2.0.2</span>
+          <span class="version-text" id="version-text">v2.0.3</span>
           <button type="button" class="update-link hidden" id="update-link"></button>
         </div>
       </aside>
@@ -90,13 +90,26 @@
             <div class="setting-row">
               <div class="setting-label">
                 <label class="label-text" for="indicator-toggle" data-i18n="general.indicator">Recording indicator</label>
-                <span class="label-hint" data-i18n="general.indicatorHint">Mic that slides in at the top of the screen while you dictate</span>
+                <span class="label-hint" data-i18n="general.indicatorHint">Mic that slides in at the edge of the screen while you dictate</span>
               </div>
               <div class="setting-control">
                 <label class="switch">
                   <input type="checkbox" id="indicator-toggle" role="switch" checked />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
+              </div>
+            </div>
+            <!-- Shown while the indicator is on -->
+            <div class="setting-row wide-control" id="indicator-position-row">
+              <div class="setting-label">
+                <span class="label-text" data-i18n="general.indicatorPosition">Indicator position</span>
+                <span class="label-hint" data-i18n="general.indicatorPositionHint">Top right corner, or bottom center just above the taskbar</span>
+              </div>
+              <div class="setting-control">
+                <div class="segmented" id="indicator-position">
+                  <button type="button" class="segment" data-position="top-right" data-i18n="general.indicatorTopRight">Top right</button>
+                  <button type="button" class="segment" data-position="bottom-center" data-i18n="general.indicatorBottomCenter">Bottom center</button>
+                </div>
               </div>
             </div>
             <div class="setting-row">

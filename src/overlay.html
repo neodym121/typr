@@ -15,6 +15,10 @@
         height: 100vh;
         padding-top: 10px;
       }
+      /* At the bottom the window ends at the taskbar; the mic rests 10px above it */
+      body.bottom {
+        padding-top: 0;
+      }
       #slot {
         display: flex;
         align-items: center;
@@ -24,6 +28,10 @@
       /* Slides down from behind the top edge of the screen */
       #slot.enter {
         animation: slide-in 0.22s cubic-bezier(0.33, 1, 0.68, 1);
+      }
+      /* or up from behind the taskbar */
+      body.bottom #slot.enter {
+        animation-name: slide-up;
       }
       .mic {
         position: relative;
@@ -86,6 +94,10 @@
       }
       @keyframes slide-in {
         from { transform: translateY(-60px); }
+        to { transform: none; }
+      }
+      @keyframes slide-up {
+        from { transform: translateY(60px); }
         to { transform: none; }
       }
     </style>

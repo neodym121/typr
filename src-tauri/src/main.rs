@@ -19,7 +19,7 @@ use typr_lib::links;
 use typr_lib::local::{runtime::Paths as LocalPaths, LocalEngine, LocalStatus};
 use typr_lib::logger::{self, LogEntry};
 use typr_lib::mouse;
-use typr_lib::overlay::{self, Placement};
+use typr_lib::overlay;
 use typr_lib::paste;
 use typr_lib::postprocess::{self, ModelInfo};
 use typr_lib::recorder::{self, Recorder, RecordingState};
@@ -260,12 +260,16 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     }
 
     let indicator_changed = settings.show_indicator != old.show_indicator;
+    let new_position = (settings.indicator_position != old.indicator_position).then_some(settings.indicator_position);
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
     let updates_turned_on = settings.check_updates && !old.check_updates;
     app.state::<LocalEngine>().settings_changed(&old, &settings);
     *state.settings.lock().unwrap() = settings;
     if indicator_changed {
         sync_overlay(app);
+    }
+    if let Some(position) = new_position {
+        overlay::set_position(app, position);
     }
     if tray_changed {
         update_tray_menu(app);
@@ -901,18 +905,10 @@ fn main() {
 
             build_tray(app, &startup_settings)?;
 
-            // Recording indicator (small mic, top-right, always on top). It waits
-            // behind the top edge of the screen and slides in only while dictating
-            let placement = match app.primary_monitor().ok().flatten() {
-                Some(monitor) => Placement::for_monitor(
-                    monitor.position().x,
-                    monitor.position().y,
-                    monitor.size().width,
-                    monitor.scale_factor(),
-                ),
-                None => Placement::fallback(),
-            };
-            overlay::create(app.handle(), placement);
+            // Recording indicator (small mic, always on top, top right or bottom
+            // centre). It waits behind the edge of the screen or the taskbar and
+            // slides in only while dictating
+            overlay::create(app.handle(), startup_settings.indicator_position);
             sync_overlay(app.handle());
 
             if let Err(e) = register_hotkey(app.handle(), &initial_hotkey) {
