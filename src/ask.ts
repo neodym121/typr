@@ -270,7 +270,7 @@ function arrive() {
   window.setTimeout(() => {
     frame.classList.remove("arriving");
     unfold();
-  }, 300);
+  }, 210);
 }
 
 /** Runs `then` once the page is visible and has drawn two frames */
@@ -288,6 +288,10 @@ function whenPainting(then: () => void) {
   document.addEventListener("visibilitychange", onVisible);
 }
 
+/** When the text shows and the unfolding is over (ms); quick chat, opened by
+ *  its hotkey, unfolds a little faster (ask.css) */
+const UNFOLD = chat ? { contentIn: 330, done: 500 } : { contentIn: 420, done: 640 };
+
 /** The dot unfolds into the card */
 function unfold() {
   if (state !== "dot") return;
@@ -301,9 +305,9 @@ function unfold() {
   frame.dataset.state = "open";
   height = 0;
   fit();
-  window.setTimeout(() => frame.classList.add("content-in"), 420);
-  window.setTimeout(() => frame.classList.remove("unfolding"), 640);
-  countFrames(640);
+  window.setTimeout(() => frame.classList.add("content-in"), UNFOLD.contentIn);
+  window.setTimeout(() => frame.classList.remove("unfolding"), UNFOLD.done);
+  countFrames(UNFOLD.done);
 }
 
 /** Debug log: how many frames the unfolding got (0 means it wasn't seen) */
