@@ -387,14 +387,15 @@ body.bottom #scroll {
   user-select: text;
 }
 
-/* Quick chat: a question, on the left like the answers, in a bubble.
-   It can't be copied */
+/* Quick chat: a question, on the right in a slightly rounded box. It can't
+   be copied */
 .question {
   width: fit-content;
-  max-width: 88%;
-  padding: 6px 11px;
+  max-width: 85%;
+  margin-left: auto;
+  padding: 3px 10px;
   border: 1px solid var(--border);
-  border-radius: 12px 12px 12px 4px;
+  border-radius: 8px;
   background: rgba(248, 248, 246, 0.07);
   color: var(--text-strong);
   overflow-wrap: break-word;
@@ -427,6 +428,7 @@ body.bottom #scroll {
 /* Quick chat before the first question */
 .empty {
   margin: 2px 0 0;
+  text-align: center;
   font-size: 13px;
   color: var(--text-muted);
 }

@@ -13,7 +13,7 @@
 //
 // Quick chat (mode "chat") is the same window opened empty by its hotkey:
 // the dot slides in from behind the edge and unfolds into a card that says
-// how to ask. The questions are shown too, on the left like the answers;
+// how to ask. The questions are shown too, on the right in a box;
 // they can't be copied. The chat hotkey folds it away ("ask-fold").
 //
 // Opened in a plain browser (npm run dev, then /src/ask.html, ?bottom for the

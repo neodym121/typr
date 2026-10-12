@@ -8,7 +8,7 @@
   <b>English</b> · <a href="README.ru.md">Русский</a>
 </p>
 
-Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, speak, and the recognized text is pasted into whatever window is active.
+Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, speak, and the recognized text is pasted into whatever window is active. It can also answer: ask an AI about the text you selected, or chat with it by voice in a small window at the edge of the screen.
 
 <p align="center">
   <img src="assets/screenshot.png" width="720" alt="Typr settings window" />
@@ -18,7 +18,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 ### Dictation
 
-- **Global hotkey** in two modes: a key combination or a single mouse button (middle or side).
+- **Global hotkey** in two modes (toggle or push to talk): a key combination or a single mouse button (middle or side). Both hotkeys, for dictation and for quick chat, are set in the Hotkeys section.
 - **Recording indicator:** a small mic shows up only while you dictate (recording, transcribing, pasting) and hides again. It slides down from behind the top edge in the top-right corner, or up from behind the taskbar at the bottom center, whichever you choose.
 - **Clean clipboard:** the dictated text is pasted through the clipboard and stays out of the Windows clipboard history.
 - **Space after the text**, so the next phrase doesn't stick to the previous one.
@@ -33,14 +33,19 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 ### Text
 
 - **Post-processing:** an AI model (Gemini, OpenRouter, Groq or Polza) polishes the text before it is pasted, in the Chill, Proper or your own style.
-- **Quick ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer; press the hotkey again to ask a follow-up in the same conversation. Gemini, OpenRouter, Groq or Polza answers, and with an [Exa](https://exa.ai/) key it can search the web when a question needs fresh facts, naming its sources. Off by default.
-- **Quick chat:** a hotkey of its own (Ctrl+Alt by default; modifiers alone, keys or a mouse button) opens the same window as a chat with the AI. Ask out loud with the dictation hotkey; your questions are shown too. The hotkey or the cross closes it. Off by default.
+
+### AI assistant
+
+- **Quick ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer, and the app you were in keeps the focus; press the hotkey again to ask a follow-up in the same conversation. Off by default.
+- **Quick chat:** a hotkey of its own (Ctrl+Alt by default) opens the same window as a chat with the AI, no selection needed. Ask out loud with the dictation hotkey: your questions appear on the right, the answers below them, and text selected before a question goes along with it. The same hotkey or the cross closes the chat. The hotkey can be two modifiers alone (they fire when let go, so Ctrl+Alt+Delete and other shortcuts don't trigger it), a key combination or a mouse button. Off by default.
+- **Web search:** with an [Exa](https://exa.ai/) key, the model searches the web when a question needs fresh facts ("Search…" blinks meanwhile) and names its sources as links that open in the browser.
+- **Answers you can use:** formatted text, lists and code; a click on an answer copies it. Gemini, OpenRouter, Groq or Polza answers, with the model you pick.
 
 ### App
 
 - **API keys in one place:** each service's key is entered once, in API keys; the other sections only pick the service and the model. Keys from older versions move there by themselves.
 - **Setup wizard** on the first launch: the interface language, how to recognize speech (with a recommendation for this computer), the model or key, the hotkey.
-- **Tray menu:** paste the last dictation again, switch the engine, open the settings, turn the hotkey off.
+- **Tray menu:** paste the last dictation again, switch the engine, open the settings, turn the hotkeys off (e.g. while gaming).
 - **Starts with Windows** (optional) and **checks GitHub for new releases.**
 - **Tiny footprint:** about 5 MB of RAM in the tray! The settings window's WebView is released when it's closed, and the recording indicator is drawn natively.
 - **Developer mode:** a live log of everything the app does, for troubleshooting.
@@ -51,8 +56,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v2.0.3
-git push origin v2.0.3
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:
