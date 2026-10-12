@@ -2,7 +2,8 @@
 // recording indicator's dot exactly where the native one is, with its
 // spinner. On "ask-reveal" the native dot is gone and this one unfolds into
 // a card with the model's answers; its dot stays as the card's status light.
-// The questions aren't shown, only the answers. While the window is open,
+// The questions aren't shown, only the answers; a click on one copies it.
+// While the window is open,
 // every recording is a follow-up: the dot turns orange and pulses while the
 // user speaks. The cross folds the card back into the dot, which slides
 // behind the edge of the screen, and the window closes.
@@ -41,7 +42,6 @@ type Phase = "idle" | "listening" | "thinking" | "answering";
 interface Answer {
   el: HTMLElement;
   body: HTMLElement;
-  note: HTMLElement;
   /** The Markdown as written so far */
   text: string;
   pending: boolean;
@@ -71,6 +71,7 @@ const content = document.getElementById("content")!;
 const answersEl = document.getElementById("answers")!;
 const notice = document.getElementById("notice")!;
 const closeButton = document.getElementById("close")!;
+const toast = document.getElementById("toast")!;
 
 /** The indicator's disc */
 const DOT = 40;
@@ -81,6 +82,7 @@ const RADIUS = 16;
 const BORDERS = 2;
 const MIN_HEIGHT = 72;
 const NOTICE_MS = 6000;
+const TOAST_MS = 1400;
 
 document.body.classList.toggle("bottom", bottom);
 document.body.classList.toggle("demo", demo);
@@ -93,7 +95,7 @@ frame.style.setProperty(
   "--close-x",
   `${bottom ? layout.orbX + layout.cardWidth / 2 - 20 : layout.orbX - 30}px`,
 );
-// The card minus its border, the text's padding (18 + 10) and the scrollbar (8)
+// The card minus its border and the text's padding (18 on each side)
 frame.style.setProperty("--content-width", `${layout.cardWidth - BORDERS - 36}px`);
 
 let state: "dot" | "open" | "closing" = "dot";
@@ -104,6 +106,7 @@ let stick = true;
 /** A new window waits for its first answer to be announced */
 let awaitingFirst = true;
 let noticeTimer: number | undefined;
+let toastTimer: number | undefined;
 const answers = new Map<number, Answer>();
 
 function call(command: string, args?: Record<string, unknown>) {
@@ -184,21 +187,70 @@ card.addEventListener("transitionend", (event) => {
 
 // ── Unfolding and folding ────────────────────────────
 
-/** The native dot is gone: this one unfolds into the card */
+/**
+ * The window is on screen. WebView2 starts painting a moment after the
+ * window shows; an animation started before that runs unseen, and the card
+ * just appears. So the dot unfolds only once frames are really drawn, and
+ * only then may the native dot go (until then both are in the same place).
+ */
 function reveal() {
+  if (state !== "dot") return;
+  // Should frames never come (timers still run), the card unfolds anyway
+  const fallback = window.setTimeout(() => {
+    call("ask_shown");
+    unfold();
+  }, 800);
+  whenPainting(() => {
+    window.clearTimeout(fallback);
+    call("ask_shown");
+    requestAnimationFrame(unfold);
+  });
+}
+
+/** Runs `then` once the page is visible and has drawn two frames */
+function whenPainting(then: () => void) {
+  const afterFrames = () => requestAnimationFrame(() => requestAnimationFrame(then));
+  if (document.visibilityState === "visible") {
+    afterFrames();
+    return;
+  }
+  const onVisible = () => {
+    if (document.visibilityState !== "visible") return;
+    document.removeEventListener("visibilitychange", onVisible);
+    afterFrames();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+}
+
+/** The dot unfolds into the card */
+function unfold() {
   if (state !== "dot") return;
   // The card appears exactly under the dot, in its colour, then grows
   card.style.transition = "none";
   place(dotRect(), DOT / 2);
   void card.offsetWidth;
   card.style.transition = "";
-  frame.classList.add("morphing");
+  frame.classList.add("unfolding");
   state = "open";
   frame.dataset.state = "open";
   height = 0;
   fit();
-  window.setTimeout(() => frame.classList.add("content-in"), 160);
-  window.setTimeout(() => frame.classList.remove("morphing"), 420);
+  window.setTimeout(() => frame.classList.add("content-in"), 420);
+  window.setTimeout(() => frame.classList.remove("unfolding"), 640);
+  countFrames(640);
+}
+
+/** Debug log: how many frames the unfolding got (0 means it wasn't seen) */
+function countFrames(ms: number) {
+  if (demo) return;
+  const start = performance.now();
+  let frames = 0;
+  const tick = (now: number) => {
+    frames++;
+    if (now - start < ms) requestAnimationFrame(tick);
+    else call("frontend_log", { level: "debug", message: `Quick ask card unfolded in ${frames} frames` });
+  };
+  requestAnimationFrame(tick);
 }
 
 function close() {
@@ -239,20 +291,16 @@ function answerFor(id: number): Answer {
   dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
   body.append(dots);
 
-  const meta = document.createElement("div");
-  meta.className = "answer-meta";
-  const note = document.createElement("span");
-  note.className = "answer-note";
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.className = "answer-copy";
-  copy.textContent = t("askWindow.copy");
-  meta.append(note, copy);
-  el.append(body, meta);
+  el.append(body);
   answersEl.append(el);
 
-  const answer: Answer = { el, body, note, text: "", pending: true, renderQueued: false };
-  copy.addEventListener("click", () => copyAnswer(answer, copy));
+  const answer: Answer = { el, body, text: "", pending: true, renderQueued: false };
+  el.addEventListener("click", () => {
+    // Selecting part of the text with the mouse is no click to copy
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && el.contains(selection.anchorNode)) return;
+    void copyAnswer(answer);
+  });
   answers.set(id, answer);
   stick = true;
   queueFit();
@@ -274,16 +322,25 @@ function queueRender(answer: Answer) {
   });
 }
 
-async function copyAnswer(answer: Answer, button: HTMLElement) {
-  if (!answer.text.trim()) return;
+async function copyAnswer(answer: Answer) {
+  if (answer.pending || !answer.text.trim()) return;
   try {
-    if (demo) await navigator.clipboard.writeText(answer.text);
+    // A browser tab without focus refuses the clipboard: the demo shows the
+    // feedback anyway
+    if (demo) await navigator.clipboard.writeText(answer.text).catch(() => {});
     else await invoke("ask_copy", { text: answer.text });
-    button.textContent = t("askWindow.copied");
   } catch (err) {
     console.error("Copy failed:", err);
+    return;
   }
-  window.setTimeout(() => (button.textContent = t("askWindow.copy")), 1200);
+  // The answer lights up and the strip says so
+  answer.el.classList.remove("copied");
+  void answer.el.offsetWidth;
+  answer.el.classList.add("copied");
+  toast.textContent = t("askWindow.copied");
+  toast.classList.add("visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), TOAST_MS);
 }
 
 function showNotice(message: string) {
@@ -326,9 +383,12 @@ function onDone(id: number, text: string, stopped: boolean) {
   const answer = answerFor(id);
   settle(answer);
   answer.text = text;
-  if (stopped) {
+  if (stopped && !answer.el.classList.contains("stopped")) {
     answer.el.classList.add("stopped");
-    answer.note.textContent = t("askWindow.stopped");
+    const note = document.createElement("div");
+    note.className = "answer-note";
+    note.textContent = t("askWindow.stopped");
+    answer.el.append(note);
   }
   queueRender(answer);
   afterAnswer(hasPending() ? "thinking" : "idle");

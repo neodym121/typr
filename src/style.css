@@ -546,6 +546,12 @@ button {
   color: var(--text-muted);
 }
 
+.ask-note + .ask-note {
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: none;
+}
+
 .setting-row {
   display: flex;
   align-items: center;

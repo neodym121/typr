@@ -14,7 +14,7 @@
 //!   WebView.
 
 use serde_json::json;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
@@ -36,6 +36,8 @@ pub const ORB_INSET: f64 = 18.0;
 const SHADOW_ROOM: f64 = 28.0;
 /// How often the cursor is checked against the card
 const HIT_POLL: Duration = Duration::from_millis(30);
+/// How long the native dot stays while the page starts drawing
+const SHOWN_WAIT: Duration = Duration::from_millis(1500);
 
 /// Where the window goes and what the page needs to lay out the card.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,6 +136,8 @@ static FRAME: Mutex<Option<Geometry>> = Mutex::new(None);
 static CARD: Mutex<Option<[f64; 4]>> = Mutex::new(None);
 /// Bumped when the window goes, which ends its cursor watch
 static WATCH: AtomicU64 = AtomicU64::new(0);
+/// The page draws its dot (`ask_shown`): the native one can go
+static SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// Creates the window, hidden. Blocks until it exists, so call it off the
 /// async threads.
@@ -188,11 +192,14 @@ pub fn open(app: &AppHandle, position: IndicatorPosition, language: &str) -> Res
 }
 
 /// Shows the window without taking the focus and hands the indicator's
-/// place over to it.
+/// place over to it. Returns once the page draws its dot in the native one's
+/// place (WebView2 starts painting a moment after the window shows), so the
+/// recorder's Ready doesn't slide the native dot away before that.
 pub async fn reveal(app: &AppHandle) {
     let Some(window) = app.get_webview_window(LABEL) else {
         return;
     };
+    SHOWN.store(false, Ordering::SeqCst);
     let before = crate::paste::foreground_window();
     let _ = window.show();
     for _ in 0..20 {
@@ -202,12 +209,27 @@ pub async fn reveal(app: &AppHandle) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     give_focus_back(&window, before);
-    // Both dots are now in the same place: the native one can go
-    overlay::set_suppressed(app, true);
     if let Err(e) = app.emit_to(LABEL, "ask-reveal", ()) {
         log::debug!("Failed to emit ask-reveal: {}", e);
     }
     watch_cursor(app.clone());
+
+    let started = std::time::Instant::now();
+    while !SHOWN.load(Ordering::SeqCst) && started.elapsed() < SHOWN_WAIT {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    if SHOWN.load(Ordering::SeqCst) {
+        log::debug!("Quick ask window drawing after {} ms", started.elapsed().as_millis());
+    } else {
+        log::warn!("The quick ask page didn't report drawing in time");
+        overlay::set_suppressed(app, true);
+    }
+}
+
+/// The page draws its dot exactly over the native one, which can now go.
+pub fn page_shown(app: &AppHandle) {
+    SHOWN.store(true, Ordering::SeqCst);
+    overlay::set_suppressed(app, true);
 }
 
 /// The window is built never to take the focus; should Windows give it the

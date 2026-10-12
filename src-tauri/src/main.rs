@@ -453,6 +453,12 @@ fn ask_ready() {
     ask::page_ready();
 }
 
+/// The page draws its dot over the indicator's: the native one can go
+#[tauri::command]
+fn ask_shown(app: tauri::AppHandle) {
+    ask::window::page_shown(&app);
+}
+
 /// Where the page draws the answer card (logical pixels inside the window);
 /// the rest of the window lets clicks through
 #[tauri::command]
@@ -932,6 +938,7 @@ fn main() {
             local_delete_model,
             local_delete_runtime,
             ask_ready,
+            ask_shown,
             ask_card,
             ask_copy,
             ask_close,
