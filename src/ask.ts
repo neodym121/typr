@@ -213,8 +213,24 @@ function fit() {
 // replacing the fallback one and wrapping lines differently
 new ResizeObserver(() => queueFit()).observe(content);
 
+function atBottom(): boolean {
+  return scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 24;
+}
+
+// Only the user's wheel lets go of the newest text. The scroll events of
+// following it arrive a frame late, often after the next piece has grown the
+// text, and would look as if the user had scrolled up
+scroll.addEventListener(
+  "wheel",
+  (event) => {
+    if (event.deltaY < 0 && scroll.scrollTop > 0) stick = false;
+  },
+  { passive: true },
+);
+
+// Back at the bottom, it follows the text again
 scroll.addEventListener("scroll", () => {
-  stick = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 24;
+  if (!stick && atBottom()) stick = true;
 });
 
 card.addEventListener("transitionend", (event) => {
@@ -629,8 +645,8 @@ async function runDemo() {
     await stream(
       1,
       ru
-        ? "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение."
-        : "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.",
+        ? "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\n- **`let`** — для значений, которые меняются: счётчики, флаги, промежуточные результаты.\n- **`const`** — для всего остального: сразу видно, что значение не подменят.\n- **`var`** лучше не использовать: он виден во всей функции и поднимается наверх.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение.\n\n```js\nconst user = { name: \"Анна\" };\nuser.name = \"Мария\"; // можно\nuser = {}; // ошибка\n```"
+        : "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\n- **`let`** is for values that change: counters, flags, intermediate results.\n- **`const`** is for everything else: it shows the value won't be swapped.\n- **`var`** is best avoided: it is seen in the whole function and hoisted to its top.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.\n\n```js\nconst user = { name: \"Anna\" };\nuser.name = \"Maria\"; // fine\nuser = {}; // error\n```",
     );
     await sleep(1500);
     await ask(
