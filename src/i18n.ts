@@ -6,8 +6,9 @@ export type Lang = "en" | "ru";
 
 const en = {
   "nav.general": "General",
+  "nav.keys": "API keys",
   "nav.engine": "Engine",
-  "nav.recording": "Recording",
+  "nav.hotkeys": "Hotkeys",
   "nav.postprocess": "Post-processing",
   "nav.ask": "Quick ask",
   "nav.developer": "Developer",
@@ -58,23 +59,30 @@ const en = {
   "window.minimize": "Minimize",
   "window.close": "Close",
 
+  "keys.title": "API keys",
+  "keys.desc": "One key per service for the whole app. The other sections only pick the service and the model",
+  "keys.searchTitle": "Web search",
+  "keys.note": "The keys are kept on this computer only",
+  "keys.useSpeechModels": "Speech recognition and language models",
+  "keys.useModels": "Language models for post-processing and quick ask",
+  "keys.useSpeech": "Speech recognition",
+  "keys.useOpenai": "Speech recognition with OpenAI or a compatible server. Leave empty if the server needs no key",
+  "keys.useSearch": "Web search in quick ask and quick chat",
+
   "engine.title": "Engine",
   "engine.desc": "A local model or a cloud service turns your speech into text",
   "engine.local": "Local",
   "engine.openai": "OpenAI Compatible",
   "engine.apiKey": "API Key",
-  "engine.groqKeyHint": "Get your key from console.groq.com",
   "engine.endpoint": "API Endpoint",
   "engine.endpointHint": "Base URL or /audio/transcriptions",
   "engine.modelId": "Model ID",
   "engine.openaiModelHint": "Model identifier (e.g. whisper-1)",
   "engine.openaiKeyHint": "API key (leave empty if not required)",
-  "engine.polzaKeyHint": "Get your key from polza.ai/dashboard",
   "engine.polzaModelHint": "e.g. openai/whisper-large-v3",
   "engine.providerId": "Provider ID",
   "engine.providerIdHint": "Sub-provider (leave empty for auto)",
   "engine.providerIdPlaceholder": "e.g. openai-direct",
-  "engine.assemblyaiKeyHint": "Get your key from assemblyai.com/dashboard",
   "engine.model": "Model",
   "engine.modelHint": "Speech recognition model",
   "engine.speech": "Speech",
@@ -130,8 +138,18 @@ const en = {
   "local.unload10m": "After 10 minutes",
   "local.unloadNever": "Never",
 
-  "recording.title": "Recording",
-  "recording.desc": "How you start and stop a dictation",
+  "hotkeys.title": "Hotkeys",
+  "hotkeys.desc": "Keys for dictation and for the chat with the AI",
+  "hotkeys.dictation": "Dictation",
+  "hotkeys.chat": "Quick chat",
+  "hotkeys.chatHint": "Opens and closes the chat with the AI. Modifiers alone work too, like Ctrl+Alt: they fire when you let go",
+  "hotkeys.chatOffHint": "Works while Quick chat is on in Quick ask",
+  "hotkeys.chatPressKeys": "Press keys, two modifiers or a mouse button…",
+  "hotkeys.chatPressKeysHint": "Hold 2 or 3 keys and release them (Ctrl+Alt alone works too), or click the middle or a side mouse button",
+  "hotkeys.needKey": "Add a key besides Ctrl, Alt, Shift and Win",
+  "hotkeys.takenDictation": "That's the dictation hotkey",
+  "hotkeys.takenChat": "That's the chat hotkey",
+
   "recording.mode": "Recording Mode",
   "recording.modeHint": "Toggle starts/stops, Push to Talk records while held",
   "recording.toggle": "Toggle",
@@ -153,14 +171,11 @@ const en = {
   "post.enabledHint": "Send every dictation through the model below",
   "post.provider": "Provider",
   "post.providerHint": "Service that runs the model",
-  "post.keyHintGemini": "Get your key at aistudio.google.com/apikey",
-  "post.keyHintOpenrouter": "Get your key at openrouter.ai/keys",
-  "post.keyHintEngine": "Leave empty to use the key from Engine",
   "post.modelNone": "No model chosen",
   "post.modelChosen": "Chosen: {name}",
   "post.refresh": "Refresh",
   "post.search": "Search models…",
-  "post.needKey": "Enter the API key to load the models",
+  "post.needKey": "Add the key in API keys to load the models",
   "post.loading": "Loading models…",
   "post.loadError": "Couldn't load the models: {error}",
   "post.nothingFound": "Nothing found",
@@ -176,26 +191,25 @@ const en = {
   "post.appendSpaceHint": "Adds a space after the pasted text, so the next phrase doesn't stick to it. Works even with post-processing off",
 
   "ask.title": "Quick ask",
-  "ask.desc": "Select text anywhere and ask about it by voice",
+  "ask.desc": "Select text anywhere and ask about it by voice, or chat with the AI",
   "ask.enabled": "Quick ask",
   "ask.enabledHint": "With text selected, the dictation hotkey asks the model about it instead of typing",
-  "ask.keyHintGemini": "Get your key at aistudio.google.com/apikey. Leave empty to use the key from Post-processing",
-  "ask.keyHintOpenrouter": "Get your key at openrouter.ai/keys. Leave empty to use the key from Post-processing",
-  "ask.keyHintEngine": "Leave empty to use the key from Post-processing or Engine",
+  "ask.chat": "Quick chat",
+  "ask.chatHint": "{hotkey} opens a chat with the model. Ask out loud with the dictation hotkey; your questions are shown too. The hotkey is set in Hotkeys",
   "ask.searchTitle": "Web search",
   "ask.search": "Search the web",
   "ask.searchHint": "When a question needs fresh facts, the model looks them up with Exa and names its sources",
-  "ask.exaKey": "Exa API key",
-  "ask.exaKeyHint": "Get your key at dashboard.exa.ai",
   "ask.howTitle": "How it works",
   "ask.step1": "Select text in any app",
-  "ask.step2": "Press the hotkey from Recording and ask your question out loud",
+  "ask.step2": "Press the hotkey from Hotkeys and ask your question out loud",
   "ask.step3": "The answer appears where the recording indicator is. Press the hotkey again to ask a follow-up; the cross closes the window",
   "ask.copyNote": "Click an answer to copy it",
   "ask.terminalNote": "In terminals the selection isn't read: a copy shortcut would interrupt the running program there",
 
   "askWindow.copied": "Copied",
   "askWindow.searching": "Search…",
+  "askWindow.chatEmpty": "Press {hotkey} and ask out loud",
+  "askWindow.chatEmptyPtt": "Hold {hotkey} and ask out loud",
   "askWindow.close": "Close",
   "askWindow.stopped": "Stopped",
   "askWindow.error": "Couldn't answer: {error}",
@@ -250,15 +264,16 @@ const en = {
   "setup.doneTitle": "Ready to dictate",
   "setup.doneToggle": "Press the hotkey, speak, and press it again: the text is pasted where your cursor is.",
   "setup.donePtt": "Hold the hotkey while you speak and release it: the text is pasted where your cursor is.",
-  "setup.hotkeyHint": "You can change the keys in Recording",
+  "setup.hotkeyHint": "You can change the keys in Hotkeys",
 } as const;
 
 export type MessageKey = keyof typeof en;
 
 const ru: Record<MessageKey, string> = {
   "nav.general": "Основные",
+  "nav.keys": "API-ключи",
   "nav.engine": "Распознавание",
-  "nav.recording": "Запись",
+  "nav.hotkeys": "Хоткеи",
   "nav.postprocess": "Постобработка",
   "nav.ask": "Быстрый вопрос",
   "nav.developer": "Разработчик",
@@ -309,23 +324,30 @@ const ru: Record<MessageKey, string> = {
   "window.minimize": "Свернуть",
   "window.close": "Закрыть",
 
+  "keys.title": "API-ключи",
+  "keys.desc": "Один ключ на сервис для всего приложения. В остальных разделах выбираются только сервис и модель",
+  "keys.searchTitle": "Поиск в интернете",
+  "keys.note": "Ключи хранятся только на этом компьютере",
+  "keys.useSpeechModels": "Распознавание речи и языковые модели",
+  "keys.useModels": "Языковые модели для постобработки и быстрого вопроса",
+  "keys.useSpeech": "Распознавание речи",
+  "keys.useOpenai": "Распознавание через OpenAI или совместимый сервер. Оставьте пустым, если серверу ключ не нужен",
+  "keys.useSearch": "Поиск в интернете для быстрого вопроса и быстрого чата",
+
   "engine.title": "Распознавание",
   "engine.desc": "Локальная модель или облачный сервис превращает речь в текст",
   "engine.local": "Локально",
   "engine.openai": "Совместимый с OpenAI",
   "engine.apiKey": "API-ключ",
-  "engine.groqKeyHint": "Получите ключ на console.groq.com",
   "engine.endpoint": "Адрес API",
   "engine.endpointHint": "Базовый URL или /audio/transcriptions",
   "engine.modelId": "ID модели",
   "engine.openaiModelHint": "Идентификатор модели (например, whisper-1)",
   "engine.openaiKeyHint": "Оставьте пустым, если ключ не нужен",
-  "engine.polzaKeyHint": "Получите ключ на polza.ai/dashboard",
   "engine.polzaModelHint": "Например, openai/whisper-large-v3",
   "engine.providerId": "ID провайдера",
   "engine.providerIdHint": "Конкретный провайдер (пусто — автовыбор)",
   "engine.providerIdPlaceholder": "например, openai-direct",
-  "engine.assemblyaiKeyHint": "Получите ключ на assemblyai.com/dashboard",
   "engine.model": "Модель",
   "engine.modelHint": "Модель распознавания речи",
   "engine.speech": "Речь",
@@ -381,8 +403,18 @@ const ru: Record<MessageKey, string> = {
   "local.unload10m": "Через 10 минут",
   "local.unloadNever": "Никогда",
 
-  "recording.title": "Запись",
-  "recording.desc": "Как начинать и останавливать диктовку",
+  "hotkeys.title": "Хоткеи",
+  "hotkeys.desc": "Клавиши для диктовки и чата с ИИ",
+  "hotkeys.dictation": "Диктовка",
+  "hotkeys.chat": "Быстрый чат",
+  "hotkeys.chatHint": "Открывает и закрывает чат с ИИ. Подходят и одни модификаторы, например Ctrl+Alt: срабатывают, когда их отпускают",
+  "hotkeys.chatOffHint": "Работает, когда в разделе «Быстрый вопрос» включён быстрый чат",
+  "hotkeys.chatPressKeys": "Нажмите клавиши, два модификатора или кнопку мыши…",
+  "hotkeys.chatPressKeysHint": "Зажмите 2–3 клавиши и отпустите (можно и просто Ctrl+Alt) или нажмите среднюю либо боковую кнопку мыши",
+  "hotkeys.needKey": "Нужна клавиша помимо Ctrl, Alt, Shift и Win",
+  "hotkeys.takenDictation": "Это уже хоткей диктовки",
+  "hotkeys.takenChat": "Это уже хоткей чата",
+
   "recording.mode": "Режим записи",
   "recording.modeHint": "Переключение: нажал — старт, нажал ещё раз — стоп. Удержание: запись, пока клавиши зажаты",
   "recording.toggle": "Переключение",
@@ -404,14 +436,11 @@ const ru: Record<MessageKey, string> = {
   "post.enabledHint": "Пропускать каждую диктовку через выбранную модель",
   "post.provider": "Провайдер",
   "post.providerHint": "Сервис, на котором работает модель",
-  "post.keyHintGemini": "Получите ключ на aistudio.google.com/apikey",
-  "post.keyHintOpenrouter": "Получите ключ на openrouter.ai/keys",
-  "post.keyHintEngine": "Пусто — используется ключ из раздела «Распознавание»",
   "post.modelNone": "Модель не выбрана",
   "post.modelChosen": "Выбрана: {name}",
   "post.refresh": "Обновить",
   "post.search": "Поиск моделей…",
-  "post.needKey": "Введите API-ключ, чтобы загрузить список моделей",
+  "post.needKey": "Добавьте ключ в разделе «API-ключи», чтобы загрузить список моделей",
   "post.loading": "Загрузка моделей…",
   "post.loadError": "Не удалось загрузить модели: {error}",
   "post.nothingFound": "Ничего не найдено",
@@ -427,26 +456,25 @@ const ru: Record<MessageKey, string> = {
   "post.appendSpaceHint": "Добавляет пробел после вставленного текста, чтобы следующая фраза не слиплась с ним. Работает и без постобработки",
 
   "ask.title": "Быстрый вопрос",
-  "ask.desc": "Выделите текст где угодно и спросите о нём голосом",
+  "ask.desc": "Выделите текст где угодно и спросите о нём голосом или поговорите с ИИ в чате",
   "ask.enabled": "Быстрый вопрос",
   "ask.enabledHint": "Если выделен текст, хоткей диктовки задаёт о нём вопрос модели вместо набора текста",
-  "ask.keyHintGemini": "Получите ключ на aistudio.google.com/apikey. Пусто — используется ключ из «Постобработки»",
-  "ask.keyHintOpenrouter": "Получите ключ на openrouter.ai/keys. Пусто — используется ключ из «Постобработки»",
-  "ask.keyHintEngine": "Пусто — используется ключ из «Постобработки» или «Распознавания»",
+  "ask.chat": "Быстрый чат",
+  "ask.chatHint": "{hotkey} открывает чат с моделью. Спрашивайте вслух хоткеем диктовки, ваши вопросы тоже видны в окне. Хоткей меняется в разделе «Хоткеи»",
   "ask.searchTitle": "Поиск в интернете",
   "ask.search": "Искать в интернете",
   "ask.searchHint": "Если вопросу нужны свежие факты, модель найдёт их через Exa и назовёт источники",
-  "ask.exaKey": "API-ключ Exa",
-  "ask.exaKeyHint": "Получите ключ на dashboard.exa.ai",
   "ask.howTitle": "Как это работает",
   "ask.step1": "Выделите текст в любом приложении",
-  "ask.step2": "Нажмите хоткей из раздела «Запись» и задайте вопрос вслух",
+  "ask.step2": "Нажмите хоткей из раздела «Хоткеи» и задайте вопрос вслух",
   "ask.step3": "Ответ появится там, где индикатор записи. Нажмите хоткей ещё раз, чтобы задать уточняющий вопрос; крестик закрывает окно",
   "ask.copyNote": "Нажмите на ответ, чтобы скопировать его",
   "ask.terminalNote": "В терминалах выделение не читается: сочетание для копирования прервало бы там работающую программу",
 
   "askWindow.copied": "Скопировано",
   "askWindow.searching": "Поиск…",
+  "askWindow.chatEmpty": "Нажмите {hotkey} и задайте вопрос вслух",
+  "askWindow.chatEmptyPtt": "Удерживайте {hotkey} и задайте вопрос вслух",
   "askWindow.close": "Закрыть",
   "askWindow.stopped": "Остановлено",
   "askWindow.error": "Не удалось ответить: {error}",
@@ -501,7 +529,7 @@ const ru: Record<MessageKey, string> = {
   "setup.doneTitle": "Можно диктовать",
   "setup.doneToggle": "Нажмите горячие клавиши, говорите и нажмите их снова — текст вставится туда, где стоит курсор.",
   "setup.donePtt": "Держите горячие клавиши, пока говорите, и отпустите — текст вставится туда, где стоит курсор.",
-  "setup.hotkeyHint": "Сочетание можно поменять в разделе «Запись»",
+  "setup.hotkeyHint": "Сочетание можно поменять в разделе «Хоткеи»",
 };
 
 const dictionaries: Record<Lang, Record<MessageKey, string>> = { en, ru };
@@ -524,6 +552,31 @@ export function setLanguage(lang: Lang) {
   current = lang;
   document.documentElement.lang = lang;
   applyTranslations();
+}
+
+/** Mouse buttons a hotkey can be (mouse.rs), as the settings store them */
+const MOUSE_NAMES: Record<string, MessageKey> = {
+  MouseMiddle: "recording.mouseMiddle",
+  MouseBack: "recording.mouseBack",
+  MouseForward: "recording.mouseForward",
+};
+
+/** One key of a saved hotkey as the interface shows it, e.g. "KeyA" → "A" */
+export function formatKey(key: string): string {
+  if (MOUSE_NAMES[key]) return t(MOUSE_NAMES[key]);
+  if (key === "Control" || key === "Ctrl" || key === "CmdOrCtrl") return "Ctrl";
+  if (key === "Shift") return "Shift";
+  if (key === "Alt") return "Alt";
+  if (key === "Meta" || key === "Super") return "Win";
+  if (key === "Space") return "Space";
+  if (key.startsWith("Key")) return key.slice(3).toUpperCase();
+  if (key.startsWith("Digit")) return key.slice(5);
+  return key;
+}
+
+/** A saved hotkey as the interface shows it, e.g. "Ctrl+Shift+Space" */
+export function formatHotkey(hotkey: string): string {
+  return hotkey.split("+").map(formatKey).join("+");
 }
 
 /** Codes offered for recognition, "" detects the language (settings.rs) */

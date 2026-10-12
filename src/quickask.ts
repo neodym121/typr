@@ -1,56 +1,39 @@
-// Quick ask section: the switch, the model that answers (modelpicker.ts) and
-// web search through Exa. The answer window itself is src/ask.ts.
+// Quick ask section: the quick ask and quick chat switches, the model that
+// answers (modelpicker.ts) and web search through Exa. The keys come from
+// the API keys section; the window itself is src/ask.ts.
 
-import { type MessageKey } from "./i18n";
-import { createModelPicker, type ModelPicker, type Provider, type ProviderConfig } from "./modelpicker";
-import { engineKey, type PostProcessSettings } from "./postprocess";
+import { formatHotkey, t } from "./i18n";
+import { createModelPicker, type ModelPicker, type ProviderConfig } from "./modelpicker";
 
 export interface QuickAskSettings extends ProviderConfig {
   enabled: boolean;
+  /** Quick chat: the chat hotkey opens the window as a chat */
+  chat: boolean;
   /** The model may search the web with Exa */
   webSearch: boolean;
-  exaApiKey: string;
 }
 
 export interface QuickAskHost {
-  settings: () => {
-    quickAsk: QuickAskSettings;
-    postProcess: PostProcessSettings;
-    groqApiKey: string;
-    polzaApiKey: string;
-  };
+  settings: () => { quickAsk: QuickAskSettings; chatHotkey: string };
   save: () => void;
+  /** Quick chat was switched on or off */
+  chatChanged: () => void;
+  showSection: (name: string) => void;
 }
 
-const KEY_HINTS: Record<Provider, MessageKey> = {
-  gemini: "ask.keyHintGemini",
-  openrouter: "ask.keyHintOpenrouter",
-  groq: "ask.keyHintEngine",
-  polza: "ask.keyHintEngine",
-};
-
 const enabledToggle = document.getElementById("ask-enabled") as HTMLInputElement;
+const chatToggle = document.getElementById("ask-chat") as HTMLInputElement;
+const chatHint = document.getElementById("ask-chat-hint")!;
 const searchToggle = document.getElementById("ask-search") as HTMLInputElement;
-const exaRow = document.getElementById("ask-exa-row")!;
-const exaKey = document.getElementById("ask-exa-key") as HTMLInputElement;
 
 let host: QuickAskHost | undefined;
 let picker: ModelPicker | undefined;
-
-/** An empty key falls back to the one from Post-processing, then Engine */
-function fallbackKey(provider: Provider): string {
-  const all = host!.settings();
-  return (all.postProcess[provider].apiKey || "").trim() || engineKey(all, provider);
-}
 
 export function initQuickAsk(appHost: QuickAskHost) {
   host = appHost;
   picker = createModelPicker({
     prefix: "ask",
-    section: "ask",
     config: () => host!.settings().quickAsk,
-    fallbackKey,
-    keyHint: (provider) => KEY_HINTS[provider],
     save: () => host!.save(),
   });
 
@@ -59,30 +42,40 @@ export function initQuickAsk(appHost: QuickAskHost) {
     host!.save();
   });
 
-  searchToggle.addEventListener("change", () => {
-    host!.settings().quickAsk.webSearch = searchToggle.checked;
-    showExaKey();
+  chatToggle.addEventListener("change", () => {
+    host!.settings().quickAsk.chat = chatToggle.checked;
     host!.save();
+    host!.chatChanged();
   });
 
-  exaKey.addEventListener("change", () => {
-    host!.settings().quickAsk.exaApiKey = exaKey.value.trim();
+  // The hotkey named in the hint leads to where it is set
+  chatHint.addEventListener("click", (event) => {
+    if ((event.target as Element).closest("kbd")) host!.showSection("hotkeys");
+  });
+
+  searchToggle.addEventListener("change", () => {
+    host!.settings().quickAsk.webSearch = searchToggle.checked;
     host!.save();
   });
 }
 
-/** The key only matters while search is on */
-function showExaKey() {
-  exaRow.classList.toggle("hidden", !searchToggle.checked);
+/** "{hotkey} opens a chat…", with the hotkey as a key cap */
+export function renderChatHint() {
+  if (!host) return;
+  const [before, after = ""] = t("ask.chatHint").split("{hotkey}");
+  const key = document.createElement("kbd");
+  key.className = "inline-kbd";
+  key.textContent = formatHotkey(host.settings().chatHotkey || "Ctrl+Alt");
+  chatHint.replaceChildren(before, key, after);
 }
 
 /** Puts the saved settings into the form (after they are loaded). */
 export function fillQuickAsk() {
   const quickAsk = host!.settings().quickAsk;
   enabledToggle.checked = Boolean(quickAsk.enabled);
+  chatToggle.checked = Boolean(quickAsk.chat);
   searchToggle.checked = Boolean(quickAsk.webSearch);
-  exaKey.value = quickAsk.exaApiKey || "";
-  showExaKey();
+  renderChatHint();
   picker?.fill();
 }
 
@@ -94,4 +87,5 @@ export function showQuickAsk() {
 /** Texts set from code, after a language switch. */
 export function translateQuickAsk() {
   picker?.translate();
+  renderChatHint();
 }

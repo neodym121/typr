@@ -1,9 +1,10 @@
 // Post-processing section: the switch, the provider and model (modelpicker.ts)
 // and the style presets. The settings live in the app's settings object; this
-// module edits them in place and asks the host to save.
+// module edits them in place and asks the host to save. The key comes from
+// the API keys section.
 
 import { t, type MessageKey } from "./i18n";
-import { createModelPicker, type ModelPicker, type Provider, type ProviderConfig, type ProviderSettings } from "./modelpicker";
+import { createModelPicker, type ModelPicker, type ProviderConfig, type ProviderSettings } from "./modelpicker";
 
 export type PostProviderSettings = ProviderSettings;
 
@@ -17,17 +18,11 @@ export interface PostProcessSettings extends ProviderConfig {
 type Preset = "chill" | "proper" | "custom";
 
 export interface PostProcessHost {
-  settings: () => { postProcess: PostProcessSettings; groqApiKey: string; polzaApiKey: string };
+  settings: () => { postProcess: PostProcessSettings };
   save: () => void;
 }
 
 const PRESETS: Preset[] = ["chill", "proper", "custom"];
-const KEY_HINTS: Record<Provider, MessageKey> = {
-  gemini: "post.keyHintGemini",
-  openrouter: "post.keyHintOpenrouter",
-  groq: "post.keyHintEngine",
-  polza: "post.keyHintEngine",
-};
 
 const enabledToggle = document.getElementById("post-enabled") as HTMLInputElement;
 const presetButtons = document.querySelectorAll<HTMLButtonElement>("#post-presets .segment");
@@ -48,13 +43,6 @@ function currentPreset(): Preset {
   return PRESETS.includes(preset) ? preset : "proper";
 }
 
-/** Groq and Polza can use the key from Engine */
-export function engineKey(all: { groqApiKey: string; polzaApiKey: string }, provider: Provider): string {
-  if (provider === "groq") return (all.groqApiKey || "").trim();
-  if (provider === "polza") return (all.polzaApiKey || "").trim();
-  return "";
-}
-
 function renderPreset() {
   const preset = currentPreset();
   presetButtons.forEach((b) => b.classList.toggle("active", b.dataset.preset === preset));
@@ -68,10 +56,7 @@ export function initPostProcess(appHost: PostProcessHost) {
   host = appHost;
   picker = createModelPicker({
     prefix: "post",
-    section: "post",
     config: settings,
-    fallbackKey: (provider) => engineKey(host!.settings(), provider),
-    keyHint: (provider) => KEY_HINTS[provider],
     save: () => host!.save(),
   });
 

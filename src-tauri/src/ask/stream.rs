@@ -103,7 +103,7 @@ pub trait Sink {
 pub async fn stream(request: &Request<'_>, sink: &mut impl Sink) -> Result<Round, String> {
     let label = provider_label(request.provider);
     if request.api_key.trim().is_empty() {
-        return Err(format!("{} API key for quick ask is not set", label));
+        return Err(format!("The {} API key isn't set (API keys section)", label));
     }
     if request.model.trim().is_empty() {
         return Err(format!("No {} model is chosen for quick ask", label));

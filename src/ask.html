@@ -12,12 +12,15 @@
   </head>
   <body>
     <!-- The whole transparent window; only the card takes clicks (ask.rs) -->
-    <div id="frame" data-state="dot" data-phase="thinking">
+    <div id="frame" data-state="dot" data-phase="thinking" data-mode="ask">
       <div id="card">
         <div class="strip"><span id="toast" class="toast" role="status"></span></div>
         <div id="scroll">
           <div id="content">
-            <div id="answers"></div>
+            <!-- Quick chat before the first question: how to ask -->
+            <p id="empty" class="empty hidden"></p>
+            <!-- The answers; in quick chat the questions too -->
+            <div id="messages"></div>
             <p id="notice" class="notice hidden" role="status"></p>
           </div>
         </div>

@@ -2,8 +2,10 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { fillApiKeys, initApiKeys, translateApiKeys, type ApiKeys } from "./apikeys";
 import { enhanceSelect, syncSelect } from "./dropdown";
-import { fillLanguageOptions, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
+import { fillHotkeys, initHotkeys, translateHotkeys } from "./hotkeys";
+import { fillLanguageOptions, formatHotkey, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
 import { fillLocal, initLocal, showLocal, showLocalComponents, translateLocal } from "./local";
 import { initSetup, openSetup, translateSetup } from "./setup";
 import {
@@ -13,20 +15,25 @@ import {
   translatePostProcess,
   type PostProcessSettings,
 } from "./postprocess";
-import { fillQuickAsk, initQuickAsk, showQuickAsk, translateQuickAsk, type QuickAskSettings } from "./quickask";
+import {
+  fillQuickAsk,
+  initQuickAsk,
+  renderChatHint,
+  showQuickAsk,
+  translateQuickAsk,
+  type QuickAskSettings,
+} from "./quickask";
 
 interface Settings {
   microphone: string;
   engine: string;
-  groqApiKey: string;
+  /** One key per service (src/apikeys.ts) */
+  apiKeys: ApiKeys;
   groqModel: string;
   openaiEndpoint: string;
   openaiModel: string;
-  openaiApiKey: string;
-  polzaApiKey: string;
   polzaModel: string;
   polzaProvider: string;
-  assemblyaiApiKey: string;
   assemblyaiModel: string;
   /** Language of the speech, e.g. "ru"; empty detects it */
   recognitionLanguage: string;
@@ -38,6 +45,8 @@ interface Settings {
   localUnload: string;
   recordingMode: string;
   hotkey: string;
+  /** Opens and closes quick chat (src/hotkeys.ts) */
+  chatHotkey: string;
   appendSpace: boolean;
   showIndicator: boolean;
   /** "top-right" | "bottom-center" (just above the taskbar) */
@@ -163,22 +172,15 @@ const groqSettings = document.getElementById("groq-settings")!;
 const openaiSettings = document.getElementById("openai-settings")!;
 const polzaSettings = document.getElementById("polza-settings")!;
 const assemblyaiSettings = document.getElementById("assemblyai-settings")!;
-const groqKey = document.getElementById("groq-key") as HTMLInputElement;
 const groqModel = document.getElementById("groq-model") as HTMLSelectElement;
 const openaiEndpoint = document.getElementById("openai-endpoint") as HTMLInputElement;
 const openaiModel = document.getElementById("openai-model") as HTMLInputElement;
-const openaiKey = document.getElementById("openai-key") as HTMLInputElement;
-const polzaKey = document.getElementById("polza-key") as HTMLInputElement;
 const polzaModel = document.getElementById("polza-model") as HTMLInputElement;
 const polzaProvider = document.getElementById("polza-provider") as HTMLInputElement;
-const assemblyaiKey = document.getElementById("assemblyai-key") as HTMLInputElement;
 const assemblyaiModel = document.getElementById("assemblyai-model") as HTMLSelectElement;
 const languageButtons = document.querySelectorAll<HTMLButtonElement>("#language-select .segment");
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
-const hotkeyBtn = document.getElementById("hotkey-btn")!;
-const hotkeyText = document.getElementById("hotkey-text")!;
-const hotkeyHint = document.getElementById("hotkey-hint")!;
 const appendSpaceToggle = document.getElementById("append-space-toggle") as HTMLInputElement;
 const devModeToggle = document.getElementById("dev-mode-toggle") as HTMLInputElement;
 const navDeveloper = document.getElementById("nav-developer")!;
@@ -250,8 +252,16 @@ const ASSEMBLYAI_MODELS = ["universal-3-5-pro", "universal-2"];
 fillLanguageOptions(recognitionLanguage);
 [micSelect, groqModel, assemblyaiModel, recognitionLanguage].forEach(enhanceSelect);
 
+initApiKeys({ settings: () => currentSettings, save: saveQuietly });
+// Quick ask names the chat hotkey too
+initHotkeys({ settings: () => currentSettings, save: () => saveSettings().then(renderChatHint) });
 initPostProcess({ settings: () => currentSettings, save: saveQuietly });
-initQuickAsk({ settings: () => currentSettings, save: saveQuietly });
+initQuickAsk({
+  settings: () => currentSettings,
+  save: saveQuietly,
+  chatChanged: fillHotkeys,
+  showSection,
+});
 initLocal({ settings: () => currentSettings, save: saveQuietly });
 initSetup({
   settings: () => currentSettings,
@@ -283,6 +293,8 @@ function applyLanguage(lang: Lang) {
   renderStatus();
   renderMicOptions();
   updateLogMeta();
+  translateApiKeys();
+  translateHotkeys();
   translatePostProcess();
   translateQuickAsk();
   translateLocal();
@@ -290,7 +302,6 @@ function applyLanguage(lang: Lang) {
   syncSelect(recognitionLanguage);
   renderUpdate();
   translateSetup();
-  if (currentSettings && !isRecordingHotkey) displayHotkey(currentSettings.hotkey);
 }
 
 /** The interface language picked in General or in the setup */
@@ -299,35 +310,6 @@ function chooseLanguage(lang: Lang) {
   currentSettings.language = lang;
   applyLanguage(lang);
   saveQuietly();
-}
-
-/** Mouse buttons that can be the whole hotkey, by MouseEvent.button (mouse.rs) */
-const MOUSE_HOTKEYS: Record<number, string> = { 1: "MouseMiddle", 3: "MouseBack", 4: "MouseForward" };
-const MOUSE_NAMES: Record<string, MessageKey> = {
-  MouseMiddle: "recording.mouseMiddle",
-  MouseBack: "recording.mouseBack",
-  MouseForward: "recording.mouseForward",
-};
-
-function formatKeyForDisplay(key: string): string {
-  if (MOUSE_NAMES[key]) return t(MOUSE_NAMES[key]);
-  if (key === "Control" || key === "Ctrl" || key === "CmdOrCtrl") return "Ctrl";
-  if (key === "Shift") return "Shift";
-  if (key === "Alt") return "Alt";
-  if (key === "Meta" || key === "Super") return "Win";
-  if (key === "Space") return "Space";
-  if (key.startsWith("Key")) return key.slice(3).toUpperCase();
-  if (key.startsWith("Digit")) return key.slice(5);
-  return key;
-}
-
-function formatHotkey(hotkeyStr: string): string {
-  return hotkeyStr.split("+").map(formatKeyForDisplay).join("+");
-}
-
-function displayHotkey(hotkeyStr: string) {
-  if (!hotkeyStr) return;
-  hotkeyText.textContent = formatHotkey(hotkeyStr);
 }
 
 // Mic dropdown: the system default first, then every input device
@@ -406,25 +388,22 @@ function fillForm() {
     applyLanguage(resolveLanguage(currentSettings.language || ""));
   }
 
+  // API keys
+  fillApiKeys();
+
   // Engine
   setEngine(currentSettings.engine || "groq");
-
-  // Groq key
-  groqKey.value = currentSettings.groqApiKey || "";
   setChoice(groqModel, GROQ_MODELS, currentSettings.groqModel);
 
   // OpenAI Compatible settings
   openaiEndpoint.value = currentSettings.openaiEndpoint || "https://api.openai.com/v1";
   openaiModel.value = currentSettings.openaiModel || "whisper-1";
-  openaiKey.value = currentSettings.openaiApiKey || "";
 
   // Polza settings
-  polzaKey.value = currentSettings.polzaApiKey || "";
   polzaModel.value = currentSettings.polzaModel || "openai/whisper-large-v3";
   polzaProvider.value = currentSettings.polzaProvider || "";
 
   // AssemblyAI settings
-  assemblyaiKey.value = currentSettings.assemblyaiApiKey || "";
   setChoice(assemblyaiModel, ASSEMBLYAI_MODELS, currentSettings.assemblyaiModel);
 
   // Speech
@@ -435,8 +414,8 @@ function fillForm() {
   // Recording mode
   setRecordingMode(currentSettings.recordingMode || "toggle");
 
-  // Hotkey
-  displayHotkey(currentSettings.hotkey);
+  // Hotkeys
+  fillHotkeys();
   appendSpaceToggle.checked = Boolean(currentSettings.appendSpace);
 
   // Post-processing
@@ -544,16 +523,12 @@ bind(indicatorToggle, () => {
   currentSettings.showIndicator = indicatorToggle.checked;
   showIndicatorPosition();
 });
-bind(groqKey, () => (currentSettings.groqApiKey = groqKey.value.trim()));
 bind(groqModel, () => (currentSettings.groqModel = groqModel.value));
 bind(appendSpaceToggle, () => (currentSettings.appendSpace = appendSpaceToggle.checked));
 bind(openaiEndpoint, () => (currentSettings.openaiEndpoint = openaiEndpoint.value.trim()));
 bind(openaiModel, () => (currentSettings.openaiModel = openaiModel.value.trim()));
-bind(openaiKey, () => (currentSettings.openaiApiKey = openaiKey.value.trim()));
-bind(polzaKey, () => (currentSettings.polzaApiKey = polzaKey.value.trim()));
 bind(polzaModel, () => (currentSettings.polzaModel = polzaModel.value.trim()));
 bind(polzaProvider, () => (currentSettings.polzaProvider = polzaProvider.value.trim()));
-bind(assemblyaiKey, () => (currentSettings.assemblyaiApiKey = assemblyaiKey.value.trim()));
 bind(assemblyaiModel, () => (currentSettings.assemblyaiModel = assemblyaiModel.value));
 bind(recognitionLanguage, () => (currentSettings.recognitionLanguage = recognitionLanguage.value));
 bind(fallbackToggle, () => (currentSettings.fallbackLocal = fallbackToggle.checked));
@@ -928,159 +903,9 @@ logClear.addEventListener("click", async () => {
 
 listen<LogEntry>("log-entry", (event) => addLogEntry(event.payload));
 
-// ── Hotkey Recording Logic ───────────────────────────
-
-let isRecordingHotkey = false;
-
-function startHotkeyRecording() {
-  if (isRecordingHotkey) return;
-  isRecordingHotkey = true;
-
-  const pressedKeys = new Set<string>();
-  const strokeKeys = new Set<string>();
-
-  hotkeyBtn.classList.add("recording");
-  hotkeyText.textContent = t("recording.pressKeys");
-  hotkeyHint.textContent = t("recording.pressKeysHint");
-
-  const getKeyIdentifier = (e: KeyboardEvent): string => {
-    if (e.key === "Control") return "Ctrl";
-    if (e.key === "Shift") return "Shift";
-    if (e.key === "Alt") return "Alt";
-    if (e.key === "Meta") return "Super";
-    if (e.code === "Space") return "Space";
-    if (e.code.startsWith("Key")) return e.code; // KeyA - KeyZ
-    if (e.code.startsWith("Digit")) return e.code; // Digit0 - Digit9
-    if (e.code.startsWith("F") && !isNaN(Number(e.code.slice(1)))) return e.code; // F1 - F12
-    if (e.code) return e.code;
-    return e.key;
-  };
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.key === "Escape" && pressedKeys.size === 0) {
-      cleanup();
-      return;
-    }
-
-    const keyName = getKeyIdentifier(e);
-    if (!keyName) return;
-
-    if (pressedKeys.size >= 3 && !pressedKeys.has(keyName)) {
-      return; // maximum 3 keys
-    }
-
-    pressedKeys.add(keyName);
-    strokeKeys.add(keyName);
-
-    const displayList = Array.from(strokeKeys).map(formatKeyForDisplay);
-    hotkeyText.textContent = displayList.join("+") + (strokeKeys.size < 2 ? " + ..." : "");
-  };
-
-  // Saves the recorded hotkey; a failed save brings the previous one back
-  const saveHotkey = (hotkey: string) => {
-    const previousHotkey = currentSettings.hotkey;
-    currentSettings.hotkey = hotkey;
-    hotkeyText.textContent = formatHotkey(hotkey);
-    window.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("keyup", onKeyUp, true);
-    window.removeEventListener("mousedown", onMouseDown, true);
-    window.removeEventListener("mouseup", onMouseUp, true);
-    saveSettings()
-      .then(() => {
-        cleanup();
-      })
-      .catch(() => {
-        currentSettings.hotkey = previousHotkey;
-        hotkeyText.textContent = t("recording.saveError");
-        setTimeout(() => cleanup(), 1200);
-      });
-  };
-
-  const onKeyUp = (e: KeyboardEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const count = strokeKeys.size;
-    if (count >= 2 && count <= 3) {
-      // Valid shortcut recorded!
-      const modOrder = ["Ctrl", "Alt", "Shift", "Super"];
-      const sorted = Array.from(strokeKeys).sort((a, b) => {
-        const aMod = modOrder.indexOf(a);
-        const bMod = modOrder.indexOf(b);
-        if (aMod !== -1 && bMod !== -1) return aMod - bMod;
-        if (aMod !== -1) return -1;
-        if (bMod !== -1) return 1;
-        return a.localeCompare(b);
-      });
-      saveHotkey(sorted.join("+"));
-      return;
-    }
-
-    const keyName = getKeyIdentifier(e);
-    pressedKeys.delete(keyName);
-
-    if (pressedKeys.size === 0) {
-      strokeKeys.clear();
-      hotkeyText.textContent = t("recording.needKeys");
-      setTimeout(() => {
-        if (isRecordingHotkey && pressedKeys.size === 0) {
-          hotkeyText.textContent = t("recording.pressKeys");
-        }
-      }, 1000);
-    }
-  };
-
-  // The middle or a side mouse button becomes the hotkey on its own;
-  // any other click outside the button cancels. The button is saved once it
-  // is released: the hook that takes it over must not catch this release
-  let pressedMouse = -1;
-  const onMouseDown = (e: MouseEvent) => {
-    if (MOUSE_HOTKEYS[e.button] && pressedKeys.size === 0) {
-      e.preventDefault();
-      e.stopPropagation();
-      pressedMouse = e.button;
-      return;
-    }
-    if (!hotkeyBtn.contains(e.target as Node)) {
-      cleanup();
-    }
-  };
-
-  const onMouseUp = (e: MouseEvent) => {
-    if (e.button !== pressedMouse) return;
-    e.preventDefault();
-    e.stopPropagation();
-    pressedMouse = -1;
-    saveHotkey(MOUSE_HOTKEYS[e.button]);
-  };
-
-  const cleanup = () => {
-    isRecordingHotkey = false;
-    hotkeyBtn.classList.remove("recording");
-    window.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("keyup", onKeyUp, true);
-    window.removeEventListener("mousedown", onMouseDown, true);
-    window.removeEventListener("mouseup", onMouseUp, true);
-    hotkeyHint.textContent = t("recording.hotkeyHint");
-    displayHotkey(currentSettings.hotkey);
-  };
-
-  window.addEventListener("keydown", onKeyDown, true);
-  window.addEventListener("keyup", onKeyUp, true);
-  window.addEventListener("mousedown", onMouseDown, true);
-  window.addEventListener("mouseup", onMouseUp, true);
-}
-
 // The side mouse buttons never navigate the settings page back or forward
 window.addEventListener("mouseup", (e) => {
   if (e.button === 3 || e.button === 4) e.preventDefault();
-});
-
-hotkeyBtn.addEventListener("click", () => {
-  startHotkeyRecording();
 });
 
 // ── Recording status ─────────────────────────────────

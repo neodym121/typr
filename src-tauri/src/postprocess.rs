@@ -175,9 +175,9 @@ pub async fn process(settings: &Settings, text: &str) -> Result<String, String> 
     let provider = config.provider;
     let label = provider_label(provider);
 
-    let api_key = settings.post_process_key(provider);
+    let api_key = settings.api_keys.model(provider);
     if api_key.is_empty() {
-        return Err(format!("{} API key for post-processing is not set", label));
+        return Err(format!("The {} API key isn't set (API keys section)", label));
     }
     let model = config.provider_settings(provider).model.trim();
     if model.is_empty() {
@@ -210,14 +210,14 @@ pub async fn process(settings: &Settings, text: &str) -> Result<String, String> 
         Some(base) => {
             let request = ChatRequest {
                 base,
-                api_key: &api_key,
+                api_key,
                 model,
                 sub_provider,
                 label,
             };
             chat_completion(client, &request, &system, &user).await?
         }
-        None => gemini_generate(client, &api_key, model, &system, &user).await?,
+        None => gemini_generate(client, api_key, model, &system, &user).await?,
     };
 
     let edited = clean_reply(&reply);

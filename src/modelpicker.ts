@@ -1,15 +1,16 @@
-// Provider, API key and model list with search, for a section that runs a
-// language model (Post-processing, Quick ask). The section's settings hold
-// the provider and { apiKey, model } per provider; the picker edits them in
-// place and asks the host to save. Its elements are found by id prefix:
-// #<prefix>-provider, #<prefix>-key, #<prefix>-model-list and so on.
+// Provider and model list with search, for a section that runs a language
+// model (Post-processing, Quick ask). The section's settings hold the
+// provider and the model per provider; the picker edits them in place and
+// asks the host to save. The key comes from the API keys section
+// (apikeys.ts). Its elements are found by id prefix: #<prefix>-provider,
+// #<prefix>-model-list and so on.
 
 import { invoke } from "@tauri-apps/api/core";
+import { keyOf } from "./apikeys";
 import { enhanceSelect, syncSelect } from "./dropdown";
-import { t, type MessageKey } from "./i18n";
+import { t } from "./i18n";
 
 export interface ProviderSettings {
-  apiKey: string;
   model: string;
   /** Polza only: sub-provider that serves the model, empty for automatic */
   providerId?: string;
@@ -36,12 +37,7 @@ interface ModelInfo {
 export interface PickerOptions {
   /** Prefix of the element ids */
   prefix: string;
-  /** Tells the backend which key an empty field falls back to */
-  section: "post" | "ask";
   config: () => ProviderConfig;
-  /** The key used while the field is empty ("" if there is none) */
-  fallbackKey: (provider: Provider) => string;
-  keyHint: (provider: Provider) => MessageKey;
   save: () => void;
 }
 
@@ -58,8 +54,6 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
   const element = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(`${options.prefix}-${id}`) as T;
   const providerSelect = element<HTMLSelectElement>("provider");
-  const keyInput = element<HTMLInputElement>("key");
-  const keyHint = element("key-hint");
   const polzaProviderRow = element("polza-provider-row");
   const polzaProviderInput = element<HTMLInputElement>("polza-provider");
   const modelCurrent = element("model-current");
@@ -73,7 +67,6 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
   /** What the model area shows, per provider */
   const views = new Map<Provider, { kind: "needKey" | "loading" | "error" | "ready"; error?: string }>();
   let requestId = 0;
-  let keyTimer: number | undefined;
 
   function config(): ProviderConfig {
     return options.config();
@@ -88,10 +81,8 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
     const provider = currentProvider();
     providerSelect.value = provider;
     syncSelect(providerSelect);
-    keyInput.value = config()[provider].apiKey || "";
     polzaProviderRow.classList.toggle("hidden", provider !== "polza");
     polzaProviderInput.value = config().polza.providerId || "";
-    keyHint.textContent = t(options.keyHint(provider));
     searchInput.value = "";
     renderModels(true);
   }
@@ -162,16 +153,14 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
 
   async function loadModels(force = false) {
     const provider = currentProvider();
-    const typed = keyInput.value.trim();
-    const fallback = typed ? "" : options.fallbackKey(provider);
-    if (!typed && !fallback) {
+    const key = keyOf(provider);
+    if (!key) {
       views.set(provider, { kind: "needKey" });
       renderModels();
       return;
     }
 
-    const cacheKey = typed || `fallback:${fallback}`;
-    if (!force && loaded.get(provider)?.key === cacheKey && views.get(provider)?.kind === "ready") {
+    if (!force && loaded.get(provider)?.key === key && views.get(provider)?.kind === "ready") {
       renderModels();
       return;
     }
@@ -180,14 +169,10 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
     views.set(provider, { kind: "loading" });
     renderModels();
     try {
-      // An empty key makes the backend use the key the section falls back to
-      const models = await invoke<ModelInfo[]>("list_postprocess_models", {
-        provider,
-        apiKey: typed,
-        section: options.section,
-      });
+      // The key as it is in the form: it may not be saved yet
+      const models = await invoke<ModelInfo[]>("list_postprocess_models", { provider, apiKey: key });
       if (id !== requestId) return;
-      loaded.set(provider, { key: cacheKey, models });
+      loaded.set(provider, { key, models });
       views.set(provider, { kind: "ready" });
     } catch (err) {
       if (id !== requestId) return;
@@ -215,16 +200,6 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
     void loadModels();
   });
 
-  keyInput.addEventListener("input", () => {
-    config()[currentProvider()].apiKey = keyInput.value.trim();
-    window.clearTimeout(keyTimer);
-    keyTimer = window.setTimeout(() => void loadModels(), 700);
-  });
-  keyInput.addEventListener("change", () => {
-    config()[currentProvider()].apiKey = keyInput.value.trim();
-    options.save();
-  });
-
   polzaProviderInput.addEventListener("change", () => {
     config().polza.providerId = polzaProviderInput.value.trim();
     options.save();
@@ -237,7 +212,6 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
     fill: renderProvider,
     show: () => void loadModels(),
     translate() {
-      keyHint.textContent = t(options.keyHint(currentProvider()));
       renderModels();
     },
   };

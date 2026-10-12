@@ -28,7 +28,7 @@ pub async fn transcribe_polza(
 ) -> Result<String, String> {
     let api_key = api_key.trim();
     if api_key.is_empty() {
-        return Err("Polza API key not set. Please enter your API key in settings.".to_string());
+        return Err("Polza API key not set. Add it in the API keys section.".to_string());
     }
 
     let data_url = format!(

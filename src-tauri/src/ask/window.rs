@@ -10,8 +10,8 @@
 //! * It never takes the focus (`WS_EX_NOACTIVATE`): the app the question is
 //!   about stays in front and keeps its selection and caret, and its buttons
 //!   still work without activating it.
-//! * It exists only while an answer is on screen; closing it destroys the
-//!   WebView.
+//! * It exists only while an answer (or quick chat) is on screen; closing
+//!   it destroys the WebView.
 
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -19,8 +19,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
+use super::Mode;
 use crate::overlay::{self, Placement, ScreenRect};
-use crate::settings::IndicatorPosition;
+use crate::settings::{IndicatorPosition, RecordingMode, Settings};
 
 pub const LABEL: &str = "ask";
 
@@ -103,6 +104,28 @@ impl Geometry {
     }
 }
 
+/// What the page is told before it loads, besides the layout.
+pub struct Page {
+    position: IndicatorPosition,
+    language: &'static str,
+    mode: Mode,
+    /// The dictation hotkey, for the empty chat to name
+    hotkey: String,
+    push_to_talk: bool,
+}
+
+impl Page {
+    pub fn new(settings: &Settings, mode: Mode) -> Self {
+        Self {
+            position: settings.indicator_position,
+            language: crate::i18n::resolve(&settings.language),
+            mode,
+            hotkey: settings.hotkey.clone(),
+            push_to_talk: settings.recording_mode == RecordingMode::PushToTalk,
+        }
+    }
+}
+
 /// The primary screen's work area and scale, as the indicator reads them.
 fn screen(app: &AppHandle) -> (ScreenRect, f64) {
     match app.primary_monitor().ok().flatten() {
@@ -141,15 +164,19 @@ static SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// Creates the window, hidden. Blocks until it exists, so call it off the
 /// async threads.
-pub fn open(app: &AppHandle, position: IndicatorPosition, language: &str) -> Result<(), String> {
+pub fn open(app: &AppHandle, page: &Page) -> Result<(), String> {
     if app.get_webview_window(LABEL).is_some() {
         return Ok(());
     }
+    let position = page.position;
     let (work_area, scale) = screen(app);
     let geometry = Geometry::new(position, work_area, scale);
     let layout = json!({
         "position": position.id(),
-        "language": language,
+        "language": page.language,
+        "mode": page.mode.id(),
+        "hotkey": page.hotkey,
+        "pushToTalk": page.push_to_talk,
         "orbX": geometry.orb_x,
         "orbY": geometry.orb_y,
         "orbInset": ORB_INSET,
@@ -181,7 +208,8 @@ pub fn open(app: &AppHandle, position: IndicatorPosition, language: &str) -> Res
     *FRAME.lock().unwrap() = Some(geometry);
     *CARD.lock().unwrap() = None;
     log::info!(
-        "Quick ask window at ({}, {}), {}×{} px ({})",
+        "Quick {} window at ({}, {}), {}×{} px ({})",
+        page.mode.id(),
         geometry.x,
         geometry.y,
         geometry.width,

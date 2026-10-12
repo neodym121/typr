@@ -66,7 +66,7 @@ pub struct FallbackNotice {
 
 /// Opens the connections a dictation will need while the user is still
 /// speaking: the cloud engine and, if they are on, post-processing and quick
-/// ask.
+/// ask (or the quick chat that is open).
 pub fn warm_up_connections(settings: &Settings) {
     let engine_url = match settings.engine {
         Engine::Local => None,
@@ -80,8 +80,9 @@ pub fn warm_up_connections(settings: &Settings) {
         .enabled
         .then(|| postprocess::host(settings.post_process.provider).to_string());
     let ask = &settings.quick_ask;
-    let ask_url = ask.enabled.then(|| postprocess::host(ask.provider).to_string());
-    let search_url = (ask.enabled && ask.web_search && !ask.exa_api_key.trim().is_empty())
+    let asking = ask.enabled || ask::is_open();
+    let ask_url = asking.then(|| postprocess::host(ask.provider).to_string());
+    let search_url = (asking && ask.web_search && !settings.api_keys.exa().is_empty())
         .then(|| ask::search::HOST.to_string());
     // The same server for two of them: one connection serves both requests
     let mut urls: Vec<String> = engine_url
@@ -345,14 +346,14 @@ async fn transcribe(settings: &Settings, audio: &EncodedAudio) -> Result<String,
     let language = settings.language_hint();
     match settings.engine {
         Engine::Groq => {
-            transcribe_groq::transcribe_groq(&settings.groq_api_key, &settings.groq_model, language, audio)
+            transcribe_groq::transcribe_groq(&settings.api_keys.groq, &settings.groq_model, language, audio)
                 .await
         }
         Engine::OpenAi => {
             transcribe_openai::transcribe_openai(
                 &settings.openai_endpoint,
                 &settings.openai_model,
-                &settings.openai_api_key,
+                &settings.api_keys.openai,
                 language,
                 audio,
             )
@@ -360,7 +361,7 @@ async fn transcribe(settings: &Settings, audio: &EncodedAudio) -> Result<String,
         }
         Engine::Polza => {
             transcribe_polza::transcribe_polza(
-                &settings.polza_api_key,
+                &settings.api_keys.polza,
                 &settings.polza_model,
                 &settings.polza_provider,
                 language,
@@ -370,7 +371,7 @@ async fn transcribe(settings: &Settings, audio: &EncodedAudio) -> Result<String,
         }
         Engine::AssemblyAi => {
             transcribe_assemblyai::transcribe_assemblyai(
-                &settings.assemblyai_api_key,
+                &settings.api_keys.assemblyai,
                 &settings.assemblyai_model,
                 language,
                 audio,

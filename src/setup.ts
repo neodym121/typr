@@ -5,6 +5,7 @@
 // object in place and saves as it goes; skipping it counts as done.
 
 import { invoke } from "@tauri-apps/api/core";
+import type { ApiKeys } from "./apikeys";
 import { enhanceSelect } from "./dropdown";
 import { fillLanguageOptions, getLanguage, t, type Lang, type MessageKey } from "./i18n";
 import {
@@ -22,14 +23,12 @@ import {
 export interface SetupSettings {
   engine: string;
   recognitionLanguage: string;
-  groqApiKey: string;
+  /** The engine's key goes with the others (API keys section) */
+  apiKeys: ApiKeys;
   groqModel: string;
-  polzaApiKey: string;
-  assemblyaiApiKey: string;
   assemblyaiModel: string;
   openaiEndpoint: string;
   openaiModel: string;
-  openaiApiKey: string;
   localModel: string;
   recordingMode: string;
   checkUpdates: boolean;
@@ -351,13 +350,9 @@ function renderConfigure(): HTMLElement[] {
       );
     }
     const keyHolder = el("div", "setup-key");
-    const keyValue = { groq: s.groqApiKey, polza: s.polzaApiKey, assemblyai: s.assemblyaiApiKey, openai: s.openaiApiKey }[engine];
     keyHolder.append(
-      textInput(keyValue, engine === "groq" ? "gsk_..." : engine === "openai" ? "sk-..." : t("engine.apiKey"), true, (v) => {
-        if (engine === "groq") s.groqApiKey = v;
-        else if (engine === "polza") s.polzaApiKey = v;
-        else if (engine === "assemblyai") s.assemblyaiApiKey = v;
-        else s.openaiApiKey = v;
+      textInput(s.apiKeys[engine] || "", engine === "groq" ? "gsk_..." : engine === "openai" ? "sk-..." : t("engine.apiKey"), true, (v) => {
+        s.apiKeys[engine] = v;
       }),
     );
     const page = KEY_PAGES[engine];

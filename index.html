@@ -33,18 +33,25 @@
             </svg>
             <span data-i18n="nav.general">General</span>
           </button>
+          <button type="button" class="nav-item" data-section="keys">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="5.25" cy="10.75" r="3" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M7.4 8.6l5.6-5.6M10.9 5.1l1.6 1.6M9.3 6.7l1.1 1.1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            <span data-i18n="nav.keys">API keys</span>
+          </button>
           <button type="button" class="nav-item" data-section="engine">
             <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M2.5 8h3l1.5-3 2 6 1.5-3h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span data-i18n="nav.engine">Engine</span>
           </button>
-          <button type="button" class="nav-item" data-section="recording">
+          <button type="button" class="nav-item" data-section="hotkeys">
             <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="6" y="2.5" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/>
-              <path d="M4 8.5a4 4 0 008 0M8 12.5v1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              <rect x="1.75" y="4" width="12.5" height="8" rx="1.75" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M4.5 6.75h.01M7 6.75h.01M9.5 6.75h.01M12 6.75h.01M5.25 9.4h5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
             </svg>
-            <span data-i18n="nav.recording">Recording</span>
+            <span data-i18n="nav.hotkeys">Hotkeys</span>
           </button>
           <button type="button" class="nav-item" data-section="postprocess">
             <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -185,6 +192,18 @@
           </div>
         </section>
 
+        <section id="section-keys" class="content-section">
+          <header class="section-header">
+            <h1 class="section-title" data-i18n="keys.title">API keys</h1>
+            <p class="section-desc" data-i18n="keys.desc">One key per service for the whole app. The other sections only pick the service and the model</p>
+          </header>
+          <!-- Rows built by src/apikeys.ts -->
+          <div class="card" id="keys-services"></div>
+          <h2 class="group-title" data-i18n="keys.searchTitle">Web search</h2>
+          <div class="card" id="keys-search"></div>
+          <p class="keys-note" data-i18n="keys.note">The keys are kept on this computer only</p>
+        </section>
+
         <section id="section-engine" class="content-section">
           <header class="section-header">
             <h1 class="section-title" data-i18n="engine.title">Engine</h1>
@@ -248,15 +267,6 @@
             <div id="groq-settings">
               <div class="setting-row">
                 <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                  <span class="label-hint" data-i18n="engine.groqKeyHint">Get your key from console.groq.com</span>
-                </div>
-                <div class="setting-control">
-                  <input type="password" id="groq-key" placeholder="gsk_..." />
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-label">
                   <span class="label-text" data-i18n="engine.model">Model</span>
                   <span class="label-hint" data-i18n="engine.modelHint">Speech recognition model</span>
                 </div>
@@ -289,28 +299,10 @@
                   <input type="text" id="openai-model" placeholder="whisper-1" />
                 </div>
               </div>
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                  <span class="label-hint" data-i18n="engine.openaiKeyHint">API key (leave empty if not required)</span>
-                </div>
-                <div class="setting-control">
-                  <input type="password" id="openai-key" placeholder="sk-..." />
-                </div>
-              </div>
             </div>
 
             <!-- Polza Settings -->
             <div id="polza-settings" class="hidden">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                  <span class="label-hint" data-i18n="engine.polzaKeyHint">Get your key from polza.ai/dashboard</span>
-                </div>
-                <div class="setting-control">
-                  <input type="password" id="polza-key" placeholder="pk_..." />
-                </div>
-              </div>
               <div class="setting-row">
                 <div class="setting-label">
                   <span class="label-text" data-i18n="engine.modelId">Model ID</span>
@@ -333,15 +325,6 @@
 
             <!-- AssemblyAI Settings -->
             <div id="assemblyai-settings" class="hidden">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                  <span class="label-hint" data-i18n="engine.assemblyaiKeyHint">Get your key from assemblyai.com/dashboard</span>
-                </div>
-                <div class="setting-control">
-                  <input type="password" id="assemblyai-key" placeholder="API key" data-i18n-placeholder="engine.apiKey" />
-                </div>
-              </div>
               <div class="setting-row">
                 <div class="setting-label">
                   <span class="label-text" data-i18n="engine.model">Model</span>
@@ -383,12 +366,25 @@
           </div>
         </section>
 
-        <section id="section-recording" class="content-section">
+        <section id="section-hotkeys" class="content-section">
           <header class="section-header">
-            <h1 class="section-title" data-i18n="recording.title">Recording</h1>
-            <p class="section-desc" data-i18n="recording.desc">How you start and stop a dictation</p>
+            <h1 class="section-title" data-i18n="hotkeys.title">Hotkeys</h1>
+            <p class="section-desc" data-i18n="hotkeys.desc">Keys for dictation and for the chat with the AI</p>
           </header>
+          <!-- Hotkeys recorded by src/hotkeys.ts -->
+          <h2 class="group-title" data-i18n="hotkeys.dictation">Dictation</h2>
           <div class="card">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
+                <span class="label-hint" id="hotkey-hint"></span>
+              </div>
+              <div class="setting-control">
+                <button type="button" id="hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                  <kbd id="hotkey-text">Ctrl+Shift+Space</kbd>
+                </button>
+              </div>
+            </div>
             <div class="setting-row">
               <div class="setting-label">
                 <span class="label-text" data-i18n="recording.mode">Recording Mode</span>
@@ -401,14 +397,18 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <h2 class="group-title" data-i18n="hotkeys.chat">Quick chat</h2>
+          <div class="card">
             <div class="setting-row">
               <div class="setting-label">
                 <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                <span class="label-hint" id="hotkey-hint" data-i18n="recording.hotkeyHint">Global shortcut. Works only when no other keys are held</span>
+                <span class="label-hint" id="chat-hotkey-hint"></span>
               </div>
               <div class="setting-control">
-                <button type="button" id="hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
-                  <kbd id="hotkey-text">Ctrl+Shift+Space</kbd>
+                <button type="button" id="chat-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                  <kbd id="chat-hotkey-text">Ctrl+Alt</kbd>
                 </button>
               </div>
             </div>
@@ -450,15 +450,6 @@
           </div>
 
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                <span class="label-hint" id="post-key-hint"></span>
-              </div>
-              <div class="setting-control">
-                <input type="password" id="post-key" placeholder="API key" data-i18n-placeholder="engine.apiKey" />
-              </div>
-            </div>
             <div class="setting-row hidden" id="post-polza-provider-row">
               <div class="setting-label">
                 <span class="label-text" data-i18n="engine.providerId">Provider ID</span>
@@ -539,6 +530,18 @@
             </div>
             <div class="setting-row">
               <div class="setting-label">
+                <label class="label-text" for="ask-chat" data-i18n="ask.chat">Quick chat</label>
+                <span class="label-hint" id="ask-chat-hint"></span>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="ask-chat" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
                 <span class="label-text" data-i18n="post.provider">Provider</span>
                 <span class="label-hint" data-i18n="post.providerHint">Service that runs the model</span>
               </div>
@@ -554,15 +557,6 @@
           </div>
 
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.apiKey">API Key</span>
-                <span class="label-hint" id="ask-key-hint"></span>
-              </div>
-              <div class="setting-control">
-                <input type="password" id="ask-key" placeholder="API key" data-i18n-placeholder="engine.apiKey" />
-              </div>
-            </div>
             <div class="setting-row hidden" id="ask-polza-provider-row">
               <div class="setting-label">
                 <span class="label-text" data-i18n="engine.providerId">Provider ID</span>
@@ -600,16 +594,6 @@
                   <input type="checkbox" id="ask-search" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
-              </div>
-            </div>
-            <!-- Shown while search is on -->
-            <div class="setting-row" id="ask-exa-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="ask.exaKey">Exa API key</span>
-                <span class="label-hint" data-i18n="ask.exaKeyHint">Get your key at dashboard.exa.ai</span>
-              </div>
-              <div class="setting-control">
-                <input type="password" id="ask-exa-key" placeholder="API key" data-i18n-placeholder="engine.apiKey" spellcheck="false" />
               </div>
             </div>
           </div>

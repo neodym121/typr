@@ -11,12 +11,17 @@
 // user speaks. The cross folds the card back into the dot, which slides
 // behind the edge of the screen, and the window closes.
 //
+// Quick chat (mode "chat") is the same window opened empty by its hotkey:
+// the dot slides in from behind the edge and unfolds into a card that says
+// how to ask. The questions are shown too, on the left like the answers;
+// they can't be copied. The chat hotkey folds it away ("ask-fold").
+//
 // Opened in a plain browser (npm run dev, then /src/ask.html, ?bottom for the
-// bottom position), it plays a demo with sample answers.
+// bottom position, ?chat for quick chat), it plays a demo with sample answers.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { setLanguage, t } from "./i18n";
+import { formatHotkey, setLanguage, t } from "./i18n";
 import { renderMarkdown } from "./markdown";
 
 /** Set by the backend before the page loads (ask/window.rs) */
@@ -24,6 +29,11 @@ interface Layout {
   /** "top-right" | "bottom-center" */
   position: string;
   language: string;
+  /** "ask": only the answers; "chat": quick chat, the questions too */
+  mode: string;
+  /** The dictation hotkey, which asks in the chat */
+  hotkey: string;
+  pushToTalk: boolean;
   /** The indicator's centre in the window, logical pixels */
   orbX: number;
   orbY: number;
@@ -60,20 +70,31 @@ function demoLayout(): Layout {
   const width = innerWidth || 800;
   const height = innerHeight || 600;
   const language = navigator.language.startsWith("ru") ? "ru" : "en";
-  const common = { language, orbInset: 18, cardWidth: 440, maxHeight: Math.min(560, height * 0.7) };
-  return new URLSearchParams(location.search).has("bottom")
+  const params = new URLSearchParams(location.search);
+  const common = {
+    language,
+    mode: params.has("chat") ? "chat" : "ask",
+    hotkey: "Ctrl+Shift+Space",
+    pushToTalk: false,
+    orbInset: 18,
+    cardWidth: 440,
+    maxHeight: Math.min(560, height * 0.7),
+  };
+  return params.has("bottom")
     ? { ...common, position: "bottom-center", orbX: width / 2, orbY: height - 35 }
     : { ...common, position: "top-right", orbX: width - 35, orbY: 35 };
 }
 
 const layout: Layout = (window as unknown as { __TYPR_ASK__?: Layout }).__TYPR_ASK__ ?? demoLayout();
 const bottom = layout.position === "bottom-center";
+const chat = layout.mode === "chat";
 
 const frame = document.getElementById("frame")!;
 const card = document.getElementById("card")!;
 const scroll = document.getElementById("scroll")!;
 const content = document.getElementById("content")!;
-const answersEl = document.getElementById("answers")!;
+const messagesEl = document.getElementById("messages")!;
+const emptyEl = document.getElementById("empty")!;
 const notice = document.getElementById("notice")!;
 const closeButton = document.getElementById("close")!;
 const toast = document.getElementById("toast")!;
@@ -91,6 +112,7 @@ const TOAST_MS = 1400;
 
 document.body.classList.toggle("bottom", bottom);
 document.body.classList.toggle("demo", demo);
+frame.dataset.mode = chat ? "chat" : "ask";
 setLanguage(layout.language === "ru" ? "ru" : "en");
 closeButton.setAttribute("aria-label", t("askWindow.close"));
 
@@ -108,11 +130,20 @@ let phase: Phase = "thinking";
 let height = 0;
 /** Keep the newest text in view unless the user scrolled up */
 let stick = true;
-/** A new window waits for its first answer to be announced */
-let awaitingFirst = true;
+/** A quick ask window waits for its first answer to be announced */
+let awaitingFirst = !chat;
 let noticeTimer: number | undefined;
 let toastTimer: number | undefined;
 const answers = new Map<number, Answer>();
+/** Quick chat: the questions, by the id of their answer */
+const questions = new Map<number, HTMLElement>();
+
+// Quick chat opens with nothing to do yet; its dot waits behind the edge of
+// the screen, where the indicator would come from
+if (chat) {
+  setPhase("idle");
+  frame.classList.add("gone");
+}
 
 function call(command: string, args?: Record<string, unknown>) {
   if (demo) return;
@@ -200,16 +231,30 @@ card.addEventListener("transitionend", (event) => {
  */
 function reveal() {
   if (state !== "dot") return;
-  // Should frames never come (timers still run), the card unfolds anyway
-  const fallback = window.setTimeout(() => {
+  let started = false;
+  const go = () => {
+    if (started) return;
+    started = true;
     call("ask_shown");
-    unfold();
-  }, 800);
+    if (chat) arrive();
+    else requestAnimationFrame(unfold);
+  };
+  // Should frames never come (timers still run), the card unfolds anyway
+  const fallback = window.setTimeout(go, 800);
   whenPainting(() => {
     window.clearTimeout(fallback);
-    call("ask_shown");
-    requestAnimationFrame(unfold);
+    go();
   });
+}
+
+/** Quick chat: the dot slides in from behind the edge, then unfolds */
+function arrive() {
+  frame.classList.add("arriving");
+  frame.classList.remove("gone");
+  window.setTimeout(() => {
+    frame.classList.remove("arriving");
+    unfold();
+  }, 300);
 }
 
 /** Runs `then` once the page is visible and has drawn two frames */
@@ -299,7 +344,7 @@ function answerFor(id: number): Answer {
   body.className = "answer-body";
 
   el.append(status, body);
-  answersEl.append(el);
+  messagesEl.append(el);
 
   const answer: Answer = { el, status, body, text: "", pending: true, renderQueued: false };
   el.addEventListener("click", (event) => {
@@ -349,6 +394,39 @@ function onSearch(id: number) {
   answer.status.replaceChildren(label);
   queueFit();
   afterAnswer("thinking");
+}
+
+/** Quick chat: a question, with the start of the text it is about */
+function onQuestion(id: number, text: string, selection: string | null) {
+  if (!chat || questions.has(id)) return;
+  const el = document.createElement("div");
+  el.className = "question";
+  if (selection) {
+    const quote = document.createElement("div");
+    quote.className = "question-quote";
+    quote.textContent = selection;
+    el.append(quote);
+  }
+  const body = document.createElement("div");
+  body.className = "question-text";
+  body.textContent = text;
+  el.append(body);
+  messagesEl.append(el);
+  questions.set(id, el);
+  renderEmpty();
+  stick = true;
+  queueFit();
+}
+
+/** Quick chat before the first question: which hotkey asks */
+function renderEmpty() {
+  const empty = chat && messagesEl.childElementCount === 0;
+  emptyEl.classList.toggle("hidden", !empty);
+  if (!empty || emptyEl.childElementCount > 0) return;
+  const [before, after = ""] = t(layout.pushToTalk ? "askWindow.chatEmptyPtt" : "askWindow.chatEmpty").split("{hotkey}");
+  const key = document.createElement("kbd");
+  key.textContent = formatHotkey(layout.hotkey || "");
+  emptyEl.replaceChildren(before, key, after);
 }
 
 function queueRender(answer: Answer) {
@@ -447,6 +525,10 @@ function onError(id: number, message: string) {
 function onCancel(id: number) {
   answers.get(id)?.el.remove();
   answers.delete(id);
+  // Nothing was answered: the question goes too, it has left the context
+  questions.get(id)?.remove();
+  questions.delete(id);
+  renderEmpty();
   queueFit();
 }
 
@@ -477,11 +559,17 @@ window.addEventListener("mouseup", (event) => {
   if (event.button === 3 || event.button === 4) event.preventDefault();
 });
 
+renderEmpty();
+
 if (demo) {
   void runDemo();
 } else {
   void Promise.all([
     listen("ask-reveal", () => reveal()),
+    listen("ask-fold", () => close()),
+    listen<{ id: number; text: string; selection: string | null }>("ask-question", (e) =>
+      onQuestion(e.payload.id, e.payload.text, e.payload.selection),
+    ),
     listen<{ id: number }>("ask-answer", (e) => onAnswer(e.payload.id)),
     listen<{ id: number; text: string }>("ask-delta", (e) => onDelta(e.payload.id, e.payload.text)),
     listen<{ id: number; text: string; stopped: boolean }>("ask-done", (e) =>
@@ -521,6 +609,43 @@ async function runDemo() {
     }
     onDone(id, text, false);
   };
+
+  if (chat) {
+    // A question as the dictation hotkey asks it
+    const ask = async (id: number, question: string, selection: string | null) => {
+      onRecordingState("Recording");
+      await sleep(1600);
+      onRecordingState("Transcribing");
+      await sleep(500);
+      onQuestion(id, question, selection);
+      onAnswer(id);
+      onRecordingState("Ready");
+      await sleep(700);
+    };
+    await sleep(700);
+    reveal();
+    await sleep(1800);
+    await ask(1, ru ? "Чем let отличается от const в JavaScript?" : "How is let different from const in JavaScript?", null);
+    await stream(
+      1,
+      ru
+        ? "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение."
+        : "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.",
+    );
+    await sleep(1500);
+    await ask(
+      2,
+      ru ? "Переведи на английский" : "Translate this into Russian",
+      ru ? "Встреча переносится на четверг, 15:00. Пожалуйста, подтвердите участие." : "The meeting moves to Thursday at 3 pm. Please confirm you can make it.",
+    );
+    await stream(
+      2,
+      ru
+        ? "The meeting has been moved to Thursday at 3 pm. Please confirm your attendance."
+        : "Встреча переносится на четверг, 15:00. Пожалуйста, подтвердите, что сможете прийти.",
+    );
+    return;
+  }
 
   await sleep(900);
   reveal();
