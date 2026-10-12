@@ -59,3 +59,6 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
 ] }
+# Quick ask's selection capture: the clipboard change counter and the
+# formats code editors mark a copied line with (also used by arboard)
+clipboard-win = "5"

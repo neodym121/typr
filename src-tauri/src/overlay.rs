@@ -110,6 +110,19 @@ impl Placement {
         };
         hidden + (in_place - hidden) * shown
     }
+
+    /// Centre of the disc in place, in physical screen pixels. The quick ask
+    /// window grows out of exactly this point.
+    pub fn dot_center(&self) -> (f64, f64) {
+        let s = self.scale;
+        let half = INDICATOR_SIZE / 2.0 * s;
+        let inset = (OFFSET_FROM_EDGE + INDICATOR_SIZE / 2.0) * s;
+        let y = match self.position {
+            IndicatorPosition::TopRight => self.y as f64 + inset,
+            IndicatorPosition::BottomCenter => (self.y + self.height) as f64 - inset,
+        };
+        (self.x as f64 + half, y)
+    }
 }
 
 pub fn create(app: &AppHandle, position: IndicatorPosition) {
@@ -164,6 +177,18 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
     }
     #[cfg(not(target_os = "windows"))]
     webview::set_enabled(app, enabled);
+}
+
+/// Hides the indicator at once and keeps it away while the quick ask window
+/// is open: the window took the dot's place, and its own dot listens.
+pub fn set_suppressed(app: &AppHandle, suppressed: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        native::set_suppressed(suppressed);
+    }
+    #[cfg(not(target_os = "windows"))]
+    webview::set_suppressed(app, suppressed);
 }
 
 // ── Rendering ───────────────────────────────────────────
@@ -373,6 +398,7 @@ mod native {
     static WINDOW: AtomicIsize = AtomicIsize::new(0);
     static STATE: AtomicU8 = AtomicU8::new(STATE_IDLE);
     static ENABLED: AtomicBool = AtomicBool::new(true);
+    static SUPPRESSED: AtomicBool = AtomicBool::new(false);
     static ERROR_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
     static POSITION: Mutex<IndicatorPosition> = Mutex::new(IndicatorPosition::TopRight);
 
@@ -420,6 +446,11 @@ mod native {
 
     pub fn set_enabled(enabled: bool) {
         ENABLED.store(enabled, Ordering::SeqCst);
+        request_refresh();
+    }
+
+    pub fn set_suppressed(suppressed: bool) {
+        SUPPRESSED.store(suppressed, Ordering::SeqCst);
         request_refresh();
     }
 
@@ -605,7 +636,8 @@ mod native {
             }
         });
 
-        let enabled = ENABLED.load(Ordering::SeqCst);
+        // Suppressed: the quick ask window has taken the dot's place
+        let enabled = ENABLED.load(Ordering::SeqCst) && !SUPPRESSED.load(Ordering::SeqCst);
         // Out of sight while idle; slides in for a dictation or an error
         let target = if enabled && look != Look::Idle { 1.0 } else { 0.0 };
         let shown = slide_towards(target);
@@ -751,6 +783,7 @@ mod webview {
                                s.classList.add('enter');})();";
 
     static ENABLED: AtomicBool = AtomicBool::new(true);
+    static SUPPRESSED: AtomicBool = AtomicBool::new(false);
     /// Recording or transcribing right now
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     /// Bumped on every error flash, so only the latest one hides the window
@@ -817,7 +850,7 @@ mod webview {
     }
 
     fn show(app: &AppHandle) {
-        if !ENABLED.load(Ordering::SeqCst) {
+        if !ENABLED.load(Ordering::SeqCst) || SUPPRESSED.load(Ordering::SeqCst) {
             return;
         }
         if let Some(overlay) = app.get_webview_window("overlay") {
@@ -882,6 +915,15 @@ mod webview {
     pub fn set_enabled(app: &AppHandle, enabled: bool) {
         ENABLED.store(enabled, Ordering::SeqCst);
         if !enabled {
+            hide(app);
+        } else if ACTIVE.load(Ordering::SeqCst) {
+            show(app);
+        }
+    }
+
+    pub fn set_suppressed(app: &AppHandle, suppressed: bool) {
+        SUPPRESSED.store(suppressed, Ordering::SeqCst);
+        if suppressed {
             hide(app);
         } else if ACTIVE.load(Ordering::SeqCst) {
             show(app);
@@ -989,6 +1031,18 @@ mod tests {
         assert_eq!(placement.y + placement.height, 2064);
         assert_eq!(placement.center_y(1.0), 50.0);
         assert_eq!(placement.center_y(0.0), 170.0);
+    }
+
+    #[test]
+    fn test_dot_center_is_where_the_disc_is_drawn() {
+        for &position in IndicatorPosition::ALL {
+            let placement = Placement::new(position, WORK_AREA_4K, 2.0);
+            let (x, y) = placement.dot_center();
+            assert_eq!(x, placement.x as f64 + placement.width as f64 / 2.0);
+            assert_eq!(y, placement.y as f64 + placement.center_y(1.0) as f64);
+        }
+        let top = Placement::new(IndicatorPosition::TopRight, WORK_AREA_4K, 2.0);
+        assert_eq!(top.dot_center(), (3840.0 - 70.0, 70.0));
     }
 
     #[test]

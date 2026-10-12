@@ -516,6 +516,36 @@ button {
   margin-top: 12px;
 }
 
+/* Quick ask: how it works */
+.ask-steps {
+  padding: 14px 16px;
+}
+
+.ask-steps ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.ask-steps li + li {
+  margin-top: 6px;
+}
+
+.ask-steps li::marker {
+  color: var(--text-faint);
+}
+
+.ask-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 .setting-row {
   display: flex;
   align-items: center;

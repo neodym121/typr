@@ -13,6 +13,7 @@ import {
   translatePostProcess,
   type PostProcessSettings,
 } from "./postprocess";
+import { fillQuickAsk, initQuickAsk, showQuickAsk, translateQuickAsk, type QuickAskSettings } from "./quickask";
 
 interface Settings {
   microphone: string;
@@ -44,6 +45,8 @@ interface Settings {
   /** "en", "ru", or empty to follow the system */
   language: string;
   postProcess: PostProcessSettings;
+  /** Select text and ask about it with the hotkey (src/quickask.ts, src/ask.ts) */
+  quickAsk: QuickAskSettings;
   checkUpdates: boolean;
   /** The first-run setup was finished or skipped */
   setupDone: boolean;
@@ -199,6 +202,7 @@ function showSection(name: string) {
   navItems.forEach((n) => n.classList.toggle("active", n.dataset.section === name));
   sections.forEach((s) => s.classList.toggle("active", s.id === `section-${name}`));
   if (name === "postprocess") showPostProcess();
+  if (name === "ask") showQuickAsk();
   if (name === "engine") showLocal();
   if (name === "developer") {
     showLocalComponents();
@@ -247,6 +251,7 @@ fillLanguageOptions(recognitionLanguage);
 [micSelect, groqModel, assemblyaiModel, recognitionLanguage].forEach(enhanceSelect);
 
 initPostProcess({ settings: () => currentSettings, save: saveQuietly });
+initQuickAsk({ settings: () => currentSettings, save: saveQuietly });
 initLocal({ settings: () => currentSettings, save: saveQuietly });
 initSetup({
   settings: () => currentSettings,
@@ -279,6 +284,7 @@ function applyLanguage(lang: Lang) {
   renderMicOptions();
   updateLogMeta();
   translatePostProcess();
+  translateQuickAsk();
   translateLocal();
   fillLanguageOptions(recognitionLanguage);
   syncSelect(recognitionLanguage);
@@ -435,6 +441,9 @@ function fillForm() {
 
   // Post-processing
   fillPostProcess();
+
+  // Quick ask
+  fillQuickAsk();
 
   // Local engine
   fillLocal();

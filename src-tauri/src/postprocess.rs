@@ -14,7 +14,7 @@ use std::time::Instant;
 use crate::net;
 use crate::settings::{PostProvider, Preset, Settings};
 
-const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+pub(crate) const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
 const GROQ_URL: &str = "https://api.groq.com/openai/v1";
 const POLZA_URL: &str = "https://polza.ai/api/v1";
@@ -29,7 +29,7 @@ pub struct ModelInfo {
     pub name: String,
 }
 
-fn provider_label(provider: PostProvider) -> &'static str {
+pub(crate) fn provider_label(provider: PostProvider) -> &'static str {
     match provider {
         PostProvider::Gemini => "Gemini",
         PostProvider::OpenRouter => "OpenRouter",
@@ -39,7 +39,7 @@ fn provider_label(provider: PostProvider) -> &'static str {
 }
 
 /// Base URL of the providers with an OpenAI-compatible API.
-fn openai_base(provider: PostProvider) -> Option<&'static str> {
+pub(crate) fn openai_base(provider: PostProvider) -> Option<&'static str> {
     match provider {
         PostProvider::OpenRouter => Some(OPENROUTER_URL),
         PostProvider::Groq => Some(GROQ_URL),

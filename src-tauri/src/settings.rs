@@ -182,6 +182,38 @@ impl PostProcess {
     }
 }
 
+/// Quick ask: with text selected anywhere, the hotkey records a question
+/// about it instead of a dictation, and a language model answers in a small
+/// window that grows out of the recording indicator. While that window is
+/// open, the hotkey asks follow-up questions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct QuickAsk {
+    pub enabled: bool,
+    pub provider: PostProvider,
+    pub gemini: PostProcessProvider,
+    pub openrouter: PostProcessProvider,
+    pub groq: PostProcessProvider,
+    pub polza: PostProcessProvider,
+}
+
+impl QuickAsk {
+    pub fn provider_settings(&self, provider: PostProvider) -> &PostProcessProvider {
+        match provider {
+            PostProvider::Gemini => &self.gemini,
+            PostProvider::OpenRouter => &self.openrouter,
+            PostProvider::Groq => &self.groq,
+            PostProvider::Polza => &self.polza,
+        }
+    }
+
+    fn providers(&self) -> impl Iterator<Item = (PostProvider, &PostProcessProvider)> {
+        PostProvider::ALL
+            .iter()
+            .map(move |&provider| (provider, self.provider_settings(provider)))
+    }
+}
+
 /// Everything in config.json. A field missing from the file gets its value
 /// from `Default` below.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -243,6 +275,8 @@ pub struct Settings {
     pub language: String,
     #[serde(rename = "postProcess")]
     pub post_process: PostProcess,
+    #[serde(rename = "quickAsk")]
+    pub quick_ask: QuickAsk,
     /// Looks for a newer release on GitHub
     #[serde(rename = "checkUpdates")]
     pub check_updates: bool,
@@ -282,6 +316,7 @@ impl Default for Settings {
             indicator_position: IndicatorPosition::default(),
             language: String::new(),
             post_process: PostProcess::default(),
+            quick_ask: QuickAsk::default(),
             check_updates: true,
             setup_done: false,
             developer_mode: false,
@@ -344,6 +379,17 @@ impl Settings {
         }
     }
 
+    /// API key for quick ask with `provider`. Without a separate one it uses
+    /// the post-processing key of the same provider, then the Engine key.
+    pub fn quick_ask_key(&self, provider: PostProvider) -> String {
+        let own = self.quick_ask.provider_settings(provider).api_key.trim();
+        if own.is_empty() {
+            self.post_process_key(provider)
+        } else {
+            own.to_string()
+        }
+    }
+
     pub fn save(&self, app_dir: &PathBuf) -> Result<(), String> {
         let path = Self::config_path(app_dir);
         fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
@@ -355,7 +401,7 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, groqModel={}, groqKey={}, openaiEndpoint={}, openaiModel={}, openaiKey={}, polzaModel={}, polzaProvider={}, polzaKey={}, assemblyaiModel={}, assemblyaiKey={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, groqModel={}, groqKey={}, openaiEndpoint={}, openaiModel={}, openaiKey={}, polzaModel={}, polzaProvider={}, polzaKey={}, assemblyaiModel={}, assemblyaiKey={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
@@ -380,6 +426,7 @@ impl Settings {
             self.indicator_position,
             if self.language.is_empty() { "system" } else { self.language.as_str() },
             self.post_process_summary(),
+            self.quick_ask_summary(),
             self.check_updates,
             self.developer_mode
         )
@@ -395,6 +442,18 @@ impl Settings {
             if model.is_empty() { "none" } else { model },
             pp.preset,
             key_state(&self.post_process_key(pp.provider))
+        )
+    }
+
+    fn quick_ask_summary(&self) -> String {
+        let qa = &self.quick_ask;
+        let model = qa.provider_settings(qa.provider).model.as_str();
+        format!(
+            "{} (provider {}, model {}, key {})",
+            if qa.enabled { "on" } else { "off" },
+            qa.provider,
+            if model.is_empty() { "none" } else { model },
+            key_state(&self.quick_ask_key(qa.provider))
         )
     }
 
@@ -445,6 +504,19 @@ impl Settings {
             );
         }
 
+        let qa_old = &old.quick_ask;
+        let qa_new = &self.quick_ask;
+        changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
+        changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
+        for ((provider, before), (_, after)) in qa_old.providers().zip(qa_new.providers()) {
+            changed(&format!("quickAsk.{}.model", provider), &before.model, &after.model);
+            changed(
+                &format!("quickAsk.{}.providerId", provider),
+                &before.provider_id,
+                &after.provider_id,
+            );
+        }
+
         let secrets = [
             ("groqApiKey".to_string(), &old.groq_api_key, &self.groq_api_key),
             ("openaiApiKey".to_string(), &old.openai_api_key, &self.openai_api_key),
@@ -454,7 +526,10 @@ impl Settings {
         let post_secrets = pp_old.providers().zip(pp_new.providers()).map(|((provider, before), (_, after))| {
             (format!("postProcess.{}.apiKey", provider), &before.api_key, &after.api_key)
         });
-        for (name, before, after) in secrets.into_iter().chain(post_secrets) {
+        let ask_secrets = qa_old.providers().zip(qa_new.providers()).map(|((provider, before), (_, after))| {
+            (format!("quickAsk.{}.apiKey", provider), &before.api_key, &after.api_key)
+        });
+        for (name, before, after) in secrets.into_iter().chain(post_secrets).chain(ask_secrets) {
             if before != after {
                 changes.push(format!("{} updated ({})", name, key_state(after)));
             }
@@ -514,6 +589,7 @@ mod tests {
         assert_eq!(settings.local_model, "parakeet-tdt-0.6b-v3");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.post_process, PostProcess::default());
+        assert_eq!(settings.quick_ask, QuickAsk::default());
         assert!(settings.show_indicator);
         assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.fallback_local);
@@ -618,6 +694,57 @@ mod tests {
         settings.post_process.groq.api_key = "gsk_own".to_string();
         assert_eq!(settings.post_process_key(PostProvider::Groq), "gsk_own");
         assert_eq!(settings.post_process_key(PostProvider::Gemini), "");
+    }
+
+    #[test]
+    fn test_quick_ask_is_off_by_default_and_reads_from_the_file() {
+        let settings = Settings::default();
+        assert!(!settings.quick_ask.enabled);
+        assert_eq!(settings.quick_ask.provider, PostProvider::Gemini);
+
+        let settings: Settings = serde_json::from_str(
+            r#"{"quickAsk":{"enabled":true,"provider":"openrouter","openrouter":{"apiKey":"k","model":"m"}}}"#,
+        )
+        .unwrap();
+        assert!(settings.quick_ask.enabled);
+        assert_eq!(settings.quick_ask.provider, PostProvider::OpenRouter);
+        assert_eq!(settings.quick_ask.openrouter.model, "m");
+        assert!(serde_json::to_string(&settings).unwrap().contains(r#""quickAsk":{"enabled":true"#));
+    }
+
+    #[test]
+    fn test_quick_ask_key_falls_back_to_post_processing_then_engine() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.quick_ask_key(PostProvider::Groq), "");
+        settings.groq_api_key = "gsk_engine".to_string();
+        assert_eq!(settings.quick_ask_key(PostProvider::Groq), "gsk_engine");
+        settings.post_process.groq.api_key = "gsk_post".to_string();
+        assert_eq!(settings.quick_ask_key(PostProvider::Groq), "gsk_post");
+        settings.quick_ask.groq.api_key = " gsk_ask ".to_string();
+        assert_eq!(settings.quick_ask_key(PostProvider::Groq), "gsk_ask");
+
+        settings.post_process.gemini.api_key = "AIza_post".to_string();
+        assert_eq!(settings.quick_ask_key(PostProvider::Gemini), "AIza_post");
+    }
+
+    #[test]
+    fn test_quick_ask_changes_are_logged_without_keys() {
+        let old = Settings::default();
+        let mut new = Settings::default();
+        new.quick_ask.enabled = true;
+        new.quick_ask.provider = PostProvider::Polza;
+        new.quick_ask.polza.model = "openai/gpt-5-mini".to_string();
+        new.quick_ask.polza.api_key = "pk_secret".to_string();
+
+        let changes = new.describe_changes(&old).join("; ");
+        assert!(changes.contains("quickAsk.enabled: 'false' → 'true'"));
+        assert!(changes.contains("quickAsk.provider: 'gemini' → 'polza'"));
+        assert!(changes.contains("quickAsk.polza.model: '' → 'openai/gpt-5-mini'"));
+        assert!(changes.contains("quickAsk.polza.apiKey updated (set)"));
+        assert!(!changes.contains("pk_secret"));
+        let summary = new.summary();
+        assert!(summary.contains("quickAsk=on (provider polza, model openai/gpt-5-mini, key set)"));
+        assert!(!summary.contains("pk_secret"));
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 
+use crate::ask;
 use crate::audio::{self, AudioFormat, AudioRecorder, EncodedAudio};
 use crate::cleanup::cleanup_text;
 use crate::net;
@@ -46,6 +47,15 @@ pub fn notify_error(app: &AppHandle, message: &str) {
     overlay::flash_error(app);
 }
 
+/// What became of a recording.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Outcome {
+    /// Pasted into the active window (empty: nothing was said)
+    Pasted(String),
+    /// A quick ask question, answered in its window
+    Asked,
+}
+
 /// A cloud engine failed and a local model transcribed the dictation instead.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FallbackNotice {
@@ -55,7 +65,8 @@ pub struct FallbackNotice {
 }
 
 /// Opens the connections a dictation will need while the user is still
-/// speaking: the cloud engine and, if it is on, post-processing.
+/// speaking: the cloud engine and, if they are on, post-processing and quick
+/// ask.
 pub fn warm_up_connections(settings: &Settings) {
     let engine_url = match settings.engine {
         Engine::Local => None,
@@ -68,8 +79,13 @@ pub fn warm_up_connections(settings: &Settings) {
         .post_process
         .enabled
         .then(|| postprocess::host(settings.post_process.provider).to_string());
-    // Groq or Polza for both: one connection serves the two requests
-    let mut urls: Vec<String> = engine_url.into_iter().chain(post_url).collect();
+    let ask_url = settings
+        .quick_ask
+        .enabled
+        .then(|| postprocess::host(settings.quick_ask.provider).to_string());
+    // The same server for two of them: one connection serves both requests
+    let mut urls: Vec<String> = engine_url.into_iter().chain(post_url).chain(ask_url).collect();
+    urls.sort();
     urls.dedup();
     for url in urls {
         net::warm_up(url);
@@ -141,13 +157,14 @@ impl Recorder {
         cancelled
     }
 
-    /// Stops the recording, transcribes it and pastes the result.
+    /// Stops the recording, transcribes it and pastes the result, or answers
+    /// it when it is a quick ask question.
     /// The recorder always returns to `Ready`, whether this succeeds or fails.
     pub async fn stop_and_transcribe(
         &self,
         app: &AppHandle,
         settings: &Settings,
-    ) -> Result<String, String> {
+    ) -> Result<Outcome, String> {
         {
             let mut state = self.state.lock().unwrap();
             if *state != RecordingState::Recording {
@@ -169,10 +186,14 @@ impl Recorder {
         transcribe_local::dictation_ended(app, settings);
 
         match &result {
-            Ok(text) => log::info!(
+            Ok(Outcome::Pasted(text)) => log::info!(
                 "Dictation finished in {} ms ({} characters)",
                 started.elapsed().as_millis(),
                 text.chars().count()
+            ),
+            Ok(Outcome::Asked) => log::info!(
+                "Quick ask question sent in {} ms",
+                started.elapsed().as_millis()
             ),
             Err(e) => {
                 log::error!(
@@ -192,7 +213,7 @@ impl Recorder {
         &self,
         app: &AppHandle,
         settings: &Settings,
-    ) -> Result<String, String> {
+    ) -> Result<Outcome, String> {
         // The guard is a temporary, released at the end of this statement
         let stop_result = self.audio_recorder.lock().unwrap().stop();
         let captured = stop_result?;
@@ -221,9 +242,16 @@ impl Recorder {
         let mut text = cleanup_text(&raw_text);
         if text.is_empty() {
             log::warn!("Transcription is empty, nothing to paste");
-            return Ok(text);
+            return Ok(Outcome::Pasted(text));
         }
         log::info!("Transcribed text: {}", text);
+
+        // Something was selected, or the quick ask window is open: the
+        // speech is a question for the model, not text to paste
+        if let Some(question) = ask::claim(settings).await {
+            ask::ask(app, settings, question, &text).await?;
+            return Ok(Outcome::Asked);
+        }
 
         // A failed post-processing never loses the dictation: the text is
         // pasted as transcribed and the error is shown afterwards
@@ -256,7 +284,7 @@ impl Recorder {
             );
         }
 
-        Ok(text)
+        Ok(Outcome::Pasted(text))
     }
 }
 

@@ -126,7 +126,7 @@ pub async fn read_json(
     })
 }
 
-fn shorten(text: &str, max_chars: usize) -> String {
+pub(crate) fn shorten(text: &str, max_chars: usize) -> String {
     let trimmed = text.trim();
     if trimmed.chars().count() <= max_chars {
         trimmed.to_string()

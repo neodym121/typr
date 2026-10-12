@@ -1,0 +1,552 @@
+/*
+ * Quick ask window: a transparent frame with one card in it. The card starts
+ * as the recording indicator's dot, in the same place and colours, and
+ * unfolds from it (ask.ts sets its geometry; CSS animates the change).
+ */
+
+:root {
+  color-scheme: dark;
+
+  --dot-fill: rgba(31, 30, 29, 0.94);
+  --card-fill: rgba(31, 30, 29, 0.97);
+  --hairline: rgba(248, 248, 246, 0.14);
+  --border: rgba(248, 248, 246, 0.08);
+  --text: #d6d4cb;
+  --text-strong: #f8f8f6;
+  --text-muted: #9c9a92;
+  --accent: #d97757;
+  --accent-light: #e8a88f;
+
+  --font-sans: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+
+  /* The dot unfolding into the card and folding back */
+  --morph: 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  --grow: 200ms cubic-bezier(0.25, 0.8, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* Opened in a plain browser (npm run dev): a backdrop to see the card on */
+body.demo {
+  background: repeating-conic-gradient(#3a3a38 0% 25%, #444441 0% 50%) 0 0 / 24px 24px;
+}
+
+#frame {
+  position: fixed;
+  inset: 0;
+  transition: transform 230ms cubic-bezier(0.55, 0, 0.75, 0.3), opacity 230ms ease-in;
+}
+
+/* Folded back into the dot, it slides behind the edge it came from */
+#frame.gone {
+  opacity: 0;
+  transform: translateY(-64px);
+}
+
+body.bottom #frame.gone {
+  transform: translateY(64px);
+}
+
+/* ── Card ─────────────────────────────────────────── */
+
+#card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--card-fill);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition:
+    left var(--grow),
+    top var(--grow),
+    width var(--grow),
+    height var(--grow),
+    border-radius var(--grow),
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+#frame.morphing #card {
+  transition:
+    left var(--morph),
+    top var(--morph),
+    width var(--morph),
+    height var(--morph),
+    border-radius var(--morph),
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+#frame:not([data-state="dot"]) #card {
+  opacity: 1;
+}
+
+/* Bottom of the screen: the status strip is at the bottom, answers above */
+body.bottom #card {
+  flex-direction: column-reverse;
+}
+
+.strip {
+  flex: none;
+  height: 34px;
+}
+
+#scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 10px 16px 18px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+body.bottom #scroll {
+  padding: 16px 10px 0 18px;
+}
+
+#frame.content-in #scroll {
+  opacity: 1;
+}
+
+#scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+#scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#scroll::-webkit-scrollbar-thumb {
+  background: rgba(248, 248, 246, 0.16);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 4px;
+}
+
+/* Fixed width, so the text never reflows while the card unfolds */
+#content {
+  width: var(--content-width, 400px);
+}
+
+/* While the user asks a follow-up out loud */
+#frame[data-phase="listening"] #card {
+  border-color: rgba(217, 119, 87, 0.75);
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.2), 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  animation: listening 1.4s ease-in-out infinite;
+}
+
+@keyframes listening {
+  50% {
+    box-shadow: 0 0 0 5px rgba(217, 119, 87, 0.08), 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* ── The dot ──────────────────────────────────────── */
+
+#orb {
+  position: absolute;
+  left: var(--orb-x);
+  top: var(--orb-y);
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-strong);
+  background: var(--dot-fill);
+  box-shadow: inset 0 0 0 1px rgba(248, 248, 246, 0.2), 0 2px 6px rgba(0, 0, 0, 0.28);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition:
+    width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 260ms ease,
+    box-shadow 260ms ease;
+}
+
+#orb .mic {
+  grid-area: 1 / 1;
+  transition: opacity 150ms ease, transform 220ms ease;
+}
+
+#orb .spin {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--text-strong);
+  animation: spin 0.9s linear infinite;
+}
+
+#frame[data-state="closing"] #orb .spin {
+  display: none;
+}
+
+/* In the open card the dot is a small status light */
+#frame[data-state="open"] #orb {
+  width: 9px;
+  height: 9px;
+  background: rgba(248, 248, 246, 0.3);
+  box-shadow: none;
+}
+
+#frame[data-state="open"] #orb .mic {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+#frame[data-state="open"] #orb .spin {
+  display: none;
+}
+
+#frame[data-state="open"][data-phase="thinking"] #orb {
+  width: 14px;
+  height: 14px;
+  background: transparent;
+}
+
+#frame[data-state="open"][data-phase="thinking"] #orb .spin {
+  display: block;
+  border-width: 1.5px;
+  border-color: rgba(248, 248, 246, 0.16);
+  border-top-color: var(--text-strong);
+}
+
+#frame[data-state="open"][data-phase="listening"] #orb {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  animation: pulse 1.4s ease-out infinite;
+}
+
+#frame[data-state="open"][data-phase="answering"] #orb {
+  background: rgba(248, 248, 246, 0.6);
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 87, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 9px rgba(217, 119, 87, 0);
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ── Close ────────────────────────────────────────── */
+
+#close {
+  position: absolute;
+  left: var(--close-x);
+  top: var(--orb-y);
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: opacity 160ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+#frame.content-in #close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#close:hover {
+  background: rgba(248, 248, 246, 0.08);
+  color: var(--text-strong);
+}
+
+/* ── Answers ──────────────────────────────────────── */
+
+.answer + .answer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.answer-body {
+  overflow-wrap: break-word;
+  user-select: text;
+  cursor: text;
+}
+
+.answer.error .answer-body {
+  color: var(--accent-light);
+}
+
+.answer-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.answer:hover .answer-meta,
+.answer.stopped .answer-meta {
+  opacity: 1;
+}
+
+.answer.pending .answer-meta,
+.answer.error .answer-meta {
+  display: none;
+}
+
+.answer-note {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.answer-copy {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.answer-copy:hover {
+  background: rgba(248, 248, 246, 0.08);
+  color: var(--text-strong);
+}
+
+/* Waiting for the first words */
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 7px 0;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(248, 248, 246, 0.5);
+  animation: dot 1.2s ease-in-out infinite;
+}
+
+.dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.notice {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--accent-light);
+}
+
+.hidden {
+  display: none;
+}
+
+/* ── Markdown ─────────────────────────────────────── */
+
+.answer-body > :first-child {
+  margin-top: 0;
+}
+
+.answer-body > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-body p {
+  margin: 0 0 8px;
+}
+
+.answer-body h3,
+.answer-body h4 {
+  margin: 12px 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-strong);
+}
+
+.answer-body h4 {
+  font-size: 14px;
+}
+
+.answer-body strong {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.answer-body del {
+  color: var(--text-muted);
+}
+
+.answer-body ul,
+.answer-body ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.answer-body li + li {
+  margin-top: 3px;
+}
+
+.answer-body li > ul,
+.answer-body li > ol {
+  margin: 3px 0 0;
+}
+
+.answer-body li::marker {
+  color: var(--text-muted);
+}
+
+.answer-body code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(248, 248, 246, 0.08);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.answer-body pre {
+  margin: 0 0 8px;
+  padding: 9px 11px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.answer-body pre code {
+  padding: 0;
+  background: none;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.answer-body blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(248, 248, 246, 0.2);
+  color: var(--text-muted);
+}
+
+.answer-body hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.answer-body .table {
+  margin: 0 0 8px;
+  overflow-x: auto;
+}
+
+.answer-body table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.answer-body th,
+.answer-body td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.answer-body th {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.answer-body .link {
+  color: var(--accent-light);
+  text-decoration: underline;
+  text-decoration-color: rgba(232, 168, 143, 0.4);
+}
+
+.answer-body .link-address {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --morph: 1ms linear;
+    --grow: 1ms linear;
+  }
+
+  #orb,
+  #frame,
+  #scroll {
+    transition-duration: 1ms;
+  }
+}

@@ -15,6 +15,8 @@ pub mod mouse;
 pub mod overlay;
 pub mod paste;
 pub mod postprocess;
+pub mod ask;
+pub mod selection;
 pub mod recorder;
 pub mod autostart;
 pub mod updates;

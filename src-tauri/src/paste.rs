@@ -9,8 +9,8 @@ use std::time::Duration;
 /// previous content is put back. Too short, and slow apps paste the old one.
 const RESTORE_DELAY: Duration = Duration::from_millis(300);
 
-/// What was on the clipboard before the dictation.
-enum Saved {
+/// What was on the clipboard before the dictation (or the selection capture).
+pub(crate) enum Saved {
     Text(String),
     Image(arboard::ImageData<'static>),
     Nothing,
@@ -117,7 +117,7 @@ pub fn focus_window(window: isize) -> bool {
     }
 }
 
-fn save(clipboard: &mut arboard::Clipboard) -> Saved {
+pub(crate) fn save(clipboard: &mut arboard::Clipboard) -> Saved {
     if let Ok(text) = clipboard.get_text() {
         return Saved::Text(text);
     }
@@ -127,10 +127,12 @@ fn save(clipboard: &mut arboard::Clipboard) -> Saved {
     Saved::Nothing
 }
 
-fn restore(clipboard: &mut arboard::Clipboard, dictated: &str, saved: Saved) {
+/// Puts `saved` back, unless the clipboard no longer holds `ours` (the text
+/// Typr put there or read from it).
+pub(crate) fn restore(clipboard: &mut arboard::Clipboard, ours: &str, saved: Saved) {
     // Something else was copied in the meantime: leave it alone
     match clipboard.get_text() {
-        Ok(current) if current == dictated => {}
+        Ok(current) if current == ours => {}
         _ => {
             log::debug!("Clipboard changed after the paste, not restoring it");
             return;

@@ -11,6 +11,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+use typr_lib::ask;
 use typr_lib::audio;
 use typr_lib::autostart;
 use typr_lib::i18n;
@@ -22,7 +23,7 @@ use typr_lib::mouse;
 use typr_lib::overlay;
 use typr_lib::paste;
 use typr_lib::postprocess::{self, ModelInfo};
-use typr_lib::recorder::{self, Recorder, RecordingState};
+use typr_lib::recorder::{self, Outcome, Recorder, RecordingState};
 use typr_lib::settings::{Engine, PostProvider, RecordingMode, Settings};
 use typr_lib::updates::{self, UpdateInfo};
 
@@ -206,6 +207,7 @@ fn set_hotkey_enabled(app: &tauri::AppHandle, enabled: bool) {
         state.ptt_held.store(false, Ordering::SeqCst);
         // Never paste into whatever is focused now (e.g. a game)
         if state.recorder.cancel_recording(app) {
+            ask::recording_cancelled();
             let settings = state.settings.lock().unwrap().clone();
             typr_lib::transcribe_local::dictation_ended(app, &settings);
         }
@@ -259,6 +261,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
         log::info!("Settings saved: {}", changes.join("; "));
     }
 
+    let quick_ask_turned_off = old.quick_ask.enabled && !settings.quick_ask.enabled;
     let indicator_changed = settings.show_indicator != old.show_indicator;
     let new_position = (settings.indicator_position != old.indicator_position).then_some(settings.indicator_position);
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
@@ -273,6 +276,11 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     }
     if tray_changed {
         update_tray_menu(app);
+    }
+    if quick_ask_turned_off {
+        // Off the event loop: closing destroys a window
+        let app = app.clone();
+        std::thread::spawn(move || ask::close(&app));
     }
     if updates_turned_on {
         let app = app.clone();
@@ -409,20 +417,25 @@ fn get_system_language() -> String {
     i18n::system_language().to_string()
 }
 
-/// Models of a post-processing provider. `api_key` is what is typed in the
-/// form (maybe not saved yet); Groq and Polza fall back to the Engine key.
+/// Models of a language model provider, for Post-processing or Quick ask
+/// (`section` "ask"). `api_key` is what is typed in the form (maybe not saved
+/// yet); an empty one falls back like the section's requests do: Groq and
+/// Polza to the Engine key, Quick ask first to the Post-processing key.
 #[tauri::command]
 async fn list_postprocess_models(
     state: State<'_, AppState>,
     provider: String,
     api_key: String,
+    section: Option<String>,
 ) -> Result<Vec<ModelInfo>, String> {
     let provider = PostProvider::parse(&provider)
         .ok_or_else(|| format!("Unknown post-processing provider: {}", provider))?;
-    let api_key = if api_key.trim().is_empty() {
-        state.settings.lock().unwrap().engine_key(provider).to_string()
-    } else {
+    let api_key = if !api_key.trim().is_empty() {
         api_key
+    } else if section.as_deref() == Some("ask") {
+        state.settings.lock().unwrap().post_process_key(provider)
+    } else {
+        state.settings.lock().unwrap().engine_key(provider).to_string()
     };
     postprocess::list_models(provider, &api_key)
         .await
@@ -430,6 +443,34 @@ async fn list_postprocess_models(
             log::warn!("Could not load post-processing models: {}", e);
             e
         })
+}
+
+// ── Quick ask window ─────────────────────────────────
+
+/// The page of the quick ask window has loaded and listens for events
+#[tauri::command]
+fn ask_ready() {
+    ask::page_ready();
+}
+
+/// Where the page draws the answer card (logical pixels inside the window);
+/// the rest of the window lets clicks through
+#[tauri::command]
+fn ask_card(x: f64, y: f64, width: f64, height: f64) {
+    ask::window::set_card(x, y, width, height);
+}
+
+/// Copies an answer. The window never has the focus, so the page itself
+/// can't use the clipboard
+#[tauri::command]
+fn ask_copy(text: String) -> Result<(), String> {
+    paste::copy_text(&text)
+}
+
+/// The close button: the window goes and the conversation is forgotten
+#[tauri::command]
+async fn ask_close(app: tauri::AppHandle) {
+    ask::close(&app);
 }
 
 #[tauri::command]
@@ -533,23 +574,27 @@ fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), Strin
             .preload(&settings.local_model, &settings.local_backend);
     }
     recorder::warm_up_connections(&settings);
+    // Quick ask: the selection is read meanwhile, it decides what this is
+    ask::recording_started(app, &settings);
     Ok(())
 }
 
 async fn finish_recording(app: &tauri::AppHandle, state: &AppState) -> Result<String, String> {
     let settings = state.settings.lock().unwrap().clone();
-    let result = state.recorder.stop_and_transcribe(app, &settings).await;
-    if let Ok(text) = &result {
-        if !text.is_empty() {
-            // Right after the paste the target window is still in front
-            *state.last_dictation.lock().unwrap() = Some(LastDictation {
-                text: text.clone(),
-                window: paste::foreground_window(),
-            });
-            update_tray_menu(app);
+    match state.recorder.stop_and_transcribe(app, &settings).await? {
+        Outcome::Pasted(text) => {
+            if !text.is_empty() {
+                // Right after the paste the target window is still in front
+                *state.last_dictation.lock().unwrap() = Some(LastDictation {
+                    text: text.clone(),
+                    window: paste::foreground_window(),
+                });
+                update_tray_menu(app);
+            }
+            Ok(text)
         }
+        Outcome::Asked => Ok("asked".to_string()),
     }
-    result
 }
 
 /// Shared logic for toggle recording, used by both the Tauri command and hotkey handler.
@@ -886,14 +931,20 @@ fn main() {
             local_cancel_download,
             local_delete_model,
             local_delete_runtime,
+            ask_ready,
+            ask_card,
+            ask_copy,
+            ask_close,
             get_logs,
             clear_logs,
             frontend_log,
         ])
         .on_window_event(|window, event| {
-            if window.label() == "main" {
-                if let tauri::WindowEvent::Destroyed = event {
+            if let tauri::WindowEvent::Destroyed = event {
+                if window.label() == "main" {
                     log::info!("Main window closed and its WebView released, Typr keeps running in the tray");
+                } else if window.label() == ask::window::LABEL {
+                    ask::window_destroyed(window.app_handle());
                 }
             }
         })
@@ -924,6 +975,18 @@ fn main() {
             }
 
             start_update_checks(app.handle());
+
+            // Debug builds: TYPR_ASK_PREVIEW="question" asks it about the
+            // selection in front a few seconds after start (ask::preview)
+            #[cfg(debug_assertions)]
+            if let Some(question) = std::env::var("TYPR_ASK_PREVIEW").ok().filter(|q| !q.trim().is_empty()) {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(4)).await;
+                    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+                    ask::preview(&app, &settings, &question).await;
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

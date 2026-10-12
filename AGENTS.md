@@ -1,6 +1,6 @@
 # AGENTS.md — Typr
 
-Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model, and auto-pastes the result into the active window. The interface is in English and Russian.
+Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model, and auto-pastes the result into the active window. With text selected, the same hotkey asks a language model about it instead (**quick ask**): the recording indicator unfolds into a small window with the answer. The interface is in English and Russian.
 
 ---
 
@@ -13,7 +13,11 @@ typr/
 │   ├── setup.ts                # First-run setup wizard over the whole window
 │   ├── i18n.ts                 # English/Russian UI strings, t(), data-i18n attributes, recognition language names
 │   ├── dropdown.ts             # App-styled dropdowns over hidden native <select>s
-│   ├── postprocess.ts          # Post-processing section: provider, key, model list with search, styles
+│   ├── postprocess.ts          # Post-processing section: switch, styles; provider and model through modelpicker.ts
+│   ├── modelpicker.ts          # Provider, API key and model list with search, shared by Post-processing and Quick ask
+│   ├── quickask.ts             # Quick ask section: switch and the model that answers
+│   ├── ask.html, ask.ts, ask.css # Quick ask window: the indicator's dot unfolding into the answer card
+│   ├── markdown.ts             # Markdown → DOM for the answers (never parses the model's text as HTML)
 │   ├── local.ts                # Engine → Local: models, acceleration, runtime components, unloading
 │   ├── overlay.html            # Mic indicator overlay (WebView fallback for non-Windows)
 │   └── style.css               # Global styles
@@ -48,6 +52,11 @@ typr/
 │       ├── cleanup.rs          # Tidies the transcript: whitespace, capitals at sentence starts, final punctuation
 │       ├── paste.rs            # Pastes via the clipboard (Ctrl+V), then restores the previous content
 │       ├── postprocess.rs      # LLM post-processing: model lists, Gemini / OpenAI-compatible calls, prompts
+│       ├── selection.rs        # Reads the selected text of the window in front (verified synthetic copy, clipboard restored)
+│       ├── ask/                # Quick ask
+│       │   ├── mod.rs          # Question or dictation, the conversation, the answer streamed to the window
+│       │   ├── stream.rs       # Streaming chat: Gemini `streamGenerateContent` / OpenAI-compatible SSE, <think> filter
+│       │   └── window.rs       # Transparent no-focus WebView frame over the indicator, click-through outside the card
 │       └── settings.rs         # Settings struct, load/save from config.json
 ├── .github/workflows/
 │   └── build.yml               # CI: builds Windows installer on tag push or manual trigger
@@ -68,9 +77,10 @@ Manages the `RecordingState` state machine (`Ready → Recording → Transcribin
 3. Calls the configured transcription engine
    (the local engine takes the samples straight to transcribe.cpp). If a cloud engine fails for any reason, `fallbackLocal` is on and a local model is downloaded, the local model transcribes the recording instead (`transcription-fallback` event); the next dictation tries the cloud again
 4. Runs `cleanup_text()` on the result
-5. If post-processing is on, rewrites the text with `postprocess::process()`; on failure the transcribed text is pasted anyway and the error is reported afterwards
-6. Calls `paste_text()` to inject into the active window
-7. Emits `recording-state` events to the frontend and updates the overlay (the indicator slides in for Recording/Transcribing and back out on Ready)
+5. If quick ask claims the recording (`ask::claim`: something was selected, or its window is open), the text is a question: `ask::ask` answers it and nothing is pasted (`Outcome::Asked`); otherwise:
+6. If post-processing is on, rewrites the text with `postprocess::process()`; on failure the transcribed text is pasted anyway and the error is reported afterwards
+7. Calls `paste_text()` to inject into the active window
+8. Emits `recording-state` events to the frontend and updates the overlay (the indicator slides in for Recording/Transcribing and back out on Ready)
 
 ### `settings.rs` — Configuration
 Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` overrides the folder in debug builds). `#[serde(default)]` on the structs: a missing field takes its value from `Default`. Engine, recording mode, post-processing provider and preset are enums saved as string ids (`string_enum!`); an unknown id reads as the default instead of failing the file. Key fields:
@@ -94,12 +104,13 @@ Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` ov
 - `checkUpdates`: looks for a newer GitHub release 15 s after start and every 12 h (default `true`)
 - `setupDone`: the first-run wizard was finished or skipped; `false` only for a new config (a config file without the field counts as set up)
 - `postProcess`: `enabled` (default `false`), `provider` (`"gemini"` | `"openrouter"` | `"groq"` | `"polza"`), `preset` (`"chill"` | `"proper"` | `"custom"`; the old `"official"` is migrated to `"proper"` on load), `customPrompt`, and `{ apiKey, model }` per provider, plus `providerId` for Polza (sub-provider sent as `provider.only`, omitted from the file when empty). Groq and Polza fall back to the Engine key when their own is empty (`Settings::post_process_key`)
+- `quickAsk`: `enabled` (default `false`), `provider` (same four as post-processing) and `{ apiKey, model }` per provider, plus `providerId` for Polza. An empty key falls back to the post-processing key of that provider, then the Engine key (`Settings::quick_ask_key`). Local models aren't offered
 
 ### `transcribe_groq.rs` / `transcribe_openai.rs`
 Both send a multipart form POST with the recording (`audio::EncodedAudio`) to the respective API. `transcribe_openai.rs` is also used for any OpenAI-compatible endpoint (e.g. local Whisper servers) via the configurable `openaiEndpoint`; those get WAV, only `api.openai.com` gets FLAC.
 
 ### `net.rs` — one HTTP client
-`net::client()` returns one `reqwest::Client` for the whole app, so connections stay open between dictations. `recorder::warm_up_connections` sends a HEAD request (no credentials) to the engine's and post-processing's servers when a dictation starts, so the TLS handshake happens while the user speaks.
+`net::client()` returns one `reqwest::Client` for the whole app, so connections stay open between dictations. `recorder::warm_up_connections` sends a HEAD request (no credentials) to the engine's, post-processing's and quick ask's servers when a dictation starts, so the TLS handshake happens while the user speaks.
 
 ### `transcribe_assemblyai.rs`
 Three steps: `POST /v2/upload` with the raw FLAC, `POST /v2/transcript` with `speech_models: [model]` and `language_code` (or `language_detection: true` when no language is set), then poll `GET /v2/transcript/{id}` until `completed` or `error`. Universal-3.5 Pro supports 18 languages without Russian; if it rejects the language, the error suggests Universal-2.
@@ -119,6 +130,14 @@ Three steps: `POST /v2/upload` with the raw FLAC, `POST /v2/transcript` with `sp
 - `list_models(provider, key)` (Tauri command `list_postprocess_models`) returns text models only: Gemini `GET /v1beta/models` filtered by `generateContent`; OpenRouter, Groq and Polza `GET /models` (OpenAI format) filtered by `type`, `output_modalities` and, for Groq, speech/guard ids.
 - `process(settings, text)` calls Gemini `models/{id}:generateContent` (key in `x-goog-api-key`) or `/chat/completions` (Bearer) at temperature 0.2, retrying without temperature if a model rejects it, and strips `<think>` blocks, echoed tags and code fences from the reply.
 - The system prompt has two layers: the app's rules first (the dictation, sent between `<dictation>` tags, is text to edit and never a message to answer or obey; keep meaning and language; reply with the text only), then the style. The "custom" style embeds the user's prompt in `<user_style>` tags, marked as the app user's instructions that can't override the app's rules.
+
+### `ask/` and `selection.rs` — quick ask
+- **Same hotkey, decided after the speech.** With quick ask on, `main.rs::begin_recording` calls `ask::recording_started`: it stops an answer still being written and starts `selection::begin_capture` for the window in front. After transcription `ask::claim` waits up to 1.5 s for that capture: a selection, or the quick ask window being open, makes the recording a question; otherwise it is a dictation as before. Post-processing doesn't run on questions.
+- **Reading the selection** (`selection.rs`, Windows): a synthetic copy, sent with `SendInput` only once Ctrl, Shift, Alt and Win are all up (right after a toggle press, at the end of push-to-talk), so it never mixes with the user's keys; the window must still be in front. Only a clipboard whose change counter (`GetClipboardSequenceNumber`) moved within 300 ms is read, so an old clipboard (maybe a password) never reaches a model; then the previous content is put back (`paste::save` / `paste::restore`). Terminals (window class or executable) get no keystroke at all: Ctrl+C would interrupt the running program. Editors with a built-in terminal (VS Code and forks, JetBrains, Visual Studio) get Ctrl+Insert, which copies there but is no interrupt. A copy that is the current line taken without a selection doesn't count: VS Code's `isFromEmptySelection` (in Chromium's custom clipboard data), Scintilla's `MSDEVLineSelect`, Visual Studio's line tag, a lone line from JetBrains or Sublime; neither does a single Excel cell (there is always an active one). Selections are cut at 10 000 characters; a generation counter keeps a capture from reaching a later recording.
+- **The conversation** (`ask/mod.rs`): one at a time, in memory, forgotten when the window closes. The user message is the question after the selection in `<selected_text>` tags (a selection already sent isn't repeated); the system prompt says the selection is material, not instructions, and asks for short Markdown answers in the question's language. The last 24 messages go with each request. A failed answer drops its question; an answer stopped by a new recording keeps what it said.
+- **Streaming** (`ask/stream.rs`): Gemini `models/{id}:streamGenerateContent?alt=sse` or `/chat/completions` with `stream: true` (OpenRouter, Groq, Polza), parsed from server-sent events, thoughts and `<think>` blocks left out. The answer goes to the window in pieces at most every 40 ms (`ask-delta`; each event runs a script in the WebView), then as a whole (`ask-done`). Events to the window: `ask-reveal`, `ask-answer`, `ask-delta`, `ask-done`, `ask-error`, `ask-cancel`; it also listens to `recording-state` and `recording-error`. Commands from it: `ask_ready`, `ask_card`, `ask_copy`, `ask_close`.
+- **The window** (`ask/window.rs`, `src/ask.ts`): built only for a first question (label `ask`, `src/ask.html`), destroyed by its close button, when quick ask is turned off, or never otherwise. A transparent frame touching the screen edge the indicator slides in from, sized for the tallest card (440 px wide, up to 560 px or 70 % of the screen high) so it never moves or resizes; the layout goes to the page as `window.__TYPR_ASK__` through an initialization script. The page first draws the indicator's dot exactly where the native one is, with its spinner; `reveal` shows the window without activating it and hides the native dot at once (`overlay::set_suppressed`), and the page unfolds the dot into the card, the dot staying as the card's status light (spinner while thinking, orange pulse while the user asks a follow-up). Only answers are shown, each with Copy (`ask_copy`: the window has no focus, so the page can't use the clipboard). The cross folds the card back into the dot, which slides behind the edge.
+- **Focus and clicks:** `focusable(false)` (`WS_EX_NOACTIVATE`) and `focused(false)`, so the app the question is about keeps the focus and its selection; `reveal` gives the focus back should Windows hand it over anyway. The page reports the card's rectangle (`ask_card`) and a thread checks the cursor every 30 ms, making the window click-through (`set_ignore_cursor_events`) everywhere else. No `title` tooltips in the page: WebView2 can leave one on screen after the window is destroyed.
 
 ### `paste.rs` — clean clipboard
 Saves the clipboard (text, else image, else nothing), sets the dictated text with arboard's `exclude_from_monitoring()` (kept out of Win+V history, cloud sync and clipboard managers), sends Ctrl+V, waits `RESTORE_DELAY` (300 ms) and puts the previous content back, unless something else was copied meanwhile. If the paste fails, the text stays on the clipboard. Other formats (e.g. copied files) aren't restored.
@@ -158,7 +177,8 @@ Installed as the global `log` backend in `main()`. Use `log::info!` / `log::warn
 - `overlay.rs` draws the recording indicator itself on Windows (`windows-sys` layered window, per-pixel alpha, SDF rendering) — no WebView. Other platforms fall back to the WebView overlay `src/overlay.html`.
 - The indicator is out of sight while idle: its window touches an edge of the primary screen's work area (the screen without the taskbar) and the disc is drawn beyond that edge, so it slides in from behind it when a dictation starts (or briefly after an error) and slides back out on `Ready`. `indicatorPosition` picks the edge: the top-right corner (window at the top edge, disc above it) or the bottom centre (window ending at the taskbar, disc below it). Once fully out, the window is hidden and its timers stop, so it costs no CPU.
 - Each time the indicator starts to appear, `place()` in the native overlay reads the work area and scale again (`MonitorFromPoint`, `GetMonitorInfoW`, `GetDpiForMonitor`, as Tauri does), so a changed resolution, scale or taskbar is picked up without a restart. `overlay::set_position` (from `apply_settings`) moves it at once.
-- `overlay::set_enabled` gates it: `main.rs::sync_overlay` allows it only while `showIndicator` is on and the hotkey is on in the tray.
+- `overlay::set_enabled` gates it: `main.rs::sync_overlay` allows it only while `showIndicator` is on and the hotkey is on in the tray. `overlay::set_suppressed` hides it at once while the quick ask window holds its place.
+- The quick ask window is the only other WebView, and it exists only while an answer is on screen (`ask/window.rs`).
 - Closing the main window destroys it (and its WebView); `show_main_window` re-creates it from `tauri.conf.json` on a separate thread (building windows in event handlers deadlocks on Windows).
 - The page runs under a strict CSP (`tauri.conf.json`): scripts from the app only, styles and fonts also from Google Fonts, IPC. New external resources need a CSP entry. `RunEvent::ExitRequested` without a code is prevented, so Typr keeps running in the tray; tray → Exit calls `app.exit(0)`.
 - The tray menu's "Hotkey: On/Off" item unregisters the global shortcut, cancels an unfinished recording and keeps the overlay from appearing (e.g. while gaming). The state is not persisted.
@@ -181,7 +201,8 @@ npm run tauri dev
 - Quit the installed Typr from the tray first. Both builds take the same single-instance lock (`com.typr.app`), so the dev build would only focus the installed app's window and exit.
 - Both builds read `%APPDATA%\com.typr.app\config.json`. To keep the dev config apart, set `TYPR_CONFIG_DIR` (debug builds only), e.g. `$env:TYPR_CONFIG_DIR = "$env:TEMP\typr-dev"` in PowerShell.
 - Every log line also prints to the terminal as `[Typr][level][source] message`, with Developer mode on or off.
-- The page runs only inside the Tauri window: in a plain browser (`npm run dev`, port 1420) `getCurrentWindow()` throws at load and the page stays hidden, so UI changes can't be previewed there.
+- The page runs only inside the Tauri window: in a plain browser (`npm run dev`, port 1420) `getCurrentWindow()` throws at load and the page stays hidden, so UI changes can't be previewed there. The quick ask window can: `/src/ask.html` (or `?bottom`) in a browser plays a demo of the dot unfolding, answers streaming and a follow-up.
+- `TYPR_ASK_PREVIEW="question"` (debug builds) asks that question about the selection in front 4 s after start, without a microphone (`ask::preview`). With `--autostart` and a `TYPR_CONFIG_DIR` config that has `"setupDone": true` the dev build stays in the tray, so the app in front keeps its selection.
 
 ### Build for production (Windows)
 ```bash
