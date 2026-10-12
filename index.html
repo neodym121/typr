@@ -588,6 +588,32 @@
             </div>
           </div>
 
+          <h2 class="group-title" data-i18n="ask.searchTitle">Web search</h2>
+          <div class="card">
+            <div class="setting-row">
+              <div class="setting-label">
+                <label class="label-text" for="ask-search" data-i18n="ask.search">Search the web</label>
+                <span class="label-hint" data-i18n="ask.searchHint">When a question needs fresh facts, the model looks them up with Exa and names its sources</span>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="ask-search" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <!-- Shown while search is on -->
+            <div class="setting-row" id="ask-exa-row">
+              <div class="setting-label">
+                <span class="label-text" data-i18n="ask.exaKey">Exa API key</span>
+                <span class="label-hint" data-i18n="ask.exaKeyHint">Get your key at dashboard.exa.ai</span>
+              </div>
+              <div class="setting-control">
+                <input type="password" id="ask-exa-key" placeholder="API key" data-i18n-placeholder="engine.apiKey" spellcheck="false" />
+              </div>
+            </div>
+          </div>
+
           <h2 class="group-title" data-i18n="ask.howTitle">How it works</h2>
           <div class="card ask-steps">
             <ol>

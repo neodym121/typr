@@ -33,7 +33,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 ### Text
 
 - **Post-processing:** an AI model (Gemini, OpenRouter, Groq or Polza) polishes the text before it is pasted, in the Chill, Proper or your own style.
-- **Quick ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer; press the hotkey again to ask a follow-up in the same conversation. Gemini, OpenRouter, Groq or Polza answers; off by default.
+- **Quick ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer; press the hotkey again to ask a follow-up in the same conversation. Gemini, OpenRouter, Groq or Polza answers, and with an [Exa](https://exa.ai/) key it can search the web when a question needs fresh facts, naming its sources. Off by default.
 
 ### App
 

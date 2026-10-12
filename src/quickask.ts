@@ -1,5 +1,5 @@
-// Quick ask section: the switch and the model that answers (modelpicker.ts).
-// The answer window itself is src/ask.ts.
+// Quick ask section: the switch, the model that answers (modelpicker.ts) and
+// web search through Exa. The answer window itself is src/ask.ts.
 
 import { type MessageKey } from "./i18n";
 import { createModelPicker, type ModelPicker, type Provider, type ProviderConfig } from "./modelpicker";
@@ -7,6 +7,9 @@ import { engineKey, type PostProcessSettings } from "./postprocess";
 
 export interface QuickAskSettings extends ProviderConfig {
   enabled: boolean;
+  /** The model may search the web with Exa */
+  webSearch: boolean;
+  exaApiKey: string;
 }
 
 export interface QuickAskHost {
@@ -27,6 +30,9 @@ const KEY_HINTS: Record<Provider, MessageKey> = {
 };
 
 const enabledToggle = document.getElementById("ask-enabled") as HTMLInputElement;
+const searchToggle = document.getElementById("ask-search") as HTMLInputElement;
+const exaRow = document.getElementById("ask-exa-row")!;
+const exaKey = document.getElementById("ask-exa-key") as HTMLInputElement;
 
 let host: QuickAskHost | undefined;
 let picker: ModelPicker | undefined;
@@ -52,11 +58,31 @@ export function initQuickAsk(appHost: QuickAskHost) {
     host!.settings().quickAsk.enabled = enabledToggle.checked;
     host!.save();
   });
+
+  searchToggle.addEventListener("change", () => {
+    host!.settings().quickAsk.webSearch = searchToggle.checked;
+    showExaKey();
+    host!.save();
+  });
+
+  exaKey.addEventListener("change", () => {
+    host!.settings().quickAsk.exaApiKey = exaKey.value.trim();
+    host!.save();
+  });
+}
+
+/** The key only matters while search is on */
+function showExaKey() {
+  exaRow.classList.toggle("hidden", !searchToggle.checked);
 }
 
 /** Puts the saved settings into the form (after they are loaded). */
 export function fillQuickAsk() {
-  enabledToggle.checked = Boolean(host!.settings().quickAsk.enabled);
+  const quickAsk = host!.settings().quickAsk;
+  enabledToggle.checked = Boolean(quickAsk.enabled);
+  searchToggle.checked = Boolean(quickAsk.webSearch);
+  exaKey.value = quickAsk.exaApiKey || "";
+  showExaKey();
   picker?.fill();
 }
 

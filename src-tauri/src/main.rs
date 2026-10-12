@@ -473,6 +473,12 @@ fn ask_copy(text: String) -> Result<(), String> {
     paste::copy_text(&text)
 }
 
+/// A link in an answer was clicked
+#[tauri::command]
+fn ask_open_link(url: String) -> Result<(), String> {
+    links::open_web_page(&url)
+}
+
 /// The close button: the window goes and the conversation is forgotten
 #[tauri::command]
 async fn ask_close(app: tauri::AppHandle) {
@@ -941,6 +947,7 @@ fn main() {
             ask_shown,
             ask_card,
             ask_copy,
+            ask_open_link,
             ask_close,
             get_logs,
             clear_logs,

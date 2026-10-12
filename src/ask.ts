@@ -2,7 +2,10 @@
 // recording indicator's dot exactly where the native one is, with its
 // spinner. On "ask-reveal" the native dot is gone and this one unfolds into
 // a card with the model's answers; its dot stays as the card's status light.
-// The questions aren't shown, only the answers; a click on one copies it.
+// The questions aren't shown, only the answers; a click on one copies it,
+// a click on a link in it opens the page. While the model searches the web,
+// "Search…" blinks slowly where the answer will be, and fades away once it
+// starts.
 // While the window is open,
 // every recording is a follow-up: the dot turns orange and pulses while the
 // user speaks. The cross folds the card back into the dot, which slides
@@ -41,6 +44,8 @@ type Phase = "idle" | "listening" | "thinking" | "answering";
 
 interface Answer {
   el: HTMLElement;
+  /** What happens before the first words: the typing dots or "Search…" */
+  status: HTMLElement | null;
   body: HTMLElement;
   /** The Markdown as written so far */
   text: string;
@@ -284,18 +289,26 @@ function answerFor(id: number): Answer {
 
   const el = document.createElement("div");
   el.className = "answer pending";
-  const body = document.createElement("div");
-  body.className = "answer-body";
+  const status = document.createElement("div");
+  status.className = "answer-status";
   const dots = document.createElement("span");
   dots.className = "dots";
   dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
-  body.append(dots);
+  status.append(dots);
+  const body = document.createElement("div");
+  body.className = "answer-body";
 
-  el.append(body);
+  el.append(status, body);
   answersEl.append(el);
 
-  const answer: Answer = { el, body, text: "", pending: true, renderQueued: false };
-  el.addEventListener("click", () => {
+  const answer: Answer = { el, status, body, text: "", pending: true, renderQueued: false };
+  el.addEventListener("click", (event) => {
+    // A link opens its page in the browser instead
+    const link = (event.target as Element).closest<HTMLElement>(".link");
+    if (link?.dataset.href) {
+      call("ask_open_link", { url: link.dataset.href });
+      return;
+    }
     // Selecting part of the text with the mouse is no click to copy
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && el.contains(selection.anchorNode)) return;
@@ -307,9 +320,35 @@ function answerFor(id: number): Answer {
   return answer;
 }
 
+/** The first words (or the end) arrived: the dots or "Search…" fade away */
 function settle(answer: Answer) {
   answer.pending = false;
   answer.el.classList.remove("pending");
+  const status = answer.status;
+  if (!status) return;
+  answer.status = null;
+  status.style.maxHeight = `${status.offsetHeight}px`;
+  void status.offsetHeight;
+  status.classList.add("leaving");
+  const remove = () => {
+    status.remove();
+    queueFit();
+  };
+  status.addEventListener("transitionend", remove, { once: true });
+  window.setTimeout(remove, 600);
+}
+
+/** The model searches the web */
+function onSearch(id: number) {
+  awaitingFirst = false;
+  const answer = answerFor(id);
+  if (!answer.status) return;
+  const label = document.createElement("span");
+  label.className = "searching";
+  label.textContent = t("askWindow.searching");
+  answer.status.replaceChildren(label);
+  queueFit();
+  afterAnswer("thinking");
 }
 
 function queueRender(answer: Answer) {
@@ -450,6 +489,7 @@ if (demo) {
     ),
     listen<{ id: number; message: string }>("ask-error", (e) => onError(e.payload.id, e.payload.message)),
     listen<{ id: number }>("ask-cancel", (e) => onCancel(e.payload.id)),
+    listen<{ id: number; query: string }>("ask-search", (e) => onSearch(e.payload.id)),
     listen<string>("recording-state", (e) => onRecordingState(e.payload)),
     listen<string>("recording-error", (e) => onRecordingError(e.payload)),
   ]).then(() => {
@@ -469,6 +509,10 @@ async function runDemo() {
   const second = ru
     ? "Да, вот вариант построже:\n\n```js\nconst email = /^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)*\\.[a-z]{2,}$/i;\n```"
     : "Yes, here is a stricter one:\n\n```js\nconst email = /^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)*\\.[a-z]{2,}$/i;\n```";
+
+  const third = ru
+    ? "По данным [Exa](https://exa.ai), последняя версия — **2.1**, вышла на прошлой неделе."
+    : "According to [Exa](https://exa.ai), the latest version is **2.1**, released last week.";
 
   const stream = async (id: number, text: string) => {
     for (let i = 0; i < text.length; i += 6) {
@@ -491,4 +535,14 @@ async function runDemo() {
   onRecordingState("Ready");
   await sleep(800);
   await stream(2, second);
+  await sleep(1500);
+  onRecordingState("Recording");
+  await sleep(1500);
+  onRecordingState("Transcribing");
+  onAnswer(3);
+  onRecordingState("Ready");
+  await sleep(500);
+  onSearch(3);
+  await sleep(2600);
+  await stream(3, third);
 }

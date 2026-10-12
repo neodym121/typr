@@ -79,12 +79,17 @@ pub fn warm_up_connections(settings: &Settings) {
         .post_process
         .enabled
         .then(|| postprocess::host(settings.post_process.provider).to_string());
-    let ask_url = settings
-        .quick_ask
-        .enabled
-        .then(|| postprocess::host(settings.quick_ask.provider).to_string());
+    let ask = &settings.quick_ask;
+    let ask_url = ask.enabled.then(|| postprocess::host(ask.provider).to_string());
+    let search_url = (ask.enabled && ask.web_search && !ask.exa_api_key.trim().is_empty())
+        .then(|| ask::search::HOST.to_string());
     // The same server for two of them: one connection serves both requests
-    let mut urls: Vec<String> = engine_url.into_iter().chain(post_url).chain(ask_url).collect();
+    let mut urls: Vec<String> = engine_url
+        .into_iter()
+        .chain(post_url)
+        .chain(ask_url)
+        .chain(search_url)
+        .collect();
     urls.sort();
     urls.dedup();
     for url in urls {

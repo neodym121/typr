@@ -6,8 +6,8 @@
 //
 // Supported: paragraphs (single line breaks kept), headings, lists (nested by
 // indentation), block quotes, fenced code, tables, rules, and inline code,
-// bold, italic, strikethrough and links (shown as text with the address, not
-// followed).
+// bold, italic, strikethrough and links (a span with the address in
+// data-href; the page decides what a click on it does).
 
 const FENCE = /^\s{0,3}(`{3,}|~{3,})\s*([\w+#.-]*)\s*$/;
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
@@ -279,13 +279,9 @@ function renderInline(text: string, parent: Node) {
       if (link) {
         flush();
         const a = el("span", "link");
+        a.dataset.href = link[2];
         renderInline(link[1], a);
         parent.appendChild(a);
-        if (link[1].trim() !== link[2]) {
-          const address = el("span", "link-address");
-          address.textContent = ` (${link[2]})`;
-          parent.appendChild(address);
-        }
         i += link[0].length;
         continue;
       }

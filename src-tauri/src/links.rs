@@ -17,6 +17,23 @@ pub fn is_allowed(url: &str) -> bool {
         && ALLOWED.iter().any(|prefix| url.starts_with(prefix))
 }
 
+/// A link in a quick ask answer, clicked by the user: any web page, nothing
+/// else (no files, no other schemes).
+pub fn open_web_page(url: &str) -> Result<(), String> {
+    let url = url.trim();
+    if !is_web_page(url) {
+        return Err(format!("Typr opens only web pages, not {}", url));
+    }
+    log::info!("Opening a link from an answer: {}", url);
+    open_in_browser(url)
+}
+
+fn is_web_page(url: &str) -> bool {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"));
+    matches!(rest, Some(rest) if !rest.is_empty() && !rest.starts_with('/'))
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control() || c == '"')
+}
+
 pub fn open(url: &str) -> Result<(), String> {
     if !is_allowed(url) {
         return Err(format!("Typr doesn't open this address: {}", url));
@@ -63,6 +80,18 @@ fn open_in_browser(url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_answer_links_open_only_web_pages() {
+        assert!(is_web_page("https://www.theverge.com/2026/10/1/story"));
+        assert!(is_web_page("http://example.com"));
+        assert!(!is_web_page("file:///C:/Windows/System32/cmd.exe"));
+        assert!(!is_web_page("ms-settings:privacy"));
+        assert!(!is_web_page("https://"));
+        assert!(!is_web_page("https:///etc"));
+        assert!(!is_web_page("https://example.com/a b"));
+        assert!(!is_web_page("https://example.com/\"x"));
+    }
 
     #[test]
     fn test_only_known_sites_open() {

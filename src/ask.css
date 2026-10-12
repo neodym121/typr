@@ -392,7 +392,32 @@ body.bottom #scroll {
   color: var(--text-muted);
 }
 
-/* Waiting for the first words */
+/* Before the first words: the typing dots, or "Search…" while the model
+   searches the web. Both fade and fold away once the answer starts */
+.answer-status {
+  overflow: hidden;
+  transition: opacity 420ms ease, max-height 420ms ease;
+}
+
+.answer-status.leaving {
+  opacity: 0;
+  max-height: 0 !important;
+}
+
+.searching {
+  display: inline-block;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  animation: searching 1.8s ease-in-out infinite;
+}
+
+@keyframes searching {
+  50% {
+    opacity: 0.3;
+  }
+}
+
 .dots {
   display: inline-flex;
   gap: 4px;
@@ -565,10 +590,12 @@ body.bottom #scroll {
   text-decoration-color: rgba(232, 168, 143, 0.4);
 }
 
-.answer-body .link-address {
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
+.answer-body .link {
+  cursor: pointer;
+}
+
+.answer-body .link:hover {
+  text-decoration-color: var(--accent-light);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -14,6 +14,7 @@
 //!    window and returns once it has taken the indicator's place; a follow-up
 //!    returns as soon as the answer has started.
 
+pub mod search;
 pub mod stream;
 pub mod window;
 
@@ -27,7 +28,8 @@ use crate::overlay;
 use crate::postprocess::provider_label;
 use crate::selection;
 use crate::settings::{PostProvider, Settings};
-use stream::{ChatMessage, Role};
+use serde_json::Value;
+use stream::{ChatMessage, Role, Tools};
 
 /// How long transcribed speech waits for the selection to be read
 const SELECTION_WAIT: Duration = Duration::from_millis(1500);
@@ -38,6 +40,8 @@ const MAX_MESSAGES: usize = 24;
 /// Pieces of the answer go to the window at most this often: every event
 /// runs a script in the WebView
 const FLUSH_EVERY: Duration = Duration::from_millis(40);
+/// Web searches per answer; after that the model must answer
+const MAX_SEARCHES: usize = 3;
 
 const SYSTEM_PROMPT: &str = "\
 You answer quick questions in Typr, a voice dictation app. The user selected some text in another app, pressed a hotkey and asked about it out loud. Speech recognition transcribed the question, so it may contain recognition mistakes: read it for what it most likely means.
@@ -47,6 +51,43 @@ You answer quick questions in Typr, a voice dictation app. The user selected som
 - Your answer appears in a small window at the edge of the screen, and only your answers are shown there. Be concise and get to the point; give details only when asked.
 - Answer in the language of the question unless the user asks for another one. When asked to translate, rewrite, fix or shorten the text, reply with the result itself, without introductions or comments.
 - Use Markdown when it helps: short lists, **bold** for key terms, code blocks for code. Avoid tables unless asked.";
+
+const SEARCH_RULES: &str = "\
+You can search the web with the web_search tool. Use it when the question needs current or specific facts that you don't know or aren't sure of: news, recent events, prices, release versions, schedules, facts about a particular site, product or person. Don't search for what you can answer from the selected text or from general knowledge: translating, rewriting, explaining, summarizing, coding help. Use as few searches as you can. After searching, answer from the results and name the sources you used as Markdown links, like [The Verge](https://www.theverge.com/...).";
+
+/// The system prompt; with web search, its rules and today's date.
+fn system_prompt(search: bool) -> String {
+    if search {
+        format!("{}\n\n{}\nToday's date: {}.", SYSTEM_PROMPT, SEARCH_RULES, today())
+    } else {
+        SYSTEM_PROMPT.to_string()
+    }
+}
+
+/// Today's date (UTC) as YYYY-MM-DD: a model has no clock, and "the latest"
+/// means nothing without one.
+fn today() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() / 86_400)
+        .unwrap_or(0) as i64;
+    let (year, month, day) = civil_date(days);
+    format!("{:04}-{:02}-{:02}", year, month, day)
+}
+
+/// The calendar date `days` days after 1970-01-01 (H. Hinnant's algorithm).
+fn civil_date(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
+}
 
 /// What the recording turned out to be: a question, maybe about a selection.
 pub struct Question {
@@ -113,6 +154,12 @@ struct DoneEvent {
     text: String,
     /// Cut short by a new question
     stopped: bool,
+}
+
+#[derive(Clone, Serialize)]
+struct SearchEvent {
+    id: u64,
+    query: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -260,6 +307,11 @@ fn start_answer(app: &AppHandle, settings: &Settings, id: u64, messages: Vec<Cha
         PostProvider::Polza => config.polza.provider_id.trim().to_string(),
         _ => String::new(),
     };
+    let search_key = config.exa_api_key.trim().to_string();
+    let search = config.web_search && !search_key.is_empty();
+    if config.web_search && !search {
+        log::warn!("Web search is on, but the Exa API key isn't set: answering without it");
+    }
 
     let partial = Arc::new(Mutex::new(String::new()));
     // In place before the task can finish, so it always finds itself
@@ -290,18 +342,21 @@ fn start_answer(app: &AppHandle, settings: &Settings, id: u64, messages: Vec<Cha
             partial,
             pending: String::new(),
             announced,
+            search: None,
             last_flush: Instant::now(),
         };
 
-        let request = stream::Request {
+        let system = system_prompt(search);
+        let answer = Answer {
             provider,
             api_key: &api_key,
             model: &model,
             sub_provider: &sub_provider,
-            system: SYSTEM_PROMPT,
+            system: &system,
             messages: &messages,
+            search_key: search.then_some(search_key.as_str()),
         };
-        let result = stream::stream(&request, &mut outbox).await;
+        let result = answer.run(&mut outbox).await;
         match &result {
             Ok(answer) => log::info!(
                 "Quick ask answered in {} ms ({} characters)",
@@ -324,6 +379,82 @@ fn start_answer(app: &AppHandle, settings: &Settings, id: u64, messages: Vec<Cha
     }
 }
 
+/// One answer: rounds with the model, and the searches it asks for between
+/// them.
+struct Answer<'a> {
+    provider: PostProvider,
+    api_key: &'a str,
+    model: &'a str,
+    sub_provider: &'a str,
+    system: &'a str,
+    messages: &'a [ChatMessage],
+    /// The Exa key while web search is on
+    search_key: Option<&'a str>,
+}
+
+impl Answer<'_> {
+    async fn run(&self, outbox: &mut Outbox) -> Result<String, String> {
+        let mut tools = if self.search_key.is_some() { Tools::Search } else { Tools::Off };
+        let mut exchange: Vec<Value> = Vec::new();
+        let mut answer = String::new();
+        let mut searches = 0;
+        loop {
+            let request = stream::Request {
+                provider: self.provider,
+                api_key: self.api_key,
+                model: self.model,
+                sub_provider: self.sub_provider,
+                system: self.system,
+                messages: self.messages,
+                tools,
+                exchange: &exchange,
+            };
+            let round = match stream::stream(&request, outbox).await {
+                Ok(round) => round,
+                // The model or the service can't use tools: ask without search
+                Err(e) if tools == Tools::Search && exchange.is_empty() && stream::tools_refused(&e) => {
+                    log::warn!("{}; answering without web search", e);
+                    tools = Tools::Off;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            answer.push_str(&round.text);
+            let Some(key) = self.search_key.filter(|_| tools == Tools::Search && !round.calls.is_empty()) else {
+                break;
+            };
+
+            let mut results = Vec::new();
+            for call in &round.calls {
+                let result = match call.query().filter(|_| call.name == stream::SEARCH_TOOL) {
+                    Some(query) => {
+                        searches += 1;
+                        log::info!("Quick ask searches the web: {:?}", query);
+                        outbox.searching(&query);
+                        match search::search(key, &query).await {
+                            Ok(found) => search::format_results(&query, &found),
+                            Err(e) => {
+                                log::warn!("Web search failed: {}", e);
+                                format!("The web search failed: {}", e)
+                            }
+                        }
+                    }
+                    None => format!("Unknown tool or no query: {}", call.name),
+                };
+                results.push(result);
+            }
+            exchange.extend(stream::tool_exchange(self.provider, &round.text, &round.calls, &results));
+            if searches >= MAX_SEARCHES {
+                tools = Tools::AnswerNow;
+            }
+        }
+        if answer.trim().is_empty() {
+            return Err(format!("{} returned no answer", provider_label(self.provider)));
+        }
+        Ok(answer)
+    }
+}
+
 /// Passes the answer to the window in pieces, once its page listens.
 struct Outbox {
     app: AppHandle,
@@ -331,10 +462,18 @@ struct Outbox {
     partial: Arc<Mutex<String>>,
     pending: String,
     announced: bool,
+    /// A search to show, held until the page listens
+    search: Option<String>,
     last_flush: Instant,
 }
 
 impl Outbox {
+    /// The model searches the web: the window says so until the answer comes.
+    fn searching(&mut self, query: &str) {
+        self.search = Some(query.to_string());
+        self.flush(true);
+    }
+
     fn flush(&mut self, force: bool) {
         if !READY.load(Ordering::SeqCst) {
             return;
@@ -342,6 +481,9 @@ impl Outbox {
         if !self.announced {
             emit(&self.app, "ask-answer", AnswerEvent { id: self.id });
             self.announced = true;
+        }
+        if let Some(query) = self.search.take() {
+            emit(&self.app, "ask-search", SearchEvent { id: self.id, query });
         }
         if self.pending.is_empty() || (!force && self.last_flush.elapsed() < FLUSH_EVERY) {
             return;
@@ -514,6 +656,22 @@ mod tests {
         let question = composed.find("Question: translate this").unwrap();
         assert!(open < instruction && instruction < close && close < question);
         assert_eq!(compose(None, "and why?"), "and why?");
+    }
+
+    #[test]
+    fn test_search_rules_come_with_the_date() {
+        assert!(!system_prompt(false).contains("web_search"));
+        let prompt = system_prompt(true);
+        assert!(prompt.starts_with(SYSTEM_PROMPT));
+        assert!(prompt.contains("web_search"));
+        assert!(prompt.contains(&format!("Today's date: {}.", today())));
+    }
+
+    #[test]
+    fn test_civil_date() {
+        assert_eq!(civil_date(0), (1970, 1, 1));
+        assert_eq!(civil_date(11_016), (2000, 2, 29));
+        assert_eq!(civil_date(20_738), (2026, 10, 12));
     }
 
     #[test]

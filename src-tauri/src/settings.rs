@@ -195,6 +195,11 @@ pub struct QuickAsk {
     pub openrouter: PostProcessProvider,
     pub groq: PostProcessProvider,
     pub polza: PostProcessProvider,
+    /// The model may search the web (Exa) when a question needs it
+    #[serde(rename = "webSearch")]
+    pub web_search: bool,
+    #[serde(rename = "exaApiKey")]
+    pub exa_api_key: String,
 }
 
 impl QuickAsk {
@@ -449,11 +454,13 @@ impl Settings {
         let qa = &self.quick_ask;
         let model = qa.provider_settings(qa.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, key {})",
+            "{} (provider {}, model {}, key {}, web search {}, Exa key {})",
             if qa.enabled { "on" } else { "off" },
             qa.provider,
             if model.is_empty() { "none" } else { model },
-            key_state(&self.quick_ask_key(qa.provider))
+            key_state(&self.quick_ask_key(qa.provider)),
+            if qa.web_search { "on" } else { "off" },
+            key_state(&qa.exa_api_key)
         )
     }
 
@@ -508,6 +515,7 @@ impl Settings {
         let qa_new = &self.quick_ask;
         changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
         changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
+        changed("quickAsk.webSearch", &qa_old.web_search, &qa_new.web_search);
         for ((provider, before), (_, after)) in qa_old.providers().zip(qa_new.providers()) {
             changed(&format!("quickAsk.{}.model", provider), &before.model, &after.model);
             changed(
@@ -522,6 +530,7 @@ impl Settings {
             ("openaiApiKey".to_string(), &old.openai_api_key, &self.openai_api_key),
             ("polzaApiKey".to_string(), &old.polza_api_key, &self.polza_api_key),
             ("assemblyaiApiKey".to_string(), &old.assemblyai_api_key, &self.assemblyai_api_key),
+            ("quickAsk.exaApiKey".to_string(), &qa_old.exa_api_key, &qa_new.exa_api_key),
         ];
         let post_secrets = pp_old.providers().zip(pp_new.providers()).map(|((provider, before), (_, after))| {
             (format!("postProcess.{}.apiKey", provider), &before.api_key, &after.api_key)
@@ -735,16 +744,22 @@ mod tests {
         new.quick_ask.provider = PostProvider::Polza;
         new.quick_ask.polza.model = "openai/gpt-5-mini".to_string();
         new.quick_ask.polza.api_key = "pk_secret".to_string();
+        new.quick_ask.web_search = true;
+        new.quick_ask.exa_api_key = "exa_secret".to_string();
 
         let changes = new.describe_changes(&old).join("; ");
         assert!(changes.contains("quickAsk.enabled: 'false' → 'true'"));
         assert!(changes.contains("quickAsk.provider: 'gemini' → 'polza'"));
         assert!(changes.contains("quickAsk.polza.model: '' → 'openai/gpt-5-mini'"));
         assert!(changes.contains("quickAsk.polza.apiKey updated (set)"));
-        assert!(!changes.contains("pk_secret"));
+        assert!(changes.contains("quickAsk.webSearch: 'false' → 'true'"));
+        assert!(changes.contains("quickAsk.exaApiKey updated (set)"));
         let summary = new.summary();
-        assert!(summary.contains("quickAsk=on (provider polza, model openai/gpt-5-mini, key set)"));
-        assert!(!summary.contains("pk_secret"));
+        assert!(summary.contains("quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, Exa key set)"));
+        for secret in ["pk_secret", "exa_secret"] {
+            assert!(!changes.contains(secret));
+            assert!(!summary.contains(secret));
+        }
     }
 
     #[test]
