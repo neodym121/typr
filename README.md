@@ -48,7 +48,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 - **Tray menu:** paste the last dictation again, switch the engine, open the settings, turn the hotkeys off (e.g. while gaming).
 - **Starts with Windows** (optional) and **checks GitHub for new releases.**
 - **Tiny footprint:** about 5 MB of RAM in the tray! The settings window's WebView is released when it's closed, and the recording indicator is drawn natively.
-- **Developer mode:** a live log of everything the app does, for troubleshooting.
+- **Developer mode:** a live log of everything the app does, for troubleshooting. There you can also keep the quick ask window loaded, so quick ask and quick chat open faster (about 140 MB more RAM while idle).
 - **English and Russian interface**, dark and minimal, in the Anthropic style, with its own window buttons instead of the system title bar.
 
 ## Building

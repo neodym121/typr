@@ -373,10 +373,12 @@ mod native {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer, PostMessageW,
-        RegisterClassExW, SetTimer, ShowWindow, TranslateMessage, UpdateLayeredWindow, MSG,
-        SW_HIDE, SW_SHOWNOACTIVATE, ULW_ALPHA, WM_APP, WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED,
-        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW,
+        KillTimer, PostMessageW, RegisterClassExW, SetTimer, SetWindowPos, ShowWindow,
+        TranslateMessage, UpdateLayeredWindow, GWL_EXSTYLE, HWND_TOPMOST, MSG, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, ULW_ALPHA, WM_APP, WM_TIMER, WNDCLASSEXW,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+        WS_POPUP,
     };
 
     const WM_REFRESH: u32 = WM_APP + 1;
@@ -672,7 +674,7 @@ mod native {
         draw(hwnd, ease(shown));
         if !on_screen {
             ON_SCREEN.with(|on_screen| on_screen.set(true));
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            show_on_top(hwnd);
         }
 
         // Tick only while something moves; a still indicator costs no CPU
@@ -683,6 +685,25 @@ mod native {
         } else {
             KillTimer(hwnd, ANIMATION_TIMER);
         }
+    }
+
+    /// Shows the window above all others without activating it. Always on
+    /// top is set again each time: another program can take it away
+    /// (`HWND_NOTOPMOST`), and the indicator then appeared under the window
+    /// in front.
+    unsafe fn show_on_top(hwnd: HWND) {
+        if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST == 0 {
+            log::warn!("The recording indicator was no longer always on top, setting it again");
+        }
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+        );
     }
 
     /// `shown` is the eased slide position: 0 hidden beyond the edge, 1 in place.

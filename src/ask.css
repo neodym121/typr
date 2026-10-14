@@ -58,6 +58,11 @@ body.demo {
   transition: transform 230ms cubic-bezier(0.55, 0, 0.75, 0.3), opacity 230ms ease-in;
 }
 
+/* Kept ready for the next question (ask.ts): nothing drawn, nothing animated */
+body.standby #frame {
+  display: none;
+}
+
 /* Folded back into the dot, it slides behind the edge it came from */
 #frame.gone {
   opacity: 0;

@@ -16,6 +16,10 @@
 // how to ask. The questions are shown too, on the right in a box;
 // they can't be copied. The chat hotkey folds it away ("ask-fold").
 //
+// With "Keep the quick ask window ready" (Developer section), the window is
+// loaded ahead of time without a layout: it draws nothing and ignores events
+// until "ask-activate" brings the layout of the question or chat it is for.
+//
 // Opened in a plain browser (npm run dev, then /src/ask.html, ?bottom for the
 // bottom position, ?chat for quick chat), it plays a demo with sample answers.
 
@@ -85,9 +89,14 @@ function demoLayout(): Layout {
     : { ...common, position: "top-right", orbX: width - 35, orbY: 35 };
 }
 
-const layout: Layout = (window as unknown as { __TYPR_ASK__?: Layout }).__TYPR_ASK__ ?? demoLayout();
-const bottom = layout.position === "bottom-center";
-const chat = layout.mode === "chat";
+/** Set before the page loads; a window kept ready has none yet */
+const preset: Layout | null =
+  (window as unknown as { __TYPR_ASK__?: Layout }).__TYPR_ASK__ ?? (demo ? demoLayout() : null);
+let layout!: Layout;
+let bottom = false;
+let chat = false;
+/** Kept ready for the next question: draws nothing until it is activated */
+let standby = preset === null;
 
 const frame = document.getElementById("frame")!;
 const card = document.getElementById("card")!;
@@ -110,20 +119,7 @@ const MIN_HEIGHT = 72;
 const NOTICE_MS = 6000;
 const TOAST_MS = 1400;
 
-document.body.classList.toggle("bottom", bottom);
 document.body.classList.toggle("demo", demo);
-frame.dataset.mode = chat ? "chat" : "ask";
-setLanguage(layout.language === "ru" ? "ru" : "en");
-closeButton.setAttribute("aria-label", t("askWindow.close"));
-
-frame.style.setProperty("--orb-x", `${layout.orbX}px`);
-frame.style.setProperty("--orb-y", `${layout.orbY}px`);
-frame.style.setProperty(
-  "--close-x",
-  `${bottom ? layout.orbX + layout.cardWidth / 2 - 20 : layout.orbX - 30}px`,
-);
-// The card minus its border and the text's padding (18 on each side)
-frame.style.setProperty("--content-width", `${layout.cardWidth - BORDERS - 36}px`);
 
 let state: "dot" | "open" | "closing" = "dot";
 let phase: Phase = "thinking";
@@ -131,18 +127,54 @@ let height = 0;
 /** Keep the newest text in view unless the user scrolled up */
 let stick = true;
 /** A quick ask window waits for its first answer to be announced */
-let awaitingFirst = !chat;
+let awaitingFirst = true;
 let noticeTimer: number | undefined;
 let toastTimer: number | undefined;
 const answers = new Map<number, Answer>();
 /** Quick chat: the questions, by the id of their answer */
 const questions = new Map<number, HTMLElement>();
 
-// Quick chat opens with nothing to do yet; its dot waits behind the edge of
-// the screen, where the indicator would come from
-if (chat) {
-  setPhase("idle");
-  frame.classList.add("gone");
+/** Lays the page out for its window: the dot's place, the mode, the language */
+function configure(next: Layout) {
+  layout = next;
+  bottom = layout.position === "bottom-center";
+  chat = layout.mode === "chat";
+  awaitingFirst = !chat;
+  document.body.classList.toggle("bottom", bottom);
+  frame.dataset.mode = chat ? "chat" : "ask";
+  setLanguage(layout.language === "ru" ? "ru" : "en");
+  closeButton.setAttribute("aria-label", t("askWindow.close"));
+
+  frame.style.setProperty("--orb-x", `${layout.orbX}px`);
+  frame.style.setProperty("--orb-y", `${layout.orbY}px`);
+  frame.style.setProperty(
+    "--close-x",
+    `${bottom ? layout.orbX + layout.cardWidth / 2 - 20 : layout.orbX - 30}px`,
+  );
+  // The card minus its border and the text's padding (18 on each side)
+  frame.style.setProperty("--content-width", `${layout.cardWidth - BORDERS - 36}px`);
+
+  // Quick chat opens with nothing to do yet; its dot waits behind the edge of
+  // the screen, where the indicator would come from
+  if (chat) {
+    setPhase("idle");
+    frame.classList.add("gone");
+  }
+  renderEmpty();
+}
+
+/** The window kept ready is taken for a question or quick chat */
+function activate(next: Layout) {
+  if (!standby) return;
+  standby = false;
+  configure(next);
+  document.body.classList.remove("standby");
+  reportReady();
+}
+
+/** Listening, and the dot is painted: the backend may show the window */
+function reportReady() {
+  requestAnimationFrame(() => requestAnimationFrame(() => call("ask_ready")));
 }
 
 function call(command: string, args?: Record<string, unknown>) {
@@ -290,11 +322,13 @@ function whenPainting(then: () => void) {
 
 /** When the text shows and the unfolding is over (ms); quick chat, opened by
  *  its hotkey, unfolds a little faster (ask.css) */
-const UNFOLD = chat ? { contentIn: 330, done: 500 } : { contentIn: 420, done: 640 };
+const UNFOLD_CHAT = { contentIn: 330, done: 500 };
+const UNFOLD_ASK = { contentIn: 420, done: 640 };
 
 /** The dot unfolds into the card */
 function unfold() {
   if (state !== "dot") return;
+  const UNFOLD = chat ? UNFOLD_CHAT : UNFOLD_ASK;
   // The card appears exactly under the dot, in its colour, then grows
   card.style.transition = "none";
   place(dotRect(), DOT / 2);
@@ -579,30 +613,38 @@ window.addEventListener("mouseup", (event) => {
   if (event.button === 3 || event.button === 4) event.preventDefault();
 });
 
-renderEmpty();
+if (preset) configure(preset);
+else document.body.classList.add("standby");
+
+/** Events reach a window kept ready too: it ignores them until activated */
+function on<T>(event: string, handler: (payload: T) => void) {
+  return listen<T>(event, (e) => {
+    if (!standby) handler(e.payload);
+  });
+}
 
 if (demo) {
   void runDemo();
 } else {
   void Promise.all([
-    listen("ask-reveal", () => reveal()),
-    listen("ask-fold", () => close()),
-    listen<{ id: number; text: string; selection: string | null }>("ask-question", (e) =>
-      onQuestion(e.payload.id, e.payload.text, e.payload.selection),
+    listen<Layout>("ask-activate", (e) => activate(e.payload)),
+    on("ask-reveal", () => reveal()),
+    on("ask-fold", () => close()),
+    on<{ id: number; text: string; selection: string | null }>("ask-question", (p) =>
+      onQuestion(p.id, p.text, p.selection),
     ),
-    listen<{ id: number }>("ask-answer", (e) => onAnswer(e.payload.id)),
-    listen<{ id: number; text: string }>("ask-delta", (e) => onDelta(e.payload.id, e.payload.text)),
-    listen<{ id: number; text: string; stopped: boolean }>("ask-done", (e) =>
-      onDone(e.payload.id, e.payload.text, e.payload.stopped),
-    ),
-    listen<{ id: number; message: string }>("ask-error", (e) => onError(e.payload.id, e.payload.message)),
-    listen<{ id: number }>("ask-cancel", (e) => onCancel(e.payload.id)),
-    listen<{ id: number; query: string }>("ask-search", (e) => onSearch(e.payload.id)),
-    listen<string>("recording-state", (e) => onRecordingState(e.payload)),
-    listen<string>("recording-error", (e) => onRecordingError(e.payload)),
+    on<{ id: number }>("ask-answer", (p) => onAnswer(p.id)),
+    on<{ id: number; text: string }>("ask-delta", (p) => onDelta(p.id, p.text)),
+    on<{ id: number; text: string; stopped: boolean }>("ask-done", (p) => onDone(p.id, p.text, p.stopped)),
+    on<{ id: number; message: string }>("ask-error", (p) => onError(p.id, p.message)),
+    on<{ id: number }>("ask-cancel", (p) => onCancel(p.id)),
+    on<{ id: number; query: string }>("ask-search", (p) => onSearch(p.id)),
+    on<string>("recording-state", (p) => onRecordingState(p)),
+    on<string>("recording-error", (p) => onRecordingError(p)),
   ]).then(() => {
-    // Listening, and the dot is painted: the backend may show the window
-    requestAnimationFrame(() => requestAnimationFrame(() => call("ask_ready")));
+    // A window kept ready waits for its question; any other may be shown
+    if (standby) call("ask_standby");
+    else reportReady();
   });
 }
 

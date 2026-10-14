@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>Typr</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/fonts/fonts.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -615,8 +613,20 @@
             <h1 class="section-title" data-i18n="developer.title">Developer</h1>
             <p class="section-desc" data-i18n="developer.desc">Live log of everything Typr does: hotkeys, audio, requests, errors</p>
           </header>
-          <!-- Local recognition files (src/local.ts) -->
+          <!-- Local recognition files (src/local.ts), the quick ask window kept ready -->
           <div class="card dev-card">
+            <div class="setting-row">
+              <div class="setting-label">
+                <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep the quick ask window ready</label>
+                <span class="label-hint" data-i18n="developer.keepAskHint">Quick ask and quick chat open faster: their window stays loaded in the background. Uses more memory while idle, about 140 MB</span>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="keep-ask-toggle" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
             <div class="setting-row">
               <div class="setting-label">
                 <span class="label-text" data-i18n="local.components">Local recognition components</span>

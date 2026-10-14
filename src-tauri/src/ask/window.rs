@@ -11,12 +11,15 @@
 //!   about stays in front and keeps its selection and caret, and its buttons
 //!   still work without activating it.
 //! * It exists only while an answer (or quick chat) is on screen; closing
-//!   it destroys the WebView.
+//!   it destroys the WebView. With "Keep the quick ask window ready"
+//!   (Developer section) a hidden one is loaded ahead of time instead and
+//!   handed its layout when a question comes ([`keep_ready`]): the window
+//!   opens at once, but WebView2 keeps running while idle.
 
 use serde_json::json;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
 use super::Mode;
@@ -39,6 +42,10 @@ const SHADOW_ROOM: f64 = 28.0;
 const HIT_POLL: Duration = Duration::from_millis(30);
 /// How long the native dot stays while the page starts drawing
 const SHOWN_WAIT: Duration = Duration::from_millis(1500);
+/// How long a question waits for the window kept ready to finish loading
+const SPARE_WAIT: Duration = Duration::from_secs(3);
+/// How long a window kept ready waits for the previous one to go
+const GONE_WAIT: Duration = Duration::from_secs(3);
 
 /// Where the window goes and what the page needs to lay out the card.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -124,6 +131,22 @@ impl Page {
             push_to_talk: settings.recording_mode == RecordingMode::PushToTalk,
         }
     }
+
+    /// What the page lays itself out by (`window.__TYPR_ASK__` in ask.ts)
+    fn layout(&self, geometry: &Geometry) -> serde_json::Value {
+        json!({
+            "position": self.position.id(),
+            "language": self.language,
+            "mode": self.mode.id(),
+            "hotkey": self.hotkey,
+            "pushToTalk": self.push_to_talk,
+            "orbX": geometry.orb_x,
+            "orbY": geometry.orb_y,
+            "orbInset": ORB_INSET,
+            "cardWidth": CARD_WIDTH,
+            "maxHeight": geometry.max_height,
+        })
+    }
 }
 
 /// The primary screen's work area and scale, as the indicator reads them.
@@ -162,31 +185,108 @@ static WATCH: AtomicU64 = AtomicU64::new(0);
 /// The page draws its dot (`ask_shown`): the native one can go
 static SHOWN: AtomicBool = AtomicBool::new(false);
 
-/// Creates the window, hidden. Blocks until it exists, so call it off the
-/// async threads.
+/// The window kept ready: none (or the window is in use), its page loading,
+/// or loaded and waiting for a question
+const SPARE_NONE: u8 = 0;
+const SPARE_LOADING: u8 = 1;
+const SPARE_READY: u8 = 2;
+static SPARE: AtomicU8 = AtomicU8::new(SPARE_NONE);
+/// When the window kept ready started loading (for the log)
+static SPARE_SINCE: Mutex<Option<Instant>> = Mutex::new(None);
+/// The window being destroyed was kept ready: no conversation goes with it
+static SPARE_GOING: AtomicBool = AtomicBool::new(false);
+/// Whether a window is kept ready, and where the indicator is
+static KEEP: AtomicBool = AtomicBool::new(false);
+static KEEP_POSITION: Mutex<IndicatorPosition> = Mutex::new(IndicatorPosition::TopRight);
+/// One window is built, taken or let go at a time
+static BUILD: Mutex<()> = Mutex::new(());
+
+/// Makes the window for a new conversation, hidden: takes the one kept
+/// ready, or builds it. Blocks until it exists, so call it off the async
+/// threads.
 pub fn open(app: &AppHandle, page: &Page) -> Result<(), String> {
-    if app.get_webview_window(LABEL).is_some() {
-        return Ok(());
-    }
-    let position = page.position;
+    let _build = BUILD.lock().unwrap();
     let (work_area, scale) = screen(app);
-    let geometry = Geometry::new(position, work_area, scale);
-    let layout = json!({
-        "position": position.id(),
-        "language": page.language,
-        "mode": page.mode.id(),
-        "hotkey": page.hotkey,
-        "pushToTalk": page.push_to_talk,
-        "orbX": geometry.orb_x,
-        "orbY": geometry.orb_y,
-        "orbInset": ORB_INSET,
-        "cardWidth": CARD_WIDTH,
-        "maxHeight": geometry.max_height,
-    });
+    let geometry = Geometry::new(page.position, work_area, scale);
+    let layout = page.layout(&geometry);
+
+    if let Some(window) = app.get_webview_window(LABEL) {
+        if take_spare() {
+            // Over the indicator as the screen is now; the page lays itself
+            // out and reports ready
+            let _ = window.set_position(PhysicalPosition::new(geometry.x, geometry.y));
+            let _ = window.set_size(PhysicalSize::new(geometry.width, geometry.height));
+            *FRAME.lock().unwrap() = Some(geometry);
+            *CARD.lock().unwrap() = None;
+            app.emit_to(LABEL, "ask-activate", layout)
+                .map_err(|e| format!("The quick ask window couldn't be prepared: {}", e))?;
+            log_placed(page, &geometry, " (kept ready)");
+            return Ok(());
+        }
+        if SPARE.swap(SPARE_NONE, Ordering::SeqCst) == SPARE_LOADING {
+            log::warn!("The quick ask window kept ready didn't load in time, opening a new one");
+            SPARE_GOING.store(true, Ordering::SeqCst);
+            let _ = window.destroy();
+        }
+        // Otherwise the last window is still on its way out
+        if !wait_gone(app, GONE_WAIT) {
+            return Err("The previous quick ask window is still closing".to_string());
+        }
+    }
+    SPARE.store(SPARE_NONE, Ordering::SeqCst);
+    build(app, &geometry, Some(format!("window.__TYPR_ASK__ = {};", layout)))?;
+    *FRAME.lock().unwrap() = Some(geometry);
+    *CARD.lock().unwrap() = None;
+    log_placed(page, &geometry, "");
+    Ok(())
+}
+
+fn log_placed(page: &Page, geometry: &Geometry, note: &str) {
+    log::info!(
+        "Quick {} window at ({}, {}), {}×{} px ({}){}",
+        page.mode.id(),
+        geometry.x,
+        geometry.y,
+        geometry.width,
+        geometry.height,
+        page.position,
+        note
+    );
+}
+
+/// Takes the window kept ready, waiting for its page if it is still loading.
+fn take_spare() -> bool {
+    let started = Instant::now();
+    while SPARE.load(Ordering::SeqCst) == SPARE_LOADING && started.elapsed() < SPARE_WAIT {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    SPARE
+        .compare_exchange(SPARE_READY, SPARE_NONE, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+/// Waits until no quick ask window is left; false if one still is.
+fn wait_gone(app: &AppHandle, limit: Duration) -> bool {
+    let started = Instant::now();
+    while app.get_webview_window(LABEL).is_some() {
+        if started.elapsed() >= limit {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    true
+}
+
+/// Builds the window, hidden, where `geometry` puts it. `init` runs before
+/// the page's own scripts; without the layout it sets, the page waits.
+fn build(app: &AppHandle, geometry: &Geometry, init: Option<String>) -> Result<(), String> {
     let s = geometry.scale;
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("src/ask.html".into()))
+    let mut builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("src/ask.html".into()));
+    if let Some(init) = init {
+        builder = builder.initialization_script(init);
+    }
+    let window = builder
         .title("Typr")
-        .initialization_script(format!("window.__TYPR_ASK__ = {};", layout))
         .inner_size(geometry.width as f64 / s, geometry.height as f64 / s)
         .position(geometry.x as f64 / s, geometry.y as f64 / s)
         .decorations(false)
@@ -205,18 +305,78 @@ pub fn open(app: &AppHandle, page: &Page) -> Result<(), String> {
     // Exactly over the indicator, whatever scale the builder assumed
     let _ = window.set_position(PhysicalPosition::new(geometry.x, geometry.y));
     let _ = window.set_size(PhysicalSize::new(geometry.width, geometry.height));
-    *FRAME.lock().unwrap() = Some(geometry);
-    *CARD.lock().unwrap() = None;
-    log::info!(
-        "Quick {} window at ({}, {}), {}×{} px ({})",
-        page.mode.id(),
-        geometry.x,
-        geometry.y,
-        geometry.width,
-        geometry.height,
-        position
-    );
     Ok(())
+}
+
+/// Developer option: keeps a hidden window loaded for the next question
+/// (quick ask or quick chat), or lets the one kept ready go. A window in use
+/// is left alone; the next one is loaded once it closes.
+pub fn keep_ready(app: &AppHandle, keep: bool, position: IndicatorPosition) {
+    *KEEP_POSITION.lock().unwrap() = position;
+    if KEEP.swap(keep, Ordering::SeqCst) == keep {
+        return;
+    }
+    let app = app.clone();
+    // Off the event loop: building or destroying a window there deadlocks
+    std::thread::spawn(move || {
+        if keep {
+            prepare(&app);
+            return;
+        }
+        let _build = BUILD.lock().unwrap();
+        if SPARE.swap(SPARE_NONE, Ordering::SeqCst) != SPARE_NONE {
+            if let Some(window) = app.get_webview_window(LABEL) {
+                SPARE_GOING.store(true, Ordering::SeqCst);
+                let _ = window.destroy();
+            }
+            log::info!("The quick ask window is no longer kept ready");
+        }
+    });
+}
+
+/// Loads a hidden window for the next question, once the last one is gone.
+fn prepare(app: &AppHandle) {
+    // A window in use: the next one is prepared when it is destroyed
+    if !wait_gone(app, GONE_WAIT) {
+        return;
+    }
+    let _build = BUILD.lock().unwrap();
+    if !KEEP.load(Ordering::SeqCst) || app.get_webview_window(LABEL).is_some() {
+        return;
+    }
+    let (work_area, scale) = screen(app);
+    let geometry = Geometry::new(*KEEP_POSITION.lock().unwrap(), work_area, scale);
+    SPARE.store(SPARE_LOADING, Ordering::SeqCst);
+    *SPARE_SINCE.lock().unwrap() = Some(Instant::now());
+    if let Err(e) = build(app, &geometry, None) {
+        SPARE.store(SPARE_NONE, Ordering::SeqCst);
+        log::warn!("{}", e);
+    }
+}
+
+/// The page of the window kept ready has loaded and waits for a question.
+pub fn standby_ready() {
+    if SPARE
+        .compare_exchange(SPARE_LOADING, SPARE_READY, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        let since = SPARE_SINCE.lock().unwrap().take();
+        log::info!(
+            "Quick ask window kept ready for the next question (loaded in {} ms)",
+            since.map_or(0, |since| since.elapsed().as_millis())
+        );
+    }
+}
+
+/// The window was destroyed. Returns whether it was one kept ready, which no
+/// conversation went with. With the option on, the next one is loaded.
+pub fn destroyed(app: &AppHandle) -> bool {
+    let spare = SPARE_GOING.swap(false, Ordering::SeqCst);
+    if KEEP.load(Ordering::SeqCst) {
+        let app = app.clone();
+        std::thread::spawn(move || prepare(&app));
+    }
+    spare
 }
 
 /// Shows the window without taking the focus and hands the indicator's
@@ -229,6 +389,7 @@ pub async fn reveal(app: &AppHandle) {
     };
     SHOWN.store(false, Ordering::SeqCst);
     let before = crate::paste::foreground_window();
+    raise(&window);
     let _ = window.show();
     for _ in 0..20 {
         if window.is_visible().unwrap_or(false) {
@@ -258,6 +419,30 @@ pub async fn reveal(app: &AppHandle) {
 pub fn page_shown(app: &AppHandle) {
     SHOWN.store(true, Ordering::SeqCst);
     overlay::set_suppressed(app, true);
+}
+
+/// Always on top again before showing: another program can take that away,
+/// and a window kept ready may wait hidden for hours.
+fn raise(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    if let Ok(hwnd) = window.hwnd() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        unsafe {
+            SetWindowPos(
+                hwnd.0 as _,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = window;
 }
 
 /// The window is built never to take the focus; should Windows give it the

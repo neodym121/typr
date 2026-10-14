@@ -807,6 +807,10 @@ pub fn close(app: &AppHandle) {
 
 /// The window was destroyed (by [`close`] or otherwise).
 pub fn window_destroyed(app: &AppHandle) {
+    if window::destroyed(app) {
+        // The window kept ready for the next question: no conversation in it
+        return;
+    }
     if forget_conversation() {
         overlay::set_suppressed(app, false);
         log::info!("Quick ask window gone, the conversation is forgotten");

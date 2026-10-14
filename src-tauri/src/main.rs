@@ -233,6 +233,13 @@ fn sync_overlay(app: &tauri::AppHandle) {
     overlay::set_enabled(app, allowed);
 }
 
+/// Developer option: a hidden quick ask window stays loaded while quick ask
+/// or quick chat is on, so it opens at once.
+fn sync_ask_window(app: &tauri::AppHandle, settings: &Settings) {
+    let keep = settings.keep_ask_window && (settings.quick_ask.enabled || settings.quick_ask.chat);
+    ask::window::keep_ready(app, keep, settings.indicator_position);
+}
+
 /// Applies settings saved from anywhere (the window or the tray): saves
 /// them, logs what changed and updates everything that depends on them.
 fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), String> {
@@ -278,6 +285,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
     let updates_turned_on = settings.check_updates && !old.check_updates;
     app.state::<LocalEngine>().settings_changed(&old, &settings);
+    sync_ask_window(app, &settings);
     *state.settings.lock().unwrap() = settings;
     if indicator_changed {
         sync_overlay(app);
@@ -484,6 +492,12 @@ async fn list_postprocess_models(
 #[tauri::command]
 fn ask_ready() {
     ask::page_ready();
+}
+
+/// The quick ask window kept ready has loaded and waits for a question
+#[tauri::command]
+fn ask_standby() {
+    ask::window::standby_ready();
 }
 
 /// The page draws its dot over the indicator's: the native one can go
@@ -1061,6 +1075,7 @@ fn main() {
             local_delete_model,
             local_delete_runtime,
             ask_ready,
+            ask_standby,
             ask_shown,
             ask_card,
             ask_copy,
@@ -1101,6 +1116,7 @@ fn main() {
             if let Err(e) = register_hotkeys(app.handle(), &startup_settings) {
                 log::error!("Failed to register the hotkeys at startup: {}", e);
             }
+            sync_ask_window(app.handle(), &startup_settings);
 
             // Started with Windows: straight to the tray, unless the first-run
             // setup still has to be done
