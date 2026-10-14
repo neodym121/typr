@@ -159,14 +159,6 @@ pub fn install_runtime(paths: &Paths, archive: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn remove_runtime(paths: &Paths) -> Result<(), String> {
-    let dir = paths.runtime_dir();
-    if !dir.exists() {
-        return Ok(());
-    }
-    fs::remove_dir_all(&dir).map_err(|e| format!("Failed to delete {}: {}", dir.display(), e))
-}
-
 /// A path inside the archive without its top-level folder, with plain
 /// components only, so no entry can write outside the target folder.
 fn safe_relative(path: &Path) -> Option<PathBuf> {
@@ -298,9 +290,6 @@ mod tests {
         assert_eq!(fs::read(installed.join("transcribe.dll")).unwrap(), b"dll");
         assert!(installed.join("licenses").join("LICENSE").is_file());
         assert!(!staging_dir(&installed).exists());
-
-        remove_runtime(&paths).unwrap();
-        assert!(!is_runtime_installed(&paths));
         let _ = fs::remove_dir_all(&dir);
     }
 

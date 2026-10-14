@@ -593,15 +593,6 @@ async fn local_delete_model(engine: State<'_, LocalEngine>, id: String) -> Resul
 }
 
 #[tauri::command]
-async fn local_delete_runtime(engine: State<'_, LocalEngine>) -> Result<(), String> {
-    // Waits for a running dictation to release the model
-    let engine = engine.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || engine.delete_runtime())
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
 fn get_logs() -> Vec<LogEntry> {
     logger::entries()
 }
@@ -1073,7 +1064,6 @@ fn main() {
             local_download_runtime,
             local_cancel_download,
             local_delete_model,
-            local_delete_runtime,
             ask_ready,
             ask_standby,
             ask_shown,
@@ -1102,6 +1092,7 @@ fn main() {
         .setup(move |app| {
             logger::attach_app(app.handle().clone());
             app.state::<LocalEngine>().attach(app.handle().clone());
+            app.state::<LocalEngine>().restore_runtime();
             log_environment(&startup_dir, &startup_settings);
             autostart::refresh();
 

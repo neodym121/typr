@@ -850,7 +850,7 @@ kbd.inline-kbd:hover {
   margin-top: 0;
 }
 
-/* Developer: the local recognition components, above the log */
+/* Developer: the switch above the log */
 .dev-card {
   flex: none;
   margin-bottom: 16px;
@@ -893,19 +893,6 @@ kbd.inline-kbd:hover {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.runtime-progress {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  width: 150px;
-}
-
-.runtime-progress .progress {
-  width: 100%;
-  margin-top: 0;
 }
 
 .local-error {

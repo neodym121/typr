@@ -42,6 +42,8 @@ pub const DOWNLOAD_EVENT: &str = "local-download";
 pub const CHANGED_EVENT: &str = "local-changed";
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
+/// The components' download (models are "model:<id>")
+const RUNTIME_KEY: &str = "runtime";
 
 /// Local recognition works with the Windows x64 runtime only
 pub fn is_supported() -> bool {
@@ -617,6 +619,8 @@ impl LocalEngine {
         let key = format!("model:{}", spec.id);
         let job = self.start_job(&key)?;
         log::info!("Downloading {} ({} MB)", spec.name, megabytes(spec.size));
+        // The components come with the model: it can't run without them
+        self.fetch_missing_runtime();
         let engine = self.clone();
         tauri::async_runtime::spawn(async move {
             let result = engine.fetch_model(&job, spec).await;
@@ -647,6 +651,27 @@ impl LocalEngine {
         Ok(())
     }
 
+    /// At start: a downloaded model never stays without the components
+    /// (they can't be deleted; a failed or cancelled download is retried).
+    pub fn restore_runtime(&self) {
+        if MODELS.iter().any(|m| runtime::is_model_installed(self.paths(), m)) {
+            self.fetch_missing_runtime();
+        }
+    }
+
+    /// Starts downloading the components unless they are there or on the way.
+    fn fetch_missing_runtime(&self) {
+        if !is_supported()
+            || runtime::is_runtime_installed(self.paths())
+            || lock(&self.inner.downloads).contains_key(RUNTIME_KEY)
+        {
+            return;
+        }
+        if let Err(e) = self.download_runtime() {
+            log::warn!("The local recognition components didn't start downloading: {}", e);
+        }
+    }
+
     pub fn download_runtime(&self) -> Result<(), String> {
         if !is_supported() {
             return Err("Local recognition is available on 64-bit Windows only".to_string());
@@ -654,7 +679,7 @@ impl LocalEngine {
         if runtime::is_runtime_installed(self.paths()) {
             return Ok(());
         }
-        let key = "runtime";
+        let key = RUNTIME_KEY;
         let job = self.start_job(key)?;
         log::info!("Downloading the transcribe.cpp runtime ({} MB)", megabytes(RUNTIME.size));
         let engine = self.clone();
@@ -710,19 +735,6 @@ impl LocalEngine {
         }
         let _ = std::fs::remove_file(runtime::part_path(&path));
         log::info!("{} deleted", spec.name);
-        self.notify_changed();
-        Ok(())
-    }
-
-    /// Blocking: waits for a running dictation, then ends the recognition
-    /// process that uses the runtime.
-    pub fn delete_runtime(&self) -> Result<(), String> {
-        {
-            let mut slot = lock(&self.inner.model);
-            self.free_model(&mut slot, "the components were deleted");
-        }
-        runtime::remove_runtime(self.paths())?;
-        log::info!("Runtime deleted");
         self.notify_changed();
         Ok(())
     }

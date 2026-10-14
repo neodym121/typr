@@ -64,7 +64,7 @@
               <path d="M6.75 5.6a1.3 1.3 0 012.5.45c0 .85-1.25 1-1.25 1.75" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               <circle cx="8" cy="9.05" r=".65" fill="currentColor"/>
             </svg>
-            <span data-i18n="nav.ask">Quick ask</span>
+            <span data-i18n="nav.ask">Quick Ask</span>
           </button>
           <button type="button" class="nav-item hidden" id="nav-developer" data-section="developer">
             <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -397,7 +397,7 @@
             </div>
           </div>
 
-          <h2 class="group-title" data-i18n="hotkeys.chat">Quick chat</h2>
+          <h2 class="group-title" data-i18n="hotkeys.chat">Quick Chat</h2>
           <div class="card">
             <div class="setting-row">
               <div class="setting-label">
@@ -510,13 +510,13 @@
 
         <section id="section-ask" class="content-section">
           <header class="section-header">
-            <h1 class="section-title" data-i18n="ask.title">Quick ask</h1>
+            <h1 class="section-title" data-i18n="ask.title">Quick Ask</h1>
             <p class="section-desc" data-i18n="ask.desc">Select text anywhere and ask about it by voice</p>
           </header>
           <div class="card">
             <div class="setting-row">
               <div class="setting-label">
-                <label class="label-text" for="ask-enabled" data-i18n="ask.enabled">Quick ask</label>
+                <label class="label-text" for="ask-enabled" data-i18n="ask.enabled">Quick Ask</label>
                 <span class="label-hint" data-i18n="ask.enabledHint">With text selected, the dictation hotkey asks the model about it instead of typing</span>
               </div>
               <div class="setting-control">
@@ -528,7 +528,7 @@
             </div>
             <div class="setting-row">
               <div class="setting-label">
-                <label class="label-text" for="ask-chat" data-i18n="ask.chat">Quick chat</label>
+                <label class="label-text" for="ask-chat" data-i18n="ask.chat">Quick Chat</label>
                 <span class="label-hint" id="ask-chat-hint"></span>
               </div>
               <div class="setting-control">
@@ -613,12 +613,12 @@
             <h1 class="section-title" data-i18n="developer.title">Developer</h1>
             <p class="section-desc" data-i18n="developer.desc">Live log of everything Typr does: hotkeys, audio, requests, errors</p>
           </header>
-          <!-- Local recognition files (src/local.ts), the quick ask window kept ready -->
+          <!-- WebView2 kept in the background: the Quick Ask window stays loaded (ask/window.rs) -->
           <div class="card dev-card">
             <div class="setting-row">
               <div class="setting-label">
-                <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep the quick ask window ready</label>
-                <span class="label-hint" data-i18n="developer.keepAskHint">Quick ask and quick chat open faster: their window stays loaded in the background. Uses more memory while idle, about 140 MB</span>
+                <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep WebView2 in the background</label>
+                <span class="label-hint" data-i18n="developer.keepAskHint">Quick Ask, Quick Chat and the settings window open faster, but WebView2 always stays in the background, which takes more RAM.</span>
               </div>
               <div class="setting-control">
                 <label class="switch">
@@ -626,14 +626,6 @@
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
               </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="local.components">Local recognition components</span>
-                <span class="label-hint" id="local-runtime-hint"></span>
-                <span class="local-error hidden" id="local-runtime-error"></span>
-              </div>
-              <div class="setting-control local-actions" id="local-runtime-actions"></div>
             </div>
           </div>
           <div class="log-toolbar">

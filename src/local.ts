@@ -1,6 +1,8 @@
 // Local engine panel (Engine → Local): models to download, delete and pick
-// as the default, the acceleration (Vulkan or the processor), the runtime
-// components it needs, and when an idle model leaves memory.
+// as the default, the acceleration (Vulkan or the processor), and when an
+// idle model leaves memory. The runtime components come with the models (the
+// backend fetches them) and can't be deleted; a note speaks up only when a
+// downloaded model is left without them.
 // The settings live in the app's settings object; this module edits them in
 // place and asks the host to save. Everything else comes from the backend
 // (local_status) and is re-read whenever it reports a change. The setup
@@ -83,9 +85,6 @@ const unsupportedNote = document.getElementById("local-unsupported")!;
 const modelList = document.getElementById("local-model-list")!;
 const backendButtons = document.querySelectorAll<HTMLButtonElement>("#local-backends .segment");
 const fallbackLine = document.getElementById("local-fallback")!;
-const runtimeHint = document.getElementById("local-runtime-hint")!;
-const runtimeActions = document.getElementById("local-runtime-actions")!;
-const runtimeError = document.getElementById("local-runtime-error")!;
 const runtimeProblem = document.getElementById("local-runtime-problem")!;
 const runtimeProblemText = document.getElementById("local-runtime-problem-text")!;
 const runtimeRetry = document.getElementById("local-runtime-retry")!;
@@ -325,44 +324,8 @@ function renderBackends() {
   fallbackLine.classList.toggle("hidden", !fallback);
 }
 
-function renderRuntime() {
-  if (!status) return;
-  const runtime = status.runtime;
-  const progress = downloads.get(RUNTIME_KEY);
-  const describe = t("local.runtimeAbout");
-
-  runtimeActions.replaceChildren();
-  runtimeError.classList.add("hidden");
-
-  if (progress) {
-    runtimeHint.textContent = describe;
-    const wrap = document.createElement("div");
-    wrap.className = "runtime-progress";
-    wrap.append(progressBar(progress), progressLabel(progress));
-    runtimeActions.append(wrap);
-    if (progress.state === "downloading") {
-      runtimeActions.append(button(t("local.cancel"), () => cancelDownload(RUNTIME_KEY)));
-    }
-    return;
-  }
-
-  if (runtime.installed) {
-    runtimeHint.textContent = `${describe} · ${t("local.installed")}`;
-    runtimeActions.append(deleteButton(RUNTIME_KEY, () => void deleteRuntime()));
-  } else {
-    runtimeHint.textContent = `${describe} · ${formatSize(runtime.size)}`;
-    runtimeActions.append(button(t("local.download"), () => void downloadRuntime()));
-  }
-
-  const error = errors.get(RUNTIME_KEY);
-  if (error) {
-    runtimeError.textContent = t("local.downloadError", { error });
-    runtimeError.classList.remove("hidden");
-  }
-}
-
-/** The components live in the Developer section; the Local tab speaks up
- *  only when a downloaded model can't run without them. */
+/** The components come with the models; the Local tab speaks up only when a
+ *  downloaded model can't run without them (their download failed). */
 function renderRuntimeProblem() {
   if (!status) return;
   const error = errors.get(RUNTIME_KEY);
@@ -381,7 +344,6 @@ function render() {
   unsupportedNote.classList.toggle("hidden", status.supported);
   renderModels();
   renderBackends();
-  renderRuntime();
   renderRuntimeProblem();
   notify();
 }
@@ -427,11 +389,8 @@ async function downloadRuntime() {
   await start(RUNTIME_KEY, "local_download_runtime");
 }
 
+/** The backend fetches the components alongside the model if they're missing */
 export async function downloadModel(id: string) {
-  // The components are needed too; fetch them alongside the first model
-  if (status && !status.runtime.installed && !downloads.has(RUNTIME_KEY)) {
-    void downloadRuntime();
-  }
   await start(`model:${id}`, "local_download_model", { id });
 }
 
@@ -457,15 +416,6 @@ async function deleteModel(id: string) {
     const other = status?.models.find((m) => m.installed);
     if (other) chooseModel(other.id);
   }
-}
-
-async function deleteRuntime() {
-  try {
-    await invoke("local_delete_runtime");
-  } catch (err) {
-    errors.set(RUNTIME_KEY, String(err));
-  }
-  await refresh();
 }
 
 function onProgress(progress: DownloadProgress) {
