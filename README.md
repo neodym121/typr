@@ -5,6 +5,20 @@
 <h1 align="center">Typr</h1>
 
 <p align="center">
+  <a href="https://github.com/neodym121/typr-updated/releases/latest"><img src="https://img.shields.io/github/v/release/neodym121/typr-updated?color=369eff&labelColor=black&style=flat-square&logo=github&logoColor=white" alt="release" /></a>
+  <a href="https://github.com/neodym121/typr-updated/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/neodym121/typr-updated/build.yml?label=build&labelColor=black&style=flat-square&logo=githubactions&logoColor=white" alt="build" /></a>
+  <a href="https://github.com/neodym121/typr-updated/releases"><img src="https://img.shields.io/github/downloads/neodym121/typr-updated/total?color=45cc11&labelColor=black&style=flat-square" alt="downloads" /></a>
+  <a href="https://github.com/neodym121/typr-updated/releases/latest"><img src="https://img.shields.io/badge/platform-windows-0078d4?labelColor=black&style=flat-square" alt="platform" /></a>
+  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/tauri-2-ffc131?labelColor=black&style=flat-square&logo=tauri&logoColor=white" alt="tauri" /></a>
+  <br />
+  <a href="https://github.com/neodym121/typr-updated/releases"><img src="https://img.shields.io/github/release-date/neodym121/typr-updated?color=61d0ff&label=release%20date&labelColor=black&style=flat-square" alt="release date" /></a>
+  <a href="https://github.com/neodym121/typr-updated/stargazers"><img src="https://img.shields.io/github/stars/neodym121/typr-updated?color=ffcb47&labelColor=black&style=flat-square" alt="stars" /></a>
+  <a href="https://github.com/neodym121/typr-updated/forks"><img src="https://img.shields.io/github/forks/neodym121/typr-updated?color=8ae8ff&labelColor=black&style=flat-square" alt="forks" /></a>
+  <a href="https://github.com/neodym121/typr-updated/issues"><img src="https://img.shields.io/github/issues/neodym121/typr-updated?color=ff80eb&labelColor=black&style=flat-square" alt="issues" /></a>
+  <a href="https://github.com/neodym121/typr-updated/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square" alt="license" /></a>
+</p>
+
+<p align="center">
   <b>English</b> · <a href="README.ru.md">Русский</a>
 </p>
 
