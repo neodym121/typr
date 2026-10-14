@@ -6,6 +6,7 @@ import { fillApiKeys, initApiKeys, translateApiKeys, type ApiKeys } from "./apik
 import { enhanceSelect, syncSelect } from "./dropdown";
 import { fillHotkeys, initHotkeys, translateHotkeys } from "./hotkeys";
 import { fillLanguageOptions, formatHotkey, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
+import { renderIcons } from "./icons";
 import { fillLocal, initLocal, showLocal, showLocalComponents, translateLocal } from "./local";
 import { initSetup, openSetup, translateSetup } from "./setup";
 import {
@@ -250,6 +251,9 @@ let systemLanguage: Lang = "en";
 
 const GROQ_MODELS = ["whisper-large-v3-turbo", "whisper-large-v3"];
 const ASSEMBLYAI_MODELS = ["universal-3-5-pro", "universal-2"];
+
+// The Lucide icons of the sidebar, the window buttons and the log
+renderIcons();
 
 // App-styled lists instead of the browser's native <select> popup
 fillLanguageOptions(recognitionLanguage);

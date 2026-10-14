@@ -26,19 +26,13 @@
 
       <!-- The recording indicator's dot: it becomes the card's status light -->
       <div id="orb" aria-hidden="true">
-        <svg class="mic" width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
-          <path d="M6 11a6 6 0 0012 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-          <path d="M12 17v4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-        </svg>
+        <i class="mic" data-icon="mic" data-size="18"></i>
         <span class="spin"></span>
       </div>
 
       <!-- No title tooltip: WebView2 can leave one on screen after the window closes -->
       <button type="button" id="close" aria-label="Close">
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-          <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-        </svg>
+        <i data-icon="x" data-size="14"></i>
       </button>
     </div>
     <script type="module" src="/src/ask.ts"></script>

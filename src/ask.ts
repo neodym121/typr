@@ -3,7 +3,8 @@
 // spinner. On "ask-reveal" the native dot is gone and this one unfolds into
 // a card with the model's answers; its dot stays as the card's status light.
 // The questions aren't shown, only the answers; a click on one copies it,
-// a click on a link in it opens the page. While the model searches the web,
+// a click on a link in it opens the page, and the button in the corner of a
+// code block copies that code alone. While the model searches the web,
 // "Search…" blinks slowly where the answer will be, and fades away once it
 // starts.
 // While the window is open,
@@ -26,6 +27,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { formatHotkey, setLanguage, t } from "./i18n";
+import { icon, renderIcons } from "./icons";
 import { renderMarkdown } from "./markdown";
 
 /** Set by the backend before the page loads (ask/window.rs) */
@@ -120,6 +122,8 @@ const NOTICE_MS = 6000;
 const TOAST_MS = 1400;
 
 document.body.classList.toggle("demo", demo);
+// The dot's microphone and the close button
+renderIcons();
 
 let state: "dot" | "open" | "closing" = "dot";
 let phase: Phase = "thinking";
@@ -408,6 +412,12 @@ function answerFor(id: number): Answer {
       call("ask_open_link", { url: link.dataset.href });
       return;
     }
+    // The button of a code block copies that code alone
+    const codeCopy = (event.target as Element).closest<HTMLElement>(".code-copy");
+    if (codeCopy) {
+      void copyCode(codeCopy);
+      return;
+    }
     // Selecting part of the text with the mouse is no click to copy
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && el.contains(selection.anchorNode)) return;
@@ -489,29 +499,65 @@ function queueRender(answer: Answer) {
   requestAnimationFrame(() => {
     answer.renderQueued = false;
     answer.body.replaceChildren(renderMarkdown(answer.text));
+    answer.body.querySelectorAll("pre").forEach((pre) => pre.prepend(codeCopyButton()));
     queueFit();
   });
 }
 
-async function copyAnswer(answer: Answer) {
-  if (answer.pending || !answer.text.trim()) return;
+/** In the top right corner of a code block: copies the code alone */
+function codeCopyButton(): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "code-copy";
+  button.setAttribute("aria-label", t("askWindow.copyCode"));
+  button.append(icon("copy", 14));
+  return button;
+}
+
+/** Puts `text` on the clipboard; false if that failed */
+async function writeClipboard(text: string): Promise<boolean> {
   try {
     // A browser tab without focus refuses the clipboard: the demo shows the
     // feedback anyway
-    if (demo) await navigator.clipboard.writeText(answer.text).catch(() => {});
-    else await invoke("ask_copy", { text: answer.text });
+    if (demo) await navigator.clipboard.writeText(text).catch(() => {});
+    else await invoke("ask_copy", { text });
+    return true;
   } catch (err) {
     console.error("Copy failed:", err);
-    return;
+    return false;
   }
+}
+
+/** "Copied" in the status strip, next to the dot */
+function showToast(message: string) {
+  toast.textContent = message;
+  toast.classList.add("visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), TOAST_MS);
+}
+
+async function copyAnswer(answer: Answer) {
+  if (answer.pending || !answer.text.trim()) return;
+  if (!(await writeClipboard(answer.text))) return;
   // The answer lights up and the strip says so
   answer.el.classList.remove("copied");
   void answer.el.offsetWidth;
   answer.el.classList.add("copied");
-  toast.textContent = t("askWindow.copied");
-  toast.classList.add("visible");
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove("visible"), TOAST_MS);
+  showToast(t("askWindow.copied"));
+}
+
+/** The code of the block `button` is in; the button turns into a check mark
+ *  for a moment */
+async function copyCode(button: HTMLElement) {
+  const code = button.closest("pre")?.querySelector("code")?.textContent ?? "";
+  if (!code.trim() || !(await writeClipboard(code))) return;
+  button.classList.add("copied");
+  button.replaceChildren(icon("check", 14));
+  window.setTimeout(() => {
+    button.classList.remove("copied");
+    button.replaceChildren(icon("copy", 14));
+  }, TOAST_MS);
+  showToast(t("askWindow.codeCopied"));
 }
 
 function showNotice(message: string) {

@@ -360,18 +360,15 @@ body.bottom #scroll {
   transition: background-color 160ms ease;
 }
 
-.answer:hover {
-  background: rgba(248, 248, 246, 0.04);
+/* Faint: a hint that it takes a click, not a highlight. Not while the
+   pointer is on a code block's copy button, which copies the code alone */
+.answer:hover:not(.pending, .error, :has(.code-copy:hover)) {
+  background: rgba(248, 248, 246, 0.022);
 }
 
 .answer.pending,
 .answer.error {
   cursor: default;
-}
-
-.answer.pending:hover,
-.answer.error:hover {
-  background: none;
 }
 
 .answer.copied {
@@ -613,6 +610,38 @@ body.bottom #scroll {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.28);
+}
+
+/* Copies the code alone (ask.ts), in the top right corner; only the first
+   lines wrap around it */
+.code-copy {
+  float: right;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -5px -7px 2px 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.code-copy:hover {
+  background: rgba(248, 248, 246, 0.08);
+  color: var(--text-strong);
+}
+
+.code-copy.copied {
+  color: var(--text-strong);
+}
+
+.code-copy svg {
+  display: block;
 }
 
 /* Long lines wrap: the card has no scrollbars */

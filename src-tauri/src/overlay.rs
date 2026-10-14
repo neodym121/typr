@@ -305,22 +305,28 @@ fn render(look: Look, t: f32, width: usize, height: usize, center_y: f32, scale:
     frame
 }
 
-/// Distance to the microphone shape in its 24×24 icon space (negative inside).
+/// Distance to Lucide's "mic" icon (src/icons/mic.svg) in its 24×24 space,
+/// negative on its lines: strokes 2 units wide with round ends, as the SVG
+/// draws them.
 fn mic_sdf(x: f32, y: f32) -> f32 {
-    // Capsule body: segment (12,5)–(12,11), radius 3
-    let body_y = y.clamp(5.0, 11.0);
-    let body = ((x - 12.0).powi(2) + (y - body_y).powi(2)).sqrt() - 3.0;
+    // Body: `rect x=9 y=2 width=6 height=13 rx=3`, the outline of a capsule
+    // around (12,5)–(12,12) with radius 3
+    let body = ((x - 12.0).hypot(y - y.clamp(5.0, 12.0)) - 3.0).abs();
 
-    // Stand: lower half of a ring around (12,11), radius 6, 2 units thick
-    let ring = (((x - 12.0).powi(2) + (y - 11.0).powi(2)).sqrt() - 6.0).abs() - 1.0;
-    let stand = ring.max(11.0 - y);
+    // Stand: `M19 10v2a7 7 0 0 1-14 0v-2`, the lower half of a circle around
+    // (12,12) with radius 7 and a short line up at each end
+    let arc = if y >= 12.0 {
+        ((x - 12.0).hypot(y - 12.0) - 7.0).abs()
+    } else {
+        (x - 5.0).hypot(y - 12.0).min((x - 19.0).hypot(y - 12.0))
+    };
+    let side_y = y.clamp(10.0, 12.0);
+    let sides = (x - 5.0).hypot(y - side_y).min((x - 19.0).hypot(y - side_y));
 
-    // Stem: box centred at (12,19), half size 1×2
-    let qx = (x - 12.0).abs() - 1.0;
-    let qy = (y - 19.0).abs() - 2.0;
-    let stem = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0);
+    // Stem: `M12 19v3`
+    let stem = (x - 12.0).hypot(y - y.clamp(19.0, 22.0));
 
-    body.min(stand).min(stem)
+    body.min(arc).min(sides).min(stem) - 1.0
 }
 
 /// Pixel coverage from a signed distance in physical pixels.
@@ -1018,7 +1024,13 @@ mod tests {
 
     #[test]
     fn test_mic_sdf_inside_and_outside() {
-        assert!(mic_sdf(12.0, 8.0) < 0.0);
+        // On the lines: the body's edge, the bottom of the stand, the stem
+        assert!(mic_sdf(9.0, 8.0) < 0.0);
+        assert!(mic_sdf(12.0, 19.0) < 0.0);
+        assert!(mic_sdf(12.0, 21.0) < 0.0);
+        assert!(mic_sdf(19.0, 10.5) < 0.0);
+        // An outline: the body is hollow
+        assert!(mic_sdf(12.0, 8.0) > 0.0);
         assert!(mic_sdf(2.0, 2.0) > 0.0);
     }
 

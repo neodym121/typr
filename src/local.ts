@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { enhanceSelect, syncSelect } from "./dropdown";
 import { getLanguage, t, type MessageKey } from "./i18n";
+import { icon } from "./icons";
 
 type Backend = "vulkan" | "cpu";
 
@@ -182,12 +183,6 @@ function updateInPlace(progress: DownloadProgress): boolean {
   return true;
 }
 
-const TRASH_ICON =
-  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
-  '<path d="M2.75 4.25h10.5M6.25 4.25V3a.75.75 0 01.75-.75h2a.75.75 0 01.75.75v1.25' +
-  'M4.25 4.25l.6 8.4a1 1 0 001 .93h4.3a1 1 0 001-.93l.6-8.4M6.75 7v4M9.25 7v4" ' +
-  'stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
 /** A trash button that asks "Delete?" before it acts */
 function deleteButton(key: string, onConfirm: () => void): HTMLButtonElement {
   const waiting = confirming.has(key);
@@ -208,7 +203,7 @@ function deleteButton(key: string, onConfirm: () => void): HTMLButtonElement {
     waiting ? "danger" : "btn-icon",
   );
   if (!waiting) {
-    el.innerHTML = TRASH_ICON;
+    el.replaceChildren(icon("trash-2"));
     el.title = t("local.delete");
     el.setAttribute("aria-label", t("local.delete"));
   }
