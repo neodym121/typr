@@ -1,7 +1,7 @@
 // Post-processing section: the switch, the provider and model (modelpicker.ts)
 // and the style presets. The settings live in the app's settings object; this
 // module edits them in place and asks the host to save. The key comes from
-// the API keys section.
+// Settings → API keys.
 
 import { t, type MessageKey } from "./i18n";
 import { createModelPicker, type ModelPicker, type ProviderConfig, type ProviderSettings } from "./modelpicker";

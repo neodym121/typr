@@ -61,8 +61,9 @@
   --radius-card:    16px;
   --radius-pill:    999px;
 
-  /* The drag strip at the top of the window (no system title bar) */
-  --titlebar-height: 40px;
+  /* The drag strip at the top of the window (no system title bar), as tall
+     as the window buttons in it */
+  --titlebar-height: 32px;
 
   --ease: 0.2s ease;
 }
@@ -134,8 +135,8 @@ button {
 
 .window-controls {
   position: fixed;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 60;
   display: flex;
   gap: 2px;
@@ -182,7 +183,7 @@ button {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: calc(var(--titlebar-height) + 4px) 12px 16px;
+  padding: 22px 12px 12px;
 }
 
 .sidebar-header {
@@ -202,6 +203,14 @@ button {
   /* Let the sidebar's mousedown handler drag the window instead of the image */
   pointer-events: none;
   -webkit-user-drag: none;
+}
+
+/* The name with the version beside it */
+.app-title {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
 }
 
 .app-name {
@@ -376,21 +385,26 @@ button {
 
 /* ── Sidebar Footer ─────────────────────────────────── */
 
+/* The Settings button at the very bottom, under a hairline */
 .sidebar-footer {
-  padding: 12px 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 
 .version-text {
   font-size: var(--text-caption);
   color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* A newer release: a small link under the version */
+/* A newer release: a small link above the Settings button */
 .update-link {
   display: block;
-  margin-top: 4px;
-  padding: 0;
+  padding: 2px 12px 0;
   border: none;
   background: none;
   font-size: var(--text-small);
@@ -439,23 +453,11 @@ button {
   display: none;
   max-width: 720px;
   margin: 0 auto;
-  padding: 12px 36px 36px;
-  animation: fadeIn 0.25s ease;
+  padding: 4px 36px 36px;
 }
 
 .content-section.active {
   display: block;
-}
-
-/* Sections that fill the window height (the log console) */
-.content-section.section-fill.active {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-width: none;
-  padding: 12px 28px 20px;
-  /* No slide: a full-height section would briefly overflow and flash a scrollbar */
-  animation-name: fadeInOpacity;
 }
 
 @keyframes fadeIn {
@@ -1138,6 +1140,53 @@ input[type="search"]::-webkit-search-cancel-button {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(248, 248, 246, 0.06);
 }
 
+/* The light thumb (src/segmented.ts): one element under the segments that
+   springs to the active one and can be dragged. The active segment itself
+   then stays clear, its label above the thumb */
+.segmented.has-thumb {
+  position: relative;
+  isolation: isolate;
+}
+
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  z-index: 0;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(248, 248, 246, 0.06);
+  pointer-events: none;
+  will-change: transform, width;
+}
+
+.segmented.has-thumb .segment {
+  position: relative;
+  z-index: 1;
+}
+
+.segmented.has-thumb .segment.active {
+  background: transparent;
+  box-shadow: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* While the thumb is dragged: the segment under it lights up instead */
+.segmented.dragging .segment.active:not(.thumb-over) {
+  color: var(--text-muted);
+}
+
+.segmented.dragging .segment.thumb-over {
+  color: var(--text-primary);
+}
+
+.thumb-dragging,
+.thumb-dragging * {
+  cursor: grabbing !important;
+}
+
 .segmented.full {
   display: flex;
   width: 100%;
@@ -1451,6 +1500,164 @@ input.log-search {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
+/* ── Settings window ────────────────────────────────── */
+
+/* Over the app, under the setup and the window buttons */
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Clear of the window buttons above and as much space below */
+  padding: var(--titlebar-height) 32px;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 12, 11, 0.6);
+  animation: fadeInOpacity 0.18s ease;
+}
+
+.settings-dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 600px;
+  height: 100%;
+  max-height: 480px;
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: settings-in 0.2s ease;
+}
+
+.settings.closing .settings-backdrop {
+  animation: fadeOutOpacity 0.14s ease forwards;
+}
+
+.settings.closing .settings-dialog {
+  animation: settings-out 0.14s ease forwards;
+}
+
+@keyframes settings-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes settings-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(4px) scale(0.99); }
+}
+
+@keyframes fadeOutOpacity {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* The tabs along the top as a segmented bar (like Engine's), the close
+   button on the right */
+.settings-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-tab .nav-badge {
+  margin-left: 0;
+}
+
+.settings-close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--ease), background var(--ease);
+}
+
+.settings-close svg {
+  display: block;
+}
+
+.settings-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.settings-close:active {
+  background: var(--surface-active);
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.settings-panel {
+  display: none;
+  padding: 20px 20px 24px;
+}
+
+.settings-panel.active {
+  display: block;
+}
+
+/* The Developer tab: the log fills the window's height */
+.settings-panel.panel-fill.active {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: 20px;
+}
+
+.settings-panel > .group-title:first-child {
+  margin-top: 0;
+}
+
+/* The window is narrower than the page: switches and buttons take only
+   their own width, so the hints beside them keep their lines. Its width
+   doesn't follow a narrow main window, so its rows never wrap either */
+.settings-panel .setting-row {
+  flex-wrap: nowrap;
+}
+
+.settings-panel .setting-control {
+  flex: 0 0 auto;
+}
+
+.settings-panel .key-row .setting-control {
+  flex: 0 1 300px;
+}
+
+/* A line above a tab's first card */
+.settings-intro {
+  margin: 0 0 12px 2px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* ── First-run Setup (src/setup.ts) ─────────────────── */
 
 .setup {
@@ -1726,7 +1933,7 @@ input.log-search {
 
 @media (max-width: 820px) {
   .content-section {
-    padding: 12px 28px 32px;
+    padding: 4px 28px 32px;
   }
 
   .setting-row {

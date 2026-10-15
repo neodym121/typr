@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ApiKeys } from "./apikeys";
 import { enhanceSelect } from "./dropdown";
 import { fillLanguageOptions, getLanguage, t, type Lang, type MessageKey } from "./i18n";
+import { enhanceSegmented } from "./segmented";
 import {
   BADGES,
   chooseModel,
@@ -411,6 +412,7 @@ function renderDone(): HTMLElement[] {
   const hotkey = el("div", "setup-hotkey");
   hotkey.append(el("kbd", "", host!.hotkeyLabel()), el("span", "label-hint", t("setup.hotkeyHint")));
 
+  // Switched in place, so the thumb slides over instead of the step being rebuilt
   const mode = el("div", "segmented");
   for (const [id, label] of [["toggle", "recording.toggle"], ["push-to-talk", "recording.ptt"]] as const) {
     const button = el("button", `segment${s.recordingMode === id ? " active" : ""}`, t(label));
@@ -418,10 +420,12 @@ function renderDone(): HTMLElement[] {
     button.addEventListener("click", () => {
       s.recordingMode = id;
       save();
-      render();
+      mode.querySelectorAll(".segment").forEach((b) => b.classList.toggle("active", b === button));
+      parts[1].textContent = t(id === "push-to-talk" ? "setup.donePtt" : "setup.doneToggle");
     });
     mode.append(button);
   }
+  enhanceSegmented(mode);
 
   const card = el("div", "card setup-card");
   card.append(

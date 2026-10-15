@@ -1,4 +1,4 @@
-// Hotkeys section: the dictation hotkey and the quick chat hotkey (the
+// Settings → Hotkeys: the dictation hotkey and the quick chat hotkey (the
 // recording mode next to them stays in main.ts). A hotkey is recorded by
 // pressing it: 2 or 3 keys, or the middle or a side mouse button. The chat
 // one may also be modifiers alone, like Ctrl+Alt, which fire when they are

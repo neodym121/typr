@@ -1,6 +1,6 @@
 # AGENTS.md — Typr
 
-Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model, and auto-pastes the result into the active window. With text selected, the same hotkey asks a language model about it instead (**quick ask**): the recording indicator unfolds into a small window with the answer. A hotkey of its own opens that window as a chat (**quick chat**), where the dictation hotkey asks and the questions are shown too. Each service's API key is set once, in the API keys section. The interface is in English and Russian.
+Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model, and auto-pastes the result into the active window. With text selected, the same hotkey asks a language model about it instead (**quick ask**): the recording indicator unfolds into a small window with the answer. A hotkey of its own opens that window as a chat (**quick chat**), where the dictation hotkey asks and the questions are shown too. Each service's API key is set once, in Settings → API keys (an OpenAI-compatible server's in Engine, next to its address). The interface is in English and Russian.
 
 ---
 
@@ -9,12 +9,13 @@ Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Ru
 ```
 typr/
 ├── src/                        # TypeScript frontend (Vite)
-│   ├── main.ts                 # Main UI logic, settings form, hotkey binding
+│   ├── main.ts                 # Main UI logic, settings form, the Settings window, hotkey binding
 │   ├── setup.ts                # First-run setup wizard over the whole window
 │   ├── i18n.ts                 # English/Russian UI strings, t(), data-i18n attributes, recognition language names, hotkey names
-│   ├── apikeys.ts              # API keys section: one key per service, read by the model lists
-│   ├── hotkeys.ts              # Hotkeys section: recording the dictation and quick chat hotkeys
+│   ├── apikeys.ts              # Settings → API keys: one key per service, read by the model lists
+│   ├── hotkeys.ts              # Settings → Hotkeys: recording the dictation and quick chat hotkeys
 │   ├── dropdown.ts             # App-styled dropdowns over hidden native <select>s
+│   ├── segmented.ts            # Segmented controls: the light thumb springs between segments and can be dragged
 │   ├── postprocess.ts          # Post-processing section: switch, styles; provider and model through modelpicker.ts
 │   ├── modelpicker.ts          # Provider, API key and model list with search, shared by Post-processing and Quick ask
 │   ├── quickask.ts             # Quick ask section: quick ask and quick chat switches, the model that answers, web search
@@ -52,7 +53,7 @@ typr/
 │       ├── autostart.rs        # Start with Windows (HKCU Run value, `--autostart`)
 │       ├── updates.rs          # Latest GitHub release vs this version
 │       ├── links.rs            # Opens allowed web pages in the browser
-│       ├── logger.rs           # `log` backend feeding the Developer section
+│       ├── logger.rs           # `log` backend feeding Settings → Developer
 │       ├── overlay.rs          # Recording indicator that slides in while dictating (native layered window on Windows)
 │       ├── cleanup.rs          # Tidies the transcript: whitespace, capitals at sentence starts, final punctuation
 │       ├── paste.rs            # Pastes via the clipboard (Ctrl+V), then restores the previous content
@@ -91,7 +92,7 @@ Manages the `RecordingState` state machine (`Ready → Recording → Transcribin
 ### `settings.rs` — Configuration
 Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` overrides the folder in debug builds). `#[serde(default)]` on the structs: a missing field takes its value from `Default`. Engine, recording mode, post-processing provider and preset are enums saved as string ids (`string_enum!`); an unknown id reads as the default instead of failing the file. Key fields:
 - `engine`: `"local"` | `"groq"` | `"openai"` (`"openai-compatible"` reads as it) | `"polza"` | `"assemblyai"` (default: `"groq"`)
-- `apiKeys`: `{ groq, openai, polza, assemblyai, gemini, openrouter, exa }`, one key per service for everything (engine, post-processing, quick ask, web search); `ApiKeys::engine` / `ApiKeys::model` pick the one needed. `Settings::from_json` moves the keys of an older config (`groqApiKey`, `openaiApiKey`, `polzaApiKey`, `assemblyaiApiKey`, `postProcess.<p>.apiKey`, `quickAsk.<p>.apiKey`, `quickAsk.exaApiKey`) there, the first one set winning (`migrate_keys`)
+- `apiKeys`: `{ groq, openai, polza, assemblyai, gemini, openrouter, exa }`, one key per service for everything (engine, post-processing, quick ask, web search); `ApiKeys::engine` / `ApiKeys::model` pick the one needed. The UI edits them in Settings → API keys (`apikeys.ts`), except `openai`: the OpenAI-compatible server's key is set in Engine with the server's address (`#openai-key`, main.ts). `Settings::from_json` moves the keys of an older config (`groqApiKey`, `openaiApiKey`, `polzaApiKey`, `assemblyaiApiKey`, `postProcess.<p>.apiKey`, `quickAsk.<p>.apiKey`, `quickAsk.exaApiKey`) there, the first one set winning (`migrate_keys`)
 - `groqModel`: `"whisper-large-v3-turbo"` (default) | `"whisper-large-v3"`
 - `openaiEndpoint`, `openaiModel`, `polzaModel`, `polzaProvider`
 - `assemblyaiModel`: `"universal-3-5-pro"` (default, no Russian) | `"universal-2"`
@@ -101,15 +102,15 @@ Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` ov
 - `localBackend`: `"vulkan"` | `"cpu"`, or empty for the one recommended for this computer
 - `localUnload`: when an idle model leaves memory: `"immediate"` | `"30s"` | `"5m"` (default) | `"10m"` | `"never"`
 - `language`: `"en"` | `"ru"` | `""` (empty follows the system, see `i18n.rs`)
-- `developerMode`: shows the Developer section and turns log collection on
-- `keepAskWindow`: "Keep WebView2 in the background": a hidden Quick Ask window stays loaded while Quick Ask or Quick Chat is on, so WebView2 keeps running and the settings window opens faster too (default `false`, switch in the Developer section; it works with Developer mode off too). See the window under `ask/` below
+- `developerMode`: shows the Developer tab in Settings and turns log collection on
+- `keepAskWindow`: "Keep WebView2 in the background": a hidden Quick Ask window stays loaded while Quick Ask or Quick Chat is on, so WebView2 keeps running and the main window opens faster too (default `false`, switch in Settings → Developer; it works with Developer mode off too). See the window under `ask/` below
 - `microphone`: device name or `"default"`
 - `recordingMode`: `"toggle"` | `"push-to-talk"`
 - `hotkey`: default `"Ctrl+Shift+Space"`; or a single mouse button: `"MouseMiddle"` | `"MouseBack"` | `"MouseForward"`
 - `chatHotkey`: opens and closes quick chat, default `"Ctrl+Alt"`; two or three modifiers alone, keys with a non-modifier, or a mouse button. Must differ from `hotkey`
 - `appendSpace`: adds a space after the pasted text (default `false`, switch in Post-processing; works with post-processing off too)
-- `showIndicator`: whether the recording indicator may appear at all (default `true`, switch in General)
-- `indicatorPosition`: `"top-right"` (default) | `"bottom-center"` (just above the taskbar); General, shown while the indicator is on
+- `showIndicator`: whether the recording indicator may appear at all (default `true`, switch in Basics)
+- `indicatorPosition`: `"top-right"` (default) | `"bottom-center"` (just above the taskbar); Basics, shown while the indicator is on
 - `checkUpdates`: looks for a newer GitHub release 15 s after start and every 12 h (default `true`)
 - `setupDone`: the first-run wizard was finished or skipped; `false` only for a new config (a config file without the field counts as set up)
 - `postProcess`: `enabled` (default `false`), `provider` (`"gemini"` | `"openrouter"` | `"groq"` | `"polza"`), `preset` (`"chill"` | `"proper"` | `"custom"`; the old `"official"` is migrated to `"proper"` on load), `customPrompt`, and `{ model }` per provider, plus `providerId` for Polza (sub-provider sent as `provider.only`, omitted from the file when empty)
@@ -154,11 +155,19 @@ Three steps: `POST /v2/upload` with the raw FLAC, `POST /v2/transcript` with `sp
 ### `paste.rs` — clean clipboard
 Saves the clipboard (text, else image, else nothing), sets the dictated text with arboard's `exclude_from_monitoring()` (kept out of Win+V history, cloud sync and clipboard managers), sends Ctrl+V, waits `RESTORE_DELAY` (300 ms) and puts the previous content back, unless something else was copied meanwhile. If the paste fails, the text stays on the clipboard. Other formats (e.g. copied files) aren't restored.
 
+### Sidebar and the Settings window
+The sidebar has the logo with the version beside it (`#version-text`), the status, the sections of the main page (Basics, Engine, Post-processing, Quick Ask & Chat; `showSection` in `main.ts`) and, at the very bottom, the Settings button (`#nav-settings`, with the update link above it). Basics (`section-general`) holds the microphone, the recording indicator and its position, the interface language and update checks.
+
+Settings (`#settings` in `index.html`, `openSettings` / `closeSettings` / `showSettingsTab` in `main.ts`) is a window inside the app, not a Tauri window: a dimmed backdrop over the whole page and a fixed-size card (600 × 480 at most) with its tabs along the top as a segmented bar, like Engine's (`.segmented.full`): General (start with Windows, the setup wizard, developer mode), API keys, Hotkeys and, while developer mode is on, Developer (the WebView2 option and the log, filling the card's height). It sits above the page (`z-index` 40) and under the setup (50) and the window buttons (60). While it is open `#app-body` is `inert`; the cross, Escape (hotkeys.ts takes it first while a hotkey is being recorded) and a click on the backdrop close it, and the focus goes back to the Settings button. The arrow keys move between the tabs. Opening the setup closes Settings first. Errors logged while the Developer tab isn't on screen are counted on the Settings button and on that tab (`.dev-badge`). The hotkey named in Quick Ask's hint opens Settings on Hotkeys.
+
+### `segmented.ts`
+`enhanceSegmented(control)` gives a `.segmented` its thumb: one `.segmented-thumb` element under the segments (the active segment itself stays clear) that follows the active one on a slightly underdamped spring (`requestAnimationFrame`, a few pixels of overshoot; the width settles without overshoot), and can be grabbed (a press on the active segment) and dragged: it follows the pointer, gives a little past the end segments, blends its width between segments, and on release lands on the enabled segment under its middle (keeping a little of the release speed, so it swings a bit), which gets a `click()`, so the modules keep handling plain clicks and toggling the `active` class as before. A `MutationObserver` (the `active` class) and a `ResizeObserver` (shown, resized, relabelled) move it; a hidden control or one shown again gets it placed without animation, and so does `prefers-reduced-motion`. `main.ts` enhances every `.segmented` in the page at start; the setup enhances the one it builds. Sections and Settings tabs switch without a fade.
+
 ### `dropdown.ts`
 `enhanceSelect(select)` hides a native `<select>` and draws an app-styled button and list over it; the `<select>` stays the source of truth (`.value`, `change` events), option rebuilds are picked up by a `MutationObserver`, and after setting `.value` from code call `syncSelect(select)`. New `<select>`s should be enhanced too.
 
 ### Main window frame
-The main window has no system title bar (`decorations: false` in tauri.conf.json) and can't be maximized (`maximizable: false`: no button, no double-click or snap to the top). Typr draws its own minimize and close buttons (`.window-controls` in `index.html`), fixed in the top-right corner above everything, the setup too. Elements with the `drag-region` class (the sidebar, the strip above the content, the setup's top strip and header) drag the window from their empty space through `startDragging` in `main.ts`; buttons, inputs and labels inside them don't. Close works like the system button did: the window and its WebView go, Typr stays in the tray. Tauri keeps the edges resizable; `tint_window_border` (main.rs) paints the 1 px border Windows 11 still draws in the app's grey instead of the accent colour.
+The main window has no system title bar (`decorations: false` in tauri.conf.json) and can't be maximized (`maximizable: false`: no button, no double-click or snap to the top). Typr draws its own minimize and close buttons (`.window-controls` in `index.html`), fixed in the top-right corner above everything, the setup too. Elements with the `drag-region` class (the sidebar, the strip above the content, the Settings window's tab row, the setup's top strip and header) drag the window from their empty space through `startDragging` in `main.ts`; buttons, inputs and labels inside them don't. Close works like the system button did: the window and its WebView go, Typr stays in the tray. Tauri keeps the edges resizable; `tint_window_border` (main.rs) paints the 1 px border Windows 11 still draws in the app's grey instead of the accent colour.
 
 ### `mouse.rs` — a mouse button as a hotkey
 `register_hotkeys` (main.rs) registers the dictation hotkey and, with quick chat on, the chat one. Key combinations go to the global shortcut plugin, a mouse button to `mouse::start(slot, …)`: one `WH_MOUSE_LL` hook on its own thread with a message loop, with a slot each for dictation and chat. The hook proc only matches the bound buttons (ignoring injected clicks), swallows them (so "back" doesn't navigate the browser) and hands press/release to the slot's handler thread; dictation ends in `on_hotkey`, chat in `on_chat_hotkey`. The hook exists only while a mouse hotkey is active (`unregister_hotkeys` removes it, e.g. when the hotkeys are turned off in the tray). The left and right buttons can't be a hotkey.
@@ -183,12 +192,12 @@ Collapses whitespace, capitalizes the first letter of every sentence and adds a 
 ### Tray menu, autostart, updates
 - Tray: Open settings, Paste last dictation (the last text goes back into the window it was pasted into; if that window is gone, it is put on the clipboard), Engine submenu (switches `engine`, the window follows through `engine-changed`), Hotkey On/Off, Exit, and a "Version X is available" item added on top once an update is found.
 - The main window is `"create": false` in tauri.conf.json and built in `setup`; started with `--autostart` (the Run value from `autostart.rs`), Typr stays in the tray unless the setup isn't done. `autostart::refresh` repoints the Run value at the current executable (release builds only).
-- `updates::check` reads `releases/latest` of `neodym121/typr-updated`; the result is kept in `AppState.update`, sent as `update-available` and shown in the sidebar and General. `links::open` opens only the release page and the providers' key pages.
+- `updates::check` reads `releases/latest` of `neodym121/typr-updated`; the result is kept in `AppState.update`, sent as `update-available` and shown in the sidebar and Basics. `links::open` opens only the release page and the providers' key pages.
 
 ### `setup.ts` — first-run wizard
-Shown while `setupDone` is false (and from General → Advanced): interface language, engine (Local recommended when Vulkan is available, else Groq), the engine's model download or API key (saved in `apiKeys`) plus the speech language, then hotkey, recording mode, start with Windows and update checks. Finish or Skip sets `setupDone`.
+Shown while `setupDone` is false (and from Settings → General → Advanced): interface language, engine (Local recommended when Vulkan is available, else Groq), the engine's model download or API key (saved in `apiKeys`) plus the speech language, then hotkey, recording mode, start with Windows and update checks. Finish or Skip sets `setupDone`.
 
-### `logger.rs` — Developer section
+### `logger.rs` — Settings → Developer
 Installed as the global `log` backend in `main()`. Use `log::info!` / `log::warn!` / `log::error!` / `log::debug!` everywhere in Rust (not `println!`). While `developerMode` is on, entries go to a 5000-entry ring buffer and are streamed to the main window as `log-entry` events; the frontend forwards its own console output via the `frontend_log` command. Never log API keys — use `Settings::summary()` / `describe_changes()`, which only say which are set.
 
 `stop_and_transcribe` must always return the recorder to `Ready`, even on errors; failures are reported to the UI with `recorder::notify_error` (`recording-error` event).

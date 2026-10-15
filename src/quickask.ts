@@ -18,7 +18,8 @@ export interface QuickAskHost {
   save: () => void;
   /** Quick chat was switched on or off */
   chatChanged: () => void;
-  showSection: (name: string) => void;
+  /** Opens Settings on the Hotkeys tab */
+  showHotkeys: () => void;
 }
 
 const enabledToggle = document.getElementById("ask-enabled") as HTMLInputElement;
@@ -50,7 +51,7 @@ export function initQuickAsk(appHost: QuickAskHost) {
 
   // The hotkey named in the hint leads to where it is set
   chatHint.addEventListener("click", (event) => {
-    if ((event.target as Element).closest("kbd")) host!.showSection("hotkeys");
+    if ((event.target as Element).closest("kbd")) host!.showHotkeys();
   });
 
   searchToggle.addEventListener("change", () => {

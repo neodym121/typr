@@ -5,13 +5,14 @@
 export type Lang = "en" | "ru";
 
 const en = {
-  "nav.general": "General",
+  "nav.general": "Basics",
   "nav.keys": "API keys",
   "nav.engine": "Engine",
   "nav.hotkeys": "Hotkeys",
   "nav.postprocess": "Post-processing",
-  "nav.ask": "Quick Ask",
+  "nav.ask": "Quick Ask & Chat",
   "nav.developer": "Developer",
+  "nav.settings": "Settings",
 
   "status.ready": "Ready",
   "status.recording": "Recording…",
@@ -22,7 +23,7 @@ const en = {
   "status.fallback": "Transcribed locally",
   "status.fallbackDetail": "{engine} failed, so the local model transcribed it: {error}",
 
-  "general.title": "General",
+  "general.title": "Basics",
   "general.desc": "Audio input and app preferences",
   "general.microphone": "Microphone",
   "general.microphoneHint": "Input device used for dictation",
@@ -39,7 +40,7 @@ const en = {
   "general.languageHint": "Interface language",
   "general.advanced": "Advanced",
   "general.devMode": "Developer mode",
-  "general.devModeHint": "Records everything the app does and shows it in the Developer section",
+  "general.devModeHint": "Records everything the app does and shows it in the Developer tab",
   "general.autostart": "Start with Windows",
   "general.autostartHint": "Typr starts in the tray when you sign in",
   "general.updates": "Check for updates",
@@ -56,17 +57,17 @@ const en = {
 
   "sidebar.update": "Update to {version}",
 
+  "settings.main": "General",
+
   "window.minimize": "Minimize",
   "window.close": "Close",
 
-  "keys.title": "API keys",
   "keys.desc": "One key per service for the whole app. The other sections only pick the service and the model",
   "keys.searchTitle": "Web search",
   "keys.note": "The keys are kept on this computer only",
   "keys.useSpeechModels": "Speech recognition and language models",
   "keys.useModels": "Language models for post-processing and Quick Ask",
   "keys.useSpeech": "Speech recognition",
-  "keys.useOpenai": "Speech recognition with OpenAI or a compatible server. Leave empty if the server needs no key",
   "keys.useSearch": "Web search in Quick Ask and Quick Chat",
 
   "engine.title": "Engine",
@@ -78,7 +79,7 @@ const en = {
   "engine.endpointHint": "Base URL or /audio/transcriptions",
   "engine.modelId": "Model ID",
   "engine.openaiModelHint": "Model identifier (e.g. whisper-1)",
-  "engine.openaiKeyHint": "API key (leave empty if not required)",
+  "engine.openaiKeyHint": "Leave empty if the server needs no key",
   "engine.polzaModelHint": "e.g. openai/whisper-large-v3",
   "engine.providerId": "Provider ID",
   "engine.providerIdHint": "Sub-provider (leave empty for auto)",
@@ -124,7 +125,7 @@ const en = {
   "local.unavailable.vulkan": "Needs a GPU with a Vulkan driver",
   "local.unavailable.cpu": "",
   "developer.keepAsk": "Keep WebView2 in the background",
-  "developer.keepAskHint": "Quick Ask, Quick Chat and the settings window open faster, but WebView2 always stays in the background, which takes more RAM.",
+  "developer.keepAskHint": "Quick Ask, Quick Chat and the Typr window open faster, but WebView2 always stays in the background, which takes more RAM.",
   "local.runtimeMissing": "The engine components ({size}) aren't downloaded, the models can't run without them",
   "local.runtimeFailed": "Couldn't download the engine components: {error}",
   "local.retry": "Retry",
@@ -137,8 +138,6 @@ const en = {
   "local.unload10m": "After 10 minutes",
   "local.unloadNever": "Never",
 
-  "hotkeys.title": "Hotkeys",
-  "hotkeys.desc": "Keys for dictation and for the chat with the AI",
   "hotkeys.dictation": "Dictation",
   "hotkeys.chat": "Quick Chat",
   "hotkeys.chatHint": "Opens and closes the chat with the AI. Modifiers alone work too, like Ctrl+Alt: they fire when you let go",
@@ -174,7 +173,7 @@ const en = {
   "post.modelChosen": "Chosen: {name}",
   "post.refresh": "Refresh",
   "post.search": "Search models…",
-  "post.needKey": "Add the key in API keys to load the models",
+  "post.needKey": "Add the key in Settings → API keys to load the models",
   "post.loading": "Loading models…",
   "post.loadError": "Couldn't load the models: {error}",
   "post.nothingFound": "Nothing found",
@@ -189,7 +188,7 @@ const en = {
   "post.appendSpace": "Space after text",
   "post.appendSpaceHint": "Adds a space after the pasted text, so the next phrase doesn't stick to it. Works even with post-processing off",
 
-  "ask.title": "Quick Ask",
+  "ask.title": "Quick Ask & Chat",
   "ask.desc": "Select text anywhere and ask about it by voice, or chat with the AI",
   "ask.enabled": "Quick Ask",
   "ask.enabledHint": "With text selected, the dictation hotkey asks the model about it instead of typing",
@@ -200,7 +199,7 @@ const en = {
   "ask.searchHint": "When a question needs fresh facts, the model looks them up with Exa and names its sources",
   "ask.howTitle": "How it works",
   "ask.step1": "Select text in any app",
-  "ask.step2": "Press the hotkey from Hotkeys and ask your question out loud",
+  "ask.step2": "Press the hotkey from Settings → Hotkeys and ask your question out loud",
   "ask.step3": "The answer appears where the recording indicator is. Press the hotkey again to ask a follow-up; the cross closes the window",
   "ask.copyNote": "Click an answer to copy it. The button in the corner of a code block copies only the code",
   "ask.terminalNote": "In terminals the selection isn't read: a copy shortcut would interrupt the running program there",
@@ -215,8 +214,6 @@ const en = {
   "askWindow.stopped": "Stopped",
   "askWindow.error": "Couldn't answer: {error}",
 
-  "developer.title": "Developer",
-  "developer.desc": "Live log of everything Typr does: hotkeys, audio, requests, errors",
   "developer.all": "All",
   "developer.errors": "Errors",
   "developer.warnings": "Warnings",
@@ -265,19 +262,20 @@ const en = {
   "setup.doneTitle": "Ready to dictate",
   "setup.doneToggle": "Press the hotkey, speak, and press it again: the text is pasted where your cursor is.",
   "setup.donePtt": "Hold the hotkey while you speak and release it: the text is pasted where your cursor is.",
-  "setup.hotkeyHint": "You can change the keys in Hotkeys",
+  "setup.hotkeyHint": "You can change the keys in Settings → Hotkeys",
 } as const;
 
 export type MessageKey = keyof typeof en;
 
 const ru: Record<MessageKey, string> = {
-  "nav.general": "Основные",
+  "nav.general": "Основное",
   "nav.keys": "API-ключи",
   "nav.engine": "Распознавание",
   "nav.hotkeys": "Хоткеи",
   "nav.postprocess": "Постобработка",
-  "nav.ask": "Quick Ask",
+  "nav.ask": "Quick Ask & Chat",
   "nav.developer": "Разработчик",
+  "nav.settings": "Параметры",
 
   "status.ready": "Готов",
   "status.recording": "Запись…",
@@ -288,7 +286,7 @@ const ru: Record<MessageKey, string> = {
   "status.fallback": "Распознано локально",
   "status.fallbackDetail": "{engine} не справился, поэтому распознала локальная модель: {error}",
 
-  "general.title": "Основные",
+  "general.title": "Основное",
   "general.desc": "Микрофон и настройки приложения",
   "general.microphone": "Микрофон",
   "general.microphoneHint": "Устройство ввода для диктовки",
@@ -305,7 +303,7 @@ const ru: Record<MessageKey, string> = {
   "general.languageHint": "Язык интерфейса",
   "general.advanced": "Дополнительно",
   "general.devMode": "Режим разработчика",
-  "general.devModeHint": "Записывает всё, что делает приложение, и показывает это в разделе «Разработчик»",
+  "general.devModeHint": "Записывает всё, что делает приложение, и показывает это во вкладке «Разработчик»",
   "general.autostart": "Запускать вместе с Windows",
   "general.autostartHint": "Typr запускается в трее при входе в систему",
   "general.updates": "Проверять обновления",
@@ -322,17 +320,17 @@ const ru: Record<MessageKey, string> = {
 
   "sidebar.update": "Обновить до {version}",
 
+  "settings.main": "Главное",
+
   "window.minimize": "Свернуть",
   "window.close": "Закрыть",
 
-  "keys.title": "API-ключи",
   "keys.desc": "Один ключ на сервис для всего приложения. В остальных разделах выбираются только сервис и модель",
   "keys.searchTitle": "Поиск в интернете",
   "keys.note": "Ключи хранятся только на этом компьютере",
   "keys.useSpeechModels": "Распознавание речи и языковые модели",
   "keys.useModels": "Языковые модели для постобработки и Quick Ask",
   "keys.useSpeech": "Распознавание речи",
-  "keys.useOpenai": "Распознавание через OpenAI или совместимый сервер. Оставьте пустым, если серверу ключ не нужен",
   "keys.useSearch": "Поиск в интернете для Quick Ask и Quick Chat",
 
   "engine.title": "Распознавание",
@@ -390,7 +388,7 @@ const ru: Record<MessageKey, string> = {
   "local.unavailable.vulkan": "Нужна видеокарта с драйвером Vulkan",
   "local.unavailable.cpu": "",
   "developer.keepAsk": "Держать WebView2 фоном",
-  "developer.keepAskHint": "Quick Ask, Quick Chat и окно настроек приложения открываются быстрее, но фоном будет всегда держаться WebView2, что требует больше ОЗУ.",
+  "developer.keepAskHint": "Quick Ask, Quick Chat и окно Typr открываются быстрее, но фоном будет всегда держаться WebView2, что требует больше ОЗУ.",
   "local.runtimeMissing": "Компоненты движка ({size}) не скачаны, без них модели не работают",
   "local.runtimeFailed": "Не удалось скачать компоненты движка: {error}",
   "local.retry": "Повторить",
@@ -403,8 +401,6 @@ const ru: Record<MessageKey, string> = {
   "local.unload10m": "Через 10 минут",
   "local.unloadNever": "Никогда",
 
-  "hotkeys.title": "Хоткеи",
-  "hotkeys.desc": "Клавиши для диктовки и чата с ИИ",
   "hotkeys.dictation": "Диктовка",
   "hotkeys.chat": "Quick Chat",
   "hotkeys.chatHint": "Открывает и закрывает чат с ИИ. Подходят и одни модификаторы, например Ctrl+Alt: срабатывают, когда их отпускают",
@@ -440,7 +436,7 @@ const ru: Record<MessageKey, string> = {
   "post.modelChosen": "Выбрана: {name}",
   "post.refresh": "Обновить",
   "post.search": "Поиск моделей…",
-  "post.needKey": "Добавьте ключ в разделе «API-ключи», чтобы загрузить список моделей",
+  "post.needKey": "Добавьте ключ в «Параметры → API-ключи», чтобы загрузить список моделей",
   "post.loading": "Загрузка моделей…",
   "post.loadError": "Не удалось загрузить модели: {error}",
   "post.nothingFound": "Ничего не найдено",
@@ -455,7 +451,7 @@ const ru: Record<MessageKey, string> = {
   "post.appendSpace": "Пробел в конце",
   "post.appendSpaceHint": "Добавляет пробел после вставленного текста, чтобы следующая фраза не слиплась с ним. Работает и без постобработки",
 
-  "ask.title": "Quick Ask",
+  "ask.title": "Quick Ask & Chat",
   "ask.desc": "Выделите текст где угодно и спросите о нём голосом или поговорите с ИИ в чате",
   "ask.enabled": "Quick Ask",
   "ask.enabledHint": "Если выделен текст, хоткей диктовки задаёт о нём вопрос модели вместо набора текста",
@@ -466,7 +462,7 @@ const ru: Record<MessageKey, string> = {
   "ask.searchHint": "Если вопросу нужны свежие факты, модель найдёт их через Exa и назовёт источники",
   "ask.howTitle": "Как это работает",
   "ask.step1": "Выделите текст в любом приложении",
-  "ask.step2": "Нажмите хоткей из раздела «Хоткеи» и задайте вопрос вслух",
+  "ask.step2": "Нажмите хоткей из «Параметры → Хоткеи» и задайте вопрос вслух",
   "ask.step3": "Ответ появится там, где индикатор записи. Нажмите хоткей ещё раз, чтобы задать уточняющий вопрос; крестик закрывает окно",
   "ask.copyNote": "Нажмите на ответ, чтобы скопировать его. Кнопка в углу блока кода копирует только код",
   "ask.terminalNote": "В терминалах выделение не читается: сочетание для копирования прервало бы там работающую программу",
@@ -481,8 +477,6 @@ const ru: Record<MessageKey, string> = {
   "askWindow.stopped": "Остановлено",
   "askWindow.error": "Не удалось ответить: {error}",
 
-  "developer.title": "Разработчик",
-  "developer.desc": "Живой лог всего, что делает Typr: хоткеи, звук, запросы, ошибки",
   "developer.all": "Все",
   "developer.errors": "Ошибки",
   "developer.warnings": "Предупреждения",
@@ -531,7 +525,7 @@ const ru: Record<MessageKey, string> = {
   "setup.doneTitle": "Можно диктовать",
   "setup.doneToggle": "Нажмите горячие клавиши, говорите и нажмите их снова — текст вставится туда, где стоит курсор.",
   "setup.donePtt": "Держите горячие клавиши, пока говорите, и отпустите — текст вставится туда, где стоит курсор.",
-  "setup.hotkeyHint": "Сочетание можно поменять в разделе «Хоткеи»",
+  "setup.hotkeyHint": "Сочетание можно поменять в «Параметры → Хоткеи»",
 };
 
 const dictionaries: Record<Lang, Record<MessageKey, string>> = { en, ru };

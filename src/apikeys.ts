@@ -1,4 +1,4 @@
-// API keys section: one key per service for the whole app. Engine,
+// Settings → API keys: one key per service for the whole app. Engine,
 // Post-processing and Quick ask only pick a service and a model; the model
 // lists read the key from here (keyOf).
 
@@ -22,9 +22,10 @@ const SERVICES: Service[] = [
   { id: "openrouter", name: "OpenRouter", use: "keys.useModels", placeholder: "sk-or-…" },
   { id: "polza", name: "Polza", use: "keys.useSpeechModels", placeholder: "" },
   { id: "assemblyai", name: "AssemblyAI", use: "keys.useSpeech", placeholder: "" },
-  { id: "openai", name: "OpenAI", use: "keys.useOpenai", placeholder: "sk-…" },
   { id: "exa", name: "Exa", use: "keys.useSearch", placeholder: "" },
 ];
+// The OpenAI-compatible server's key (apiKeys.openai) is set in Engine,
+// next to the server's address (main.ts)
 
 export interface KeysHost {
   settings: () => { apiKeys: ApiKeys };

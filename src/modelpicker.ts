@@ -1,7 +1,7 @@
 // Provider and model list with search, for a section that runs a language
 // model (Post-processing, Quick ask). The section's settings hold the
 // provider and the model per provider; the picker edits them in place and
-// asks the host to save. The key comes from the API keys section
+// asks the host to save. The key comes from Settings → API keys
 // (apikeys.ts). Its elements are found by id prefix: #<prefix>-provider,
 // #<prefix>-model-list and so on.
 

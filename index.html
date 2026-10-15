@@ -15,7 +15,10 @@
         <div class="sidebar-header">
           <div class="app-identity">
             <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
-            <span class="app-name">Typr</span>
+            <span class="app-title">
+              <span class="app-name">Typr</span>
+              <span class="version-text" id="version-text">v3.1.0</span>
+            </span>
           </div>
           <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
             <span id="status-dot"></span>
@@ -25,20 +28,12 @@
         </div>
         <nav id="sidebar-nav">
           <button type="button" class="nav-item active" data-section="general">
-            <i class="nav-icon" data-icon="settings"></i>
-            <span data-i18n="nav.general">General</span>
-          </button>
-          <button type="button" class="nav-item" data-section="keys">
-            <i class="nav-icon" data-icon="key-round"></i>
-            <span data-i18n="nav.keys">API keys</span>
+            <i class="nav-icon" data-icon="sliders-horizontal"></i>
+            <span data-i18n="nav.general">Basics</span>
           </button>
           <button type="button" class="nav-item" data-section="engine">
             <i class="nav-icon" data-icon="audio-lines"></i>
             <span data-i18n="nav.engine">Engine</span>
-          </button>
-          <button type="button" class="nav-item" data-section="hotkeys">
-            <i class="nav-icon" data-icon="keyboard"></i>
-            <span data-i18n="nav.hotkeys">Hotkeys</span>
           </button>
           <button type="button" class="nav-item" data-section="postprocess">
             <i class="nav-icon" data-icon="sparkles"></i>
@@ -46,17 +41,18 @@
           </button>
           <button type="button" class="nav-item" data-section="ask">
             <i class="nav-icon" data-icon="message-circle-question-mark"></i>
-            <span data-i18n="nav.ask">Quick Ask</span>
-          </button>
-          <button type="button" class="nav-item hidden" id="nav-developer" data-section="developer">
-            <i class="nav-icon" data-icon="square-terminal"></i>
-            <span data-i18n="nav.developer">Developer</span>
-            <span id="dev-badge" class="nav-badge hidden"></span>
+            <span data-i18n="nav.ask">Quick Ask &amp; Chat</span>
           </button>
         </nav>
         <div class="sidebar-footer">
-          <span class="version-text" id="version-text">v3.0.2</span>
           <button type="button" class="update-link hidden" id="update-link"></button>
+          <!-- Opens the Settings window (#settings) -->
+          <button type="button" class="nav-item" id="nav-settings" aria-haspopup="dialog">
+            <i class="nav-icon" data-icon="settings"></i>
+            <span id="nav-settings-label" data-i18n="nav.settings">Settings</span>
+            <!-- Errors logged since the Developer tab was last seen -->
+            <span class="nav-badge dev-badge hidden"></span>
+          </button>
         </div>
       </aside>
 
@@ -118,18 +114,6 @@
             </div>
             <div class="setting-row">
               <div class="setting-label">
-                <label class="label-text" for="autostart-toggle" data-i18n="general.autostart">Start with Windows</label>
-                <span class="label-hint" data-i18n="general.autostartHint">Typr starts in the tray when you sign in</span>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="autostart-toggle" role="switch" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </label>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-label">
                 <label class="label-text" for="updates-toggle" data-i18n="general.updates">Check for updates</label>
                 <span class="label-hint" id="updates-status" data-i18n="general.updatesHint">Looks for new releases on GitHub</span>
               </div>
@@ -142,43 +126,6 @@
               </div>
             </div>
           </div>
-
-          <h2 class="group-title" data-i18n="general.advanced">Advanced</h2>
-          <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="general.setup">Setup wizard</span>
-                <span class="label-hint" data-i18n="general.setupHint">Go through the first-run setup again</span>
-              </div>
-              <div class="setting-control">
-                <button type="button" class="btn btn-secondary btn-compact" id="setup-run" data-i18n="general.setupRun">Open</button>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="dev-mode-toggle" data-i18n="general.devMode">Developer mode</label>
-                <span class="label-hint" data-i18n="general.devModeHint">Records everything the app does and shows it in the Developer section</span>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="dev-mode-toggle" role="switch" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="section-keys" class="content-section">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="keys.title">API keys</h1>
-            <p class="section-desc" data-i18n="keys.desc">One key per service for the whole app. The other sections only pick the service and the model</p>
-          </header>
-          <!-- Rows built by src/apikeys.ts -->
-          <div class="card" id="keys-services"></div>
-          <h2 class="group-title" data-i18n="keys.searchTitle">Web search</h2>
-          <div class="card" id="keys-search"></div>
-          <p class="keys-note" data-i18n="keys.note">The keys are kept on this computer only</p>
         </section>
 
         <section id="section-engine" class="content-section">
@@ -276,6 +223,16 @@
                   <input type="text" id="openai-model" placeholder="whisper-1" />
                 </div>
               </div>
+              <!-- apiKeys.openai: this server's key stays with its address, not in Settings → API keys -->
+              <div class="setting-row">
+                <div class="setting-label">
+                  <label class="label-text" for="openai-key" data-i18n="engine.apiKey">API key</label>
+                  <span class="label-hint" data-i18n="engine.openaiKeyHint">Leave empty if the server needs no key</span>
+                </div>
+                <div class="setting-control">
+                  <input type="password" id="openai-key" placeholder="sk-…" spellcheck="false" autocomplete="off" />
+                </div>
+              </div>
             </div>
 
             <!-- Polza Settings -->
@@ -338,55 +295,6 @@
                   <input type="checkbox" id="fallback-toggle" role="switch" checked />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="section-hotkeys" class="content-section">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="hotkeys.title">Hotkeys</h1>
-            <p class="section-desc" data-i18n="hotkeys.desc">Keys for dictation and for the chat with the AI</p>
-          </header>
-          <!-- Hotkeys recorded by src/hotkeys.ts -->
-          <h2 class="group-title" data-i18n="hotkeys.dictation">Dictation</h2>
-          <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                <span class="label-hint" id="hotkey-hint"></span>
-              </div>
-              <div class="setting-control">
-                <button type="button" id="hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
-                  <kbd id="hotkey-text">Ctrl+Shift+Space</kbd>
-                </button>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="recording.mode">Recording Mode</span>
-                <span class="label-hint" data-i18n="recording.modeHint">Toggle starts/stops, Push to Talk records while held</span>
-              </div>
-              <div class="setting-control">
-                <div class="segmented">
-                  <button type="button" id="mode-toggle" class="segment active" data-i18n="recording.toggle">Toggle</button>
-                  <button type="button" id="mode-ptt" class="segment" data-i18n="recording.ptt">Push to Talk</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <h2 class="group-title" data-i18n="hotkeys.chat">Quick Chat</h2>
-          <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                <span class="label-hint" id="chat-hotkey-hint"></span>
-              </div>
-              <div class="setting-control">
-                <button type="button" id="chat-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
-                  <kbd id="chat-hotkey-text">Ctrl+Alt</kbd>
-                </button>
               </div>
             </div>
           </div>
@@ -489,7 +397,7 @@
 
         <section id="section-ask" class="content-section">
           <header class="section-header">
-            <h1 class="section-title" data-i18n="ask.title">Quick Ask</h1>
+            <h1 class="section-title" data-i18n="ask.title">Quick Ask &amp; Chat</h1>
             <p class="section-desc" data-i18n="ask.desc">Select text anywhere and ask about it by voice</p>
           </header>
           <div class="card">
@@ -586,52 +494,168 @@
             <p class="ask-note" data-i18n="ask.terminalNote">In terminals the selection isn't read: a copy shortcut would interrupt the running program there</p>
           </div>
         </section>
-
-        <section id="section-developer" class="content-section section-fill">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="developer.title">Developer</h1>
-            <p class="section-desc" data-i18n="developer.desc">Live log of everything Typr does: hotkeys, audio, requests, errors</p>
-          </header>
-          <!-- WebView2 kept in the background: the Quick Ask window stays loaded (ask/window.rs) -->
-          <div class="card dev-card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep WebView2 in the background</label>
-                <span class="label-hint" data-i18n="developer.keepAskHint">Quick Ask, Quick Chat and the settings window open faster, but WebView2 always stays in the background, which takes more RAM.</span>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="keep-ask-toggle" role="switch" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="log-toolbar">
-            <div class="segmented" id="log-levels">
-              <button type="button" class="segment active" data-level="all"><span data-i18n="developer.all">All</span> <span class="count" data-count="all">0</span></button>
-              <button type="button" class="segment" data-level="error"><span data-i18n="developer.errors">Errors</span> <span class="count" data-count="error">0</span></button>
-              <button type="button" class="segment" data-level="warn"><span data-i18n="developer.warnings">Warnings</span> <span class="count" data-count="warn">0</span></button>
-              <button type="button" class="segment" data-level="info"><span data-i18n="developer.info">Info</span> <span class="count" data-count="info">0</span></button>
-              <button type="button" class="segment" data-level="debug"><span data-i18n="developer.debug">Debug</span> <span class="count" data-count="debug">0</span></button>
-            </div>
-            <input type="search" id="log-search" class="log-search" placeholder="Filter by text…" data-i18n-placeholder="developer.filter" spellcheck="false" />
-            <div class="log-actions">
-              <button type="button" class="btn btn-secondary" id="log-copy" data-i18n="developer.copy">Copy</button>
-              <button type="button" class="btn btn-secondary" id="log-clear" data-i18n="developer.clear">Clear</button>
-            </div>
-          </div>
-          <div class="log-panel">
-            <div id="log-list" class="log-list" role="log"></div>
-            <div id="log-empty" class="log-empty">
-              <span class="log-empty-title" id="log-empty-title">No logs yet</span>
-              <span class="log-empty-hint" id="log-empty-hint">Press your hotkey and dictate something. Every step will show up here.</span>
-            </div>
-            <button type="button" id="log-jump" class="log-jump hidden"><span data-i18n="developer.jump">Jump to latest</span><i data-icon="arrow-down" data-size="14"></i></button>
-          </div>
-        </section>
       </main>
       </div>
+      </div>
+
+      <!-- Settings: a window inside the app, opened from the bottom of the sidebar -->
+      <div id="settings" class="settings hidden">
+        <div class="settings-backdrop" id="settings-backdrop"></div>
+        <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="nav-settings-label">
+          <!-- The tabs, a segmented bar like Engine's; the space around them drags the window -->
+          <header class="settings-head drag-region">
+            <div class="segmented full settings-tabs" role="tablist">
+              <button type="button" class="segment settings-tab active" role="tab" aria-selected="true" data-tab="main" data-i18n="settings.main">General</button>
+              <button type="button" class="segment settings-tab" role="tab" aria-selected="false" data-tab="keys" data-i18n="nav.keys">API keys</button>
+              <button type="button" class="segment settings-tab" role="tab" aria-selected="false" data-tab="hotkeys" data-i18n="nav.hotkeys">Hotkeys</button>
+              <button type="button" class="segment settings-tab hidden" role="tab" aria-selected="false" data-tab="developer" id="tab-developer">
+                <span data-i18n="nav.developer">Developer</span>
+                <span class="nav-badge dev-badge hidden"></span>
+              </button>
+            </div>
+            <button type="button" class="settings-close" id="settings-close" title="Close" data-i18n-title="window.close">
+              <i data-icon="x" data-size="16"></i>
+            </button>
+          </header>
+          <div class="settings-body" id="settings-body">
+            <div class="settings-panel active" id="settings-main" role="tabpanel">
+              <div class="card">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <label class="label-text" for="autostart-toggle" data-i18n="general.autostart">Start with Windows</label>
+                    <span class="label-hint" data-i18n="general.autostartHint">Typr starts in the tray when you sign in</span>
+                  </div>
+                  <div class="setting-control">
+                    <label class="switch">
+                      <input type="checkbox" id="autostart-toggle" role="switch" />
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <h2 class="group-title" data-i18n="general.advanced">Advanced</h2>
+              <div class="card">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text" data-i18n="general.setup">Setup wizard</span>
+                    <span class="label-hint" data-i18n="general.setupHint">Go through the first-run setup again</span>
+                  </div>
+                  <div class="setting-control">
+                    <button type="button" class="btn btn-secondary btn-compact" id="setup-run" data-i18n="general.setupRun">Open</button>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <label class="label-text" for="dev-mode-toggle" data-i18n="general.devMode">Developer mode</label>
+                    <span class="label-hint" data-i18n="general.devModeHint">Records everything the app does and shows it in the Developer tab</span>
+                  </div>
+                  <div class="setting-control">
+                    <label class="switch">
+                      <input type="checkbox" id="dev-mode-toggle" role="switch" />
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-keys" role="tabpanel">
+              <p class="settings-intro" data-i18n="keys.desc">One key per service for the whole app. The other sections only pick the service and the model</p>
+              <!-- Rows built by src/apikeys.ts -->
+              <div class="card" id="keys-services"></div>
+              <h2 class="group-title" data-i18n="keys.searchTitle">Web search</h2>
+              <div class="card" id="keys-search"></div>
+              <p class="keys-note" data-i18n="keys.note">The keys are kept on this computer only</p>
+            </div>
+
+            <div class="settings-panel" id="settings-hotkeys" role="tabpanel">
+              <!-- Hotkeys recorded by src/hotkeys.ts -->
+              <h2 class="group-title" data-i18n="hotkeys.dictation">Dictation</h2>
+              <div class="card">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
+                    <span class="label-hint" id="hotkey-hint"></span>
+                  </div>
+                  <div class="setting-control">
+                    <button type="button" id="hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                      <kbd id="hotkey-text">Ctrl+Shift+Space</kbd>
+                    </button>
+                  </div>
+                </div>
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text" data-i18n="recording.mode">Recording Mode</span>
+                    <span class="label-hint" data-i18n="recording.modeHint">Toggle starts/stops, Push to Talk records while held</span>
+                  </div>
+                  <div class="setting-control">
+                    <div class="segmented">
+                      <button type="button" id="mode-toggle" class="segment active" data-i18n="recording.toggle">Toggle</button>
+                      <button type="button" id="mode-ptt" class="segment" data-i18n="recording.ptt">Push to Talk</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h2 class="group-title" data-i18n="hotkeys.chat">Quick Chat</h2>
+              <div class="card">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
+                    <span class="label-hint" id="chat-hotkey-hint"></span>
+                  </div>
+                  <div class="setting-control">
+                    <button type="button" id="chat-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                      <kbd id="chat-hotkey-text">Ctrl+Alt</kbd>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shown while developer mode is on; fills the window's height -->
+            <div class="settings-panel panel-fill" id="settings-developer" role="tabpanel">
+              <!-- WebView2 kept in the background: the Quick Ask window stays loaded (ask/window.rs) -->
+              <div class="card dev-card">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep WebView2 in the background</label>
+                    <span class="label-hint" data-i18n="developer.keepAskHint">Quick Ask, Quick Chat and the Typr window open faster, but WebView2 always stays in the background, which takes more RAM.</span>
+                  </div>
+                  <div class="setting-control">
+                    <label class="switch">
+                      <input type="checkbox" id="keep-ask-toggle" role="switch" />
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="log-toolbar">
+                <div class="segmented" id="log-levels">
+                  <button type="button" class="segment active" data-level="all"><span data-i18n="developer.all">All</span> <span class="count" data-count="all">0</span></button>
+                  <button type="button" class="segment" data-level="error"><span data-i18n="developer.errors">Errors</span> <span class="count" data-count="error">0</span></button>
+                  <button type="button" class="segment" data-level="warn"><span data-i18n="developer.warnings">Warnings</span> <span class="count" data-count="warn">0</span></button>
+                  <button type="button" class="segment" data-level="info"><span data-i18n="developer.info">Info</span> <span class="count" data-count="info">0</span></button>
+                  <button type="button" class="segment" data-level="debug"><span data-i18n="developer.debug">Debug</span> <span class="count" data-count="debug">0</span></button>
+                </div>
+                <input type="search" id="log-search" class="log-search" placeholder="Filter by text…" data-i18n-placeholder="developer.filter" spellcheck="false" />
+                <div class="log-actions">
+                  <button type="button" class="btn btn-secondary" id="log-copy" data-i18n="developer.copy">Copy</button>
+                  <button type="button" class="btn btn-secondary" id="log-clear" data-i18n="developer.clear">Clear</button>
+                </div>
+              </div>
+              <div class="log-panel">
+                <div id="log-list" class="log-list" role="log"></div>
+                <div id="log-empty" class="log-empty">
+                  <span class="log-empty-title" id="log-empty-title">No logs yet</span>
+                  <span class="log-empty-hint" id="log-empty-hint">Press your hotkey and dictate something. Every step will show up here.</span>
+                </div>
+                <button type="button" id="log-jump" class="log-jump hidden"><span data-i18n="developer.jump">Jump to latest</span><i data-icon="arrow-down" data-size="14"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- First-run setup (src/setup.ts), over the whole window -->

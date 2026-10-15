@@ -8,6 +8,7 @@ import { fillHotkeys, initHotkeys, translateHotkeys } from "./hotkeys";
 import { fillLanguageOptions, formatHotkey, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
 import { renderIcons } from "./icons";
 import { fillLocal, initLocal, showLocal, showLocalComponents, translateLocal } from "./local";
+import { enhanceSegmented } from "./segmented";
 import { initSetup, openSetup, translateSetup } from "./setup";
 import {
   fillPostProcess,
@@ -179,6 +180,7 @@ const assemblyaiSettings = document.getElementById("assemblyai-settings")!;
 const groqModel = document.getElementById("groq-model") as HTMLSelectElement;
 const openaiEndpoint = document.getElementById("openai-endpoint") as HTMLInputElement;
 const openaiModel = document.getElementById("openai-model") as HTMLInputElement;
+const openaiKey = document.getElementById("openai-key") as HTMLInputElement;
 const polzaModel = document.getElementById("polza-model") as HTMLInputElement;
 const polzaProvider = document.getElementById("polza-provider") as HTMLInputElement;
 const assemblyaiModel = document.getElementById("assemblyai-model") as HTMLSelectElement;
@@ -187,8 +189,9 @@ const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const appendSpaceToggle = document.getElementById("append-space-toggle") as HTMLInputElement;
 const devModeToggle = document.getElementById("dev-mode-toggle") as HTMLInputElement;
-const navDeveloper = document.getElementById("nav-developer")!;
-const devBadge = document.getElementById("dev-badge")!;
+const tabDeveloper = document.getElementById("tab-developer")!;
+// On the sidebar's Settings button and on the Developer tab
+const devBadges = document.querySelectorAll<HTMLElement>(".dev-badge");
 const versionText = document.getElementById("version-text")!;
 const logList = document.getElementById("log-list")!;
 const logEmpty = document.getElementById("log-empty")!;
@@ -201,7 +204,7 @@ const logClear = document.getElementById("log-clear")!;
 const logLevelButtons = document.querySelectorAll<HTMLButtonElement>("#log-levels .segment");
 
 // Section navigation
-const navItems = document.querySelectorAll<HTMLElement>(".nav-item");
+const navItems = document.querySelectorAll<HTMLElement>("#sidebar-nav .nav-item");
 const sections = document.querySelectorAll<HTMLElement>(".content-section");
 
 function showSection(name: string) {
@@ -210,7 +213,43 @@ function showSection(name: string) {
   if (name === "postprocess") showPostProcess();
   if (name === "ask") showQuickAsk();
   if (name === "engine") showLocal();
-  if (name === "developer") {
+}
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => showSection(item.dataset.section || "general"));
+});
+
+// ── Settings window ──────────────────────────────────
+// A window inside the app over everything but the setup and the window
+// buttons: General, API keys, Hotkeys and, in developer mode, Developer.
+
+type SettingsTab = "main" | "keys" | "hotkeys" | "developer";
+
+const settingsRoot = document.getElementById("settings")!;
+const settingsBody = document.getElementById("settings-body")!;
+const settingsTabs = document.querySelectorAll<HTMLButtonElement>(".settings-tab");
+const settingsPanels = document.querySelectorAll<HTMLElement>(".settings-panel");
+const navSettings = document.getElementById("nav-settings") as HTMLButtonElement;
+const appBody = document.getElementById("app-body")!;
+
+let settingsTab: SettingsTab = "main";
+let settingsCloseTimer: number | undefined;
+
+function isSettingsOpen(): boolean {
+  return !settingsRoot.classList.contains("hidden") && !settingsRoot.classList.contains("closing");
+}
+
+function showSettingsTab(tab: SettingsTab) {
+  settingsTab = tab;
+  settingsTabs.forEach((button) => {
+    const active = button.dataset.tab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  settingsPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `settings-${tab}`));
+  settingsBody.scrollTop = 0;
+  if (tab === "developer" && isSettingsOpen()) {
     showLocalComponents();
     unseenErrors = 0;
     updateDevBadge();
@@ -218,8 +257,55 @@ function showSection(name: string) {
   }
 }
 
-navItems.forEach((item) => {
-  item.addEventListener("click", () => showSection(item.dataset.section || "general"));
+function openSettings(tab: SettingsTab = "main") {
+  window.clearTimeout(settingsCloseTimer);
+  settingsRoot.classList.remove("hidden", "closing");
+  // The page behind takes no clicks or focus while the window is open
+  appBody.inert = true;
+  navSettings.classList.add("active");
+  showSettingsTab(tab);
+  document.querySelector<HTMLElement>(".settings-tab.active")?.focus({ preventScroll: true });
+}
+
+function closeSettings() {
+  if (!isSettingsOpen()) return;
+  settingsRoot.classList.add("closing");
+  settingsCloseTimer = window.setTimeout(() => {
+    settingsRoot.classList.add("hidden");
+    settingsRoot.classList.remove("closing");
+  }, 140);
+  appBody.inert = false;
+  navSettings.classList.remove("active");
+  navSettings.focus({ preventScroll: true });
+}
+
+navSettings.addEventListener("click", () => openSettings());
+document.getElementById("settings-close")!.addEventListener("click", closeSettings);
+document.getElementById("settings-backdrop")!.addEventListener("click", closeSettings);
+
+// Escape closes the window; while a hotkey is being recorded, hotkeys.ts
+// takes the key first
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && isSettingsOpen() && !e.defaultPrevented) closeSettings();
+});
+
+settingsTabs.forEach((button) => {
+  button.addEventListener("click", () => showSettingsTab(button.dataset.tab as SettingsTab));
+  // Arrow keys move between the visible tabs
+  button.addEventListener("keydown", (e) => {
+    const visible = Array.from(settingsTabs).filter((tab) => !tab.classList.contains("hidden"));
+    const index = visible.indexOf(button);
+    const next =
+      e.key === "ArrowRight" ? visible[(index + 1) % visible.length]
+      : e.key === "ArrowLeft" ? visible[(index - 1 + visible.length) % visible.length]
+      : e.key === "Home" ? visible[0]
+      : e.key === "End" ? visible[visible.length - 1]
+      : undefined;
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
+    showSettingsTab(next.dataset.tab as SettingsTab);
+  });
 });
 
 // The window has no system title bar. Drag it by the empty space of the
@@ -258,6 +344,8 @@ renderIcons();
 // App-styled lists instead of the browser's native <select> popup
 fillLanguageOptions(recognitionLanguage);
 [micSelect, groqModel, assemblyaiModel, recognitionLanguage].forEach(enhanceSelect);
+// A thumb that springs between the segments and can be dragged
+document.querySelectorAll<HTMLElement>(".segmented").forEach(enhanceSegmented);
 
 initApiKeys({ settings: () => currentSettings, save: saveQuietly });
 // Quick ask names the chat hotkey too
@@ -267,7 +355,7 @@ initQuickAsk({
   settings: () => currentSettings,
   save: saveQuietly,
   chatChanged: fillHotkeys,
-  showSection,
+  showHotkeys: () => openSettings("hotkeys"),
 });
 initLocal({ settings: () => currentSettings, save: saveQuietly });
 initSetup({
@@ -406,6 +494,7 @@ function fillForm() {
   // OpenAI Compatible settings
   openaiEndpoint.value = currentSettings.openaiEndpoint || "https://api.openai.com/v1";
   openaiModel.value = currentSettings.openaiModel || "whisper-1";
+  openaiKey.value = currentSettings.apiKeys?.openai || "";
 
   // Polza settings
   polzaModel.value = currentSettings.polzaModel || "openai/whisper-large-v3";
@@ -535,6 +624,9 @@ bind(groqModel, () => (currentSettings.groqModel = groqModel.value));
 bind(appendSpaceToggle, () => (currentSettings.appendSpace = appendSpaceToggle.checked));
 bind(openaiEndpoint, () => (currentSettings.openaiEndpoint = openaiEndpoint.value.trim()));
 bind(openaiModel, () => (currentSettings.openaiModel = openaiModel.value.trim()));
+// The OpenAI-compatible server's key is set here, next to its address, not in
+// Settings → API keys
+bind(openaiKey, () => (currentSettings.apiKeys.openai = openaiKey.value.trim()));
 bind(polzaModel, () => (currentSettings.polzaModel = polzaModel.value.trim()));
 bind(polzaProvider, () => (currentSettings.polzaProvider = polzaProvider.value.trim()));
 bind(assemblyaiModel, () => (currentSettings.assemblyaiModel = assemblyaiModel.value));
@@ -566,7 +658,11 @@ autostartToggle.addEventListener("change", async () => {
   }
 });
 
-setupRun.addEventListener("click", () => void openSetup());
+// The setup covers the whole window, so Settings closes under it
+setupRun.addEventListener("click", () => {
+  closeSettings();
+  void openSetup();
+});
 
 // ── Updates ──────────────────────────────────────────
 
@@ -637,9 +733,9 @@ modePtt.addEventListener("click", () => {
 function applyDeveloperMode(enabled: boolean) {
   developerMode = enabled;
   devModeToggle.checked = enabled;
-  navDeveloper.classList.toggle("hidden", !enabled);
+  tabDeveloper.classList.toggle("hidden", !enabled);
   if (!enabled) {
-    if (navDeveloper.classList.contains("active")) showSection("general");
+    if (settingsTab === "developer") showSettingsTab("main");
     resetLogView();
   }
 }
@@ -670,8 +766,8 @@ let levelFilter: "all" | LogLevel = "all";
 let searchQuery = "";
 let unseenErrors = 0;
 
-function isDeveloperSectionActive(): boolean {
-  return navDeveloper.classList.contains("active");
+function isDeveloperTabShown(): boolean {
+  return isSettingsOpen() && settingsTab === "developer";
 }
 
 function pad(value: number, width = 2): string {
@@ -754,8 +850,10 @@ function updateLogMeta() {
 }
 
 function updateDevBadge() {
-  devBadge.textContent = String(unseenErrors);
-  devBadge.classList.toggle("hidden", unseenErrors === 0);
+  devBadges.forEach((badge) => {
+    badge.textContent = String(unseenErrors);
+    badge.classList.toggle("hidden", unseenErrors === 0);
+  });
 }
 
 function renderLogs() {
@@ -797,7 +895,7 @@ function addLogEntry(entry: LogEntry) {
   trackEntry(entry);
   trimLogEntries();
 
-  if (entry.level === "error" && !isDeveloperSectionActive()) {
+  if (entry.level === "error" && !isDeveloperTabShown()) {
     unseenErrors += 1;
     updateDevBadge();
   }

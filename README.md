@@ -39,9 +39,9 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 ### App
 
-- **API keys in one place:** each service's key is entered once, in API keys; the other sections only pick the service and the model.
+- **API keys in one place:** each service's key is entered once, in Settings → API keys (an OpenAI-compatible server's next to its address in Engine); the other sections only pick the service and the model.
 - **Tiny footprint:** about 5 MB of RAM in the tray! The settings window's WebView is released when it's closed, and the recording indicator is drawn natively.
-- **Developer mode:** a live log of everything the app does, for troubleshooting. There you can also keep WebView2 in the background: Quick Ask, Quick Chat and the settings window open faster, at the cost of more RAM while idle (about 140 MB).
+- **Developer mode:** a live log of everything the app does, for troubleshooting. There you can also keep WebView2 in the background: Quick Ask, Quick Chat and the Typr window open faster, at the cost of more RAM while idle (about 140 MB).
 - **English and Russian interface**, dark and minimal, in the Anthropic style, with its own window buttons instead of the system title bar.
 
 ## Building
@@ -49,8 +49,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.0.2
-git push origin v3.0.2
+git tag v3.1.0
+git push origin v3.1.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:
