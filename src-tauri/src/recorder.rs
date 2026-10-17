@@ -15,6 +15,7 @@ use crate::transcribe_groq;
 use crate::transcribe_local;
 use crate::transcribe_openai;
 use crate::transcribe_polza;
+use crate::translate;
 
 /// Shorter recordings are almost always accidental taps; Whisper tends to
 /// hallucinate text for them.
@@ -65,8 +66,8 @@ pub struct FallbackNotice {
 }
 
 /// Opens the connections a dictation will need while the user is still
-/// speaking: the cloud engine and, if they are on, post-processing and quick
-/// ask (or the quick chat that is open).
+/// speaking: the cloud engine and, if they are on, post-processing (or
+/// translation) and quick ask (or the quick chat that is open).
 pub fn warm_up_connections(settings: &Settings) {
     let engine_url = match settings.engine {
         Engine::Local => None,
@@ -77,7 +78,7 @@ pub fn warm_up_connections(settings: &Settings) {
     };
     let post_url = settings
         .post_process
-        .enabled
+        .uses_model()
         .then(|| postprocess::host(settings.post_process.provider).to_string());
     let ask = &settings.quick_ask;
     let asking = ask.enabled || ask::is_open();
@@ -259,17 +260,29 @@ impl Recorder {
             return Ok(Outcome::Asked);
         }
 
+        // A dictation already in the language it would be translated into
+        // isn't translated; with post-processing off it isn't sent at all
+        let config = &settings.post_process;
+        let translate_to = config.translate.then_some(config.translate_to).filter(|&language| {
+            let already = translate::is_written_in(&text, language);
+            if already {
+                log::info!("The text is already in {}, not translating it", language.name());
+            }
+            !already
+        });
+
         // A failed post-processing never loses the dictation: the text is
         // pasted as transcribed and the error is shown afterwards
         let mut post_process_error = None;
-        if settings.post_process.enabled {
-            match postprocess::process(settings, &text).await {
+        let step = if config.enabled { "Post-processing" } else { "Translation" };
+        if config.enabled || translate_to.is_some() {
+            match postprocess::process(settings, &text, translate_to).await {
                 Ok(edited) => {
-                    log::info!("Post-processed text: {}", edited);
+                    log::info!("{} result: {}", step, edited);
                     text = edited;
                 }
                 Err(e) => {
-                    log::error!("Post-processing failed, pasting the text as transcribed: {}", e);
+                    log::error!("{} failed, pasting the text as transcribed: {}", step, e);
                     post_process_error = Some(e);
                 }
             }
@@ -284,10 +297,7 @@ impl Recorder {
         log::info!("Text pasted into the active window");
 
         if let Some(e) = post_process_error {
-            notify_error(
-                app,
-                &format!("Post-processing failed, the text was pasted as transcribed: {}", e),
-            );
+            notify_error(app, &format!("{} failed, the text was pasted as transcribed: {}", step, e));
         }
 
         Ok(Outcome::Pasted(text))

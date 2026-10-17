@@ -1,12 +1,14 @@
 // First-run setup over the whole window: the interface language first, then
 // how speech becomes text (a local model or a cloud service), that engine's
-// model or key and the language of the speech, and last the hotkey, the
-// recording mode and starting with Windows. It edits the app's settings
+// model or key and the language of the speech, and last the hotkey (a click
+// on it records new keys), the recording mode (push to talk for a new
+// config) and starting with Windows. It edits the app's settings
 // object in place and saves as it goes; skipping it counts as done.
 
 import { invoke } from "@tauri-apps/api/core";
 import type { ApiKeys } from "./apikeys";
 import { enhanceSelect } from "./dropdown";
+import { bindDictationHotkey } from "./hotkeys";
 import { fillLanguageOptions, getLanguage, t, type Lang, type MessageKey } from "./i18n";
 import { enhanceSegmented } from "./segmented";
 import {
@@ -41,8 +43,6 @@ export interface SetupHost {
   save: () => Promise<void>;
   /** Applies and saves the interface language */
   setLanguage: (lang: Lang) => void;
-  /** The hotkey as the app shows it, e.g. "Ctrl+Shift+Space" */
-  hotkeyLabel: () => string;
   /** The setup closed: put the settings it changed into the form */
   closed: () => void;
 }
@@ -409,8 +409,16 @@ function renderDone(): HTMLElement[] {
   const ptt = s.recordingMode === "push-to-talk";
   const parts = heading(t("setup.doneTitle"), t(ptt ? "setup.donePtt" : "setup.doneToggle"));
 
+  // A click records new keys right here, as in Settings → Hotkeys
   const hotkey = el("div", "setup-hotkey");
-  hotkey.append(el("kbd", "", host!.hotkeyLabel()), el("span", "label-hint", t("setup.hotkeyHint")));
+  const keys = el("button", "hotkey-record-btn");
+  keys.type = "button";
+  keys.title = t("recording.hotkeyChange");
+  const keysText = el("kbd");
+  keys.append(keysText);
+  const keysHint = el("span", "label-hint");
+  hotkey.append(keys, keysHint);
+  bindDictationHotkey(keys, keysText, keysHint, "setup.hotkeyHint");
 
   // Switched in place, so the thumb slides over instead of the step being rebuilt
   const mode = el("div", "segmented");

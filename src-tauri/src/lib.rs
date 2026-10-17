@@ -16,6 +16,7 @@ pub mod modifier_hotkey;
 pub mod overlay;
 pub mod paste;
 pub mod postprocess;
+pub mod translate;
 pub mod ask;
 pub mod selection;
 pub mod recorder;

@@ -17,7 +17,7 @@
             <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="app-title">
               <span class="app-name">Typr</span>
-              <span class="version-text" id="version-text">v3.1.0</span>
+              <span class="version-text" id="version-text">v3.2.0</span>
             </span>
           </div>
           <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
@@ -320,6 +320,20 @@
             </div>
             <div class="setting-row">
               <div class="setting-label">
+                <label class="label-text" for="post-translate" data-i18n="post.translate">Translation</label>
+                <span class="label-hint" data-i18n="post.translateHint">Translates every dictation into the language below with the same model. When you already speak it, the text isn't translated</span>
+              </div>
+              <div class="setting-control">
+                <label class="switch">
+                  <input type="checkbox" id="post-translate" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <!-- Buttons built by src/postprocess.ts, flags from src/flags -->
+            <div class="translate-languages hidden" id="post-languages" role="radiogroup"></div>
+            <div class="setting-row">
+              <div class="setting-label">
                 <span class="label-text" data-i18n="post.provider">Provider</span>
                 <span class="label-hint" data-i18n="post.providerHint">Service that runs the model</span>
               </div>
@@ -591,8 +605,8 @@
                   </div>
                   <div class="setting-control">
                     <div class="segmented">
-                      <button type="button" id="mode-toggle" class="segment active" data-i18n="recording.toggle">Toggle</button>
-                      <button type="button" id="mode-ptt" class="segment" data-i18n="recording.ptt">Push to Talk</button>
+                      <button type="button" id="mode-toggle" class="segment" data-i18n="recording.toggle">Toggle</button>
+                      <button type="button" id="mode-ptt" class="segment active" data-i18n="recording.ptt">Push to Talk</button>
                     </div>
                   </div>
                 </div>

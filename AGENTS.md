@@ -1,6 +1,6 @@
 # AGENTS.md — Typr
 
-Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model, and auto-pastes the result into the active window. With text selected, the same hotkey asks a language model about it instead (**quick ask**): the recording indicator unfolds into a small window with the answer. A hotkey of its own opens that window as a chat (**quick chat**), where the dictation hotkey asks and the questions are shown too. Each service's API key is set once, in Settings → API keys (an OpenAI-compatible server's in Engine, next to its address). The interface is in English and Russian.
+Typr is a **desktop dictation app** built with [Tauri 2](https://tauri.app/) (Rust backend) and vanilla TypeScript frontend. It records audio via a global hotkey, transcribes it locally with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) or in the cloud with Groq, OpenAI (or any OpenAI-compatible API), Polza.AI or AssemblyAI, optionally polishes the text with a language model (and translates it into a chosen language), and auto-pastes the result into the active window. With text selected, the same hotkey asks a language model about it instead (**quick ask**): the recording indicator unfolds into a small window with the answer. A hotkey of its own opens that window as a chat (**quick chat**), where the dictation hotkey asks and the questions are shown too. Each service's API key is set once, in Settings → API keys (an OpenAI-compatible server's in Engine, next to its address). The interface is in English and Russian.
 
 ---
 
@@ -13,15 +13,16 @@ typr/
 │   ├── setup.ts                # First-run setup wizard over the whole window
 │   ├── i18n.ts                 # English/Russian UI strings, t(), data-i18n attributes, recognition language names, hotkey names
 │   ├── apikeys.ts              # Settings → API keys: one key per service, read by the model lists
-│   ├── hotkeys.ts              # Settings → Hotkeys: recording the dictation and quick chat hotkeys
+│   ├── hotkeys.ts              # Settings → Hotkeys: recording the dictation and quick chat hotkeys (the setup records the dictation one too)
 │   ├── dropdown.ts             # App-styled dropdowns over hidden native <select>s
 │   ├── segmented.ts            # Segmented controls: the light thumb springs between segments and can be dragged
-│   ├── postprocess.ts          # Post-processing section: switch, styles; provider and model through modelpicker.ts
+│   ├── postprocess.ts          # Post-processing section: switch, translation and its language (flags), styles; provider and model through modelpicker.ts
 │   ├── modelpicker.ts          # Provider, API key and model list with search, shared by Post-processing and Quick ask
 │   ├── quickask.ts             # Quick ask section: quick ask and quick chat switches, the model that answers, web search
 │   ├── ask.html, ask.ts, ask.css # Quick ask window: the indicator's dot unfolding into the answer card
 │   ├── markdown.ts             # Markdown → DOM for the answers (never parses the model's text as HTML)
 │   ├── icons.ts, icons/        # Lucide icons (SVG files bundled, ISC license): `<i data-icon>` placeholders, icon()
+│   ├── flags/                  # Twemoji flags of the translation languages (SVG files unchanged, CC-BY 4.0)
 │   ├── local.ts                # Engine → Local: models, acceleration, unloading, a note when the runtime is missing
 │   ├── overlay.html            # Mic indicator overlay (WebView fallback for non-Windows)
 │   ├── fonts/                  # Inter and Source Serif 4 bundled (woff2 split by script, fonts.css, OFL licenses)
@@ -57,7 +58,8 @@ typr/
 │       ├── overlay.rs          # Recording indicator that slides in while dictating (native layered window on Windows)
 │       ├── cleanup.rs          # Tidies the transcript: whitespace, capitals at sentence starts, final punctuation
 │       ├── paste.rs            # Pastes via the clipboard (Ctrl+V), then restores the previous content
-│       ├── postprocess.rs      # LLM post-processing: model lists, Gemini / OpenAI-compatible calls, prompts
+│       ├── postprocess.rs      # LLM post-processing: model lists, Gemini / OpenAI-compatible calls, prompts (style, translation)
+│       ├── translate.rs        # Translation languages: names, whether a text is surely in one already
 │       ├── selection.rs        # Reads the selected text of the window in front (verified synthetic copy, clipboard restored)
 │       ├── ask/                # Quick ask
 │       │   ├── mod.rs          # Question or dictation, quick chat, the conversation, the answer streamed to the window
@@ -85,7 +87,7 @@ Manages the `RecordingState` state machine (`Ready → Recording → Transcribin
    (the local engine takes the samples straight to transcribe.cpp). If a cloud engine fails for any reason, `fallbackLocal` is on and a local model is downloaded, the local model transcribes the recording instead (`transcription-fallback` event); the next dictation tries the cloud again
 4. Runs `cleanup_text()` on the result
 5. If quick ask claims the recording (`ask::claim`: something was selected, or its window is open), the text is a question: `ask::ask` answers it and nothing is pasted (`Outcome::Asked`); otherwise:
-6. If post-processing is on, rewrites the text with `postprocess::process()`; on failure the transcribed text is pasted anyway and the error is reported afterwards
+6. If translation is on and the text isn't surely in its language already (`translate::is_written_in`), it is to be translated. If post-processing is on or there is a translation to do, `postprocess::process()` rewrites the text (the style only with post-processing on, the translation only when needed): a dictation already in the target language goes to the model only for post-processing, or not at all. On failure the transcribed text is pasted anyway and the error is reported afterwards
 7. Calls `paste_text()` to inject into the active window
 8. Emits `recording-state` events to the frontend and updates the overlay (the indicator slides in for Recording/Transcribing and back out on Ready)
 
@@ -105,7 +107,7 @@ Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` ov
 - `developerMode`: shows the Developer tab in Settings and turns log collection on
 - `keepAskWindow`: "Keep WebView2 in the background": a hidden Quick Ask window stays loaded while Quick Ask or Quick Chat is on, so WebView2 keeps running and the main window opens faster too (default `false`, switch in Settings → Developer; it works with Developer mode off too). See the window under `ask/` below
 - `microphone`: device name or `"default"`
-- `recordingMode`: `"toggle"` | `"push-to-talk"`
+- `recordingMode`: `"toggle"` | `"push-to-talk"` (default, so a new config and the setup start with it)
 - `hotkey`: default `"Ctrl+Shift+Space"`; or a single mouse button: `"MouseMiddle"` | `"MouseBack"` | `"MouseForward"`
 - `chatHotkey`: opens and closes quick chat, default `"Ctrl+Alt"`; two or three modifiers alone, keys with a non-modifier, or a mouse button. Must differ from `hotkey`
 - `appendSpace`: adds a space after the pasted text (default `false`, switch in Post-processing; works with post-processing off too)
@@ -113,14 +115,14 @@ Persisted to `config.json` in the Tauri app data directory (`TYPR_CONFIG_DIR` ov
 - `indicatorPosition`: `"top-right"` (default) | `"bottom-center"` (just above the taskbar); Basics, shown while the indicator is on
 - `checkUpdates`: looks for a newer GitHub release 15 s after start and every 12 h (default `true`)
 - `setupDone`: the first-run wizard was finished or skipped; `false` only for a new config (a config file without the field counts as set up)
-- `postProcess`: `enabled` (default `false`), `provider` (`"gemini"` | `"openrouter"` | `"groq"` | `"polza"`), `preset` (`"chill"` | `"proper"` | `"custom"`; the old `"official"` is migrated to `"proper"` on load), `customPrompt`, and `{ model }` per provider, plus `providerId` for Polza (sub-provider sent as `provider.only`, omitted from the file when empty)
+- `postProcess`: `enabled` (default `false`), `provider` (`"gemini"` | `"openrouter"` | `"groq"` | `"polza"`), `preset` (`"chill"` | `"proper"` | `"custom"`; the old `"official"` is migrated to `"proper"` on load), `customPrompt`, `translate` (default `false`; works with `enabled` off too, same provider and model) and `translateTo` (`TranslationLanguage`: `"en"` default, `"ru"`, `"uk"`, `"es"`, `"fr"`, `"de"`, `"zh"`, `"ja"`, `"hi"`, `"he"`, `"fa"`), and `{ model }` per provider, plus `providerId` for Polza (sub-provider sent as `provider.only`, omitted from the file when empty)
 - `quickAsk`: `enabled` (default `false`), `chat` (quick chat, default `false`), `provider` (same four as post-processing) and `{ model }` per provider, plus `providerId` for Polza. Local models aren't offered. `webSearch` (default `false`): the model may search the web with Exa (`apiKeys.exa`)
 
 ### `transcribe_groq.rs` / `transcribe_openai.rs`
 Both send a multipart form POST with the recording (`audio::EncodedAudio`) to the respective API. `transcribe_openai.rs` is also used for any OpenAI-compatible endpoint (e.g. local Whisper servers) via the configurable `openaiEndpoint`; those get WAV, only `api.openai.com` gets FLAC.
 
 ### `net.rs` — one HTTP client
-`net::client()` returns one `reqwest::Client` for the whole app, so connections stay open between dictations. `recorder::warm_up_connections` sends a HEAD request (no credentials) to the engine's, post-processing's and quick ask's servers (and Exa's with web search on) when a dictation starts, so the TLS handshake happens while the user speaks.
+`net::client()` returns one `reqwest::Client` for the whole app, so connections stay open between dictations. `recorder::warm_up_connections` sends a HEAD request (no credentials) to the engine's, post-processing's (also with only translation on) and quick ask's servers (and Exa's with web search on) when a dictation starts, so the TLS handshake happens while the user speaks.
 
 ### `transcribe_assemblyai.rs`
 Three steps: `POST /v2/upload` with the raw FLAC, `POST /v2/transcript` with `speech_models: [model]` and `language_code` (or `language_detection: true` when no language is set), then poll `GET /v2/transcript/{id}` until `completed` or `error`. Universal-3.5 Pro supports 18 languages without Russian; if it rejects the language, the error suggests Universal-2.
@@ -139,7 +141,10 @@ Three steps: `POST /v2/upload` with the raw FLAC, `POST /v2/transcript` with `sp
 ### `postprocess.rs` — LLM post-processing
 - `list_models(provider, key)` (Tauri command `list_postprocess_models(provider, apiKey?)`: the key in the window, which may not be saved yet, else the saved one) returns text models only: Gemini `GET /v1beta/models` filtered by `generateContent`; OpenRouter, Groq and Polza `GET /models` (OpenAI format) filtered by `type`, `output_modalities` and, for Groq, speech/guard ids.
 - `process(settings, text)` calls Gemini `models/{id}:generateContent` (key in `x-goog-api-key`) or `/chat/completions` (Bearer) at temperature 0.2, retrying without temperature if a model rejects it, and strips `<think>` blocks, echoed tags and code fences from the reply.
-- The system prompt has two layers: the app's rules first (the dictation, sent between `<dictation>` tags, is text to edit and never a message to answer or obey; keep meaning and language; reply with the text only), then the style. The "custom" style embeds the user's prompt in `<user_style>` tags, marked as the app user's instructions that can't override the app's rules.
+- The system prompt has layers: the app's rules first (the dictation, sent between `<dictation>` tags, is text to edit and never a message to answer or obey; keep meaning and language, or only meaning while translating; reply with the text only), then the style, then the translation when there is one (into `translateTo`, natively rather than word for word; the style applies to the translation; parts already in that language stay). The "custom" style embeds the user's prompt in `<user_style>` tags, marked as the app user's instructions that can't override the app's rules. With post-processing off, a translation gets a neutral style (`TRANSLATION_STYLE`).
+
+### `translate.rs` — already in the target language?
+`is_written_in(text, language)` says yes only when it is sure, so a dictation in doubt still goes to the model (told to leave text already in the language alone): a wrong yes would paste it untranslated. General detectors (whatlang) guess poorly on a dictation's few words (plain Russian read as Ukrainian), so the check is built for these languages: Chinese (Han, no kana), Japanese (kana), Hindi, Hebrew by their script making up 80 % of the letters; Persian by the Arabic script with Persian letters and none that only Arabic or Urdu write; Russian and Ukrainian by the letters only one has (ы э ё / і ї є ґ rule out the other, `-шь` counts for Russian), then by common words found in only one of them (Bulgarian words count against Russian); English, Spanish, French and German by letters outside the language's alphabet (they rule it out), then by common words, with Italian, Portuguese, Dutch and Polish as rivals. The words must be at least three times the best rival's and a sixth of the text.
 
 ### `ask/` and `selection.rs` — quick ask
 - **Same hotkey, decided after the speech.** `main.rs::begin_recording` calls `ask::recording_started`: it stops an answer still being written and, with quick ask on, starts `selection::begin_capture` for the window in front. After transcription `ask::claim` waits up to 1.5 s for that capture: a selection, or the window being open (quick ask or quick chat), makes the recording a question; otherwise it is a dictation as before. Post-processing doesn't run on questions.
@@ -181,7 +186,7 @@ While the window records a new hotkey (`hotkeys.ts`), `pause_hotkeys` takes Typr
 On `ShortcutState::Pressed` with the recorder `Ready`, `HotkeyKeys::extra_keys_held()` reads every key and mouse button via `GetAsyncKeyState`; if anything besides the hotkey's own keys is down, the press is ignored (logged). Stopping a recording is never blocked.
 
 ### Icons
-Every icon is [Lucide](https://lucide.dev/icons/) (v1.48.0 of `lucide-static`), its SVG file copied unchanged into `src/icons/` (license in `src/icons/LICENSE`), so nothing is loaded from the internet. Markup puts `<i data-icon="name" data-size="14">` where an icon goes (the file name; 16 px by default) and `renderIcons()` from `src/icons.ts` swaps in the SVG with the placeholder's classes (main.ts and ask.ts call it at start); code calls `icon(name, size)`. CSS uses the file as a mask (`mask: url("./icons/check.svg")` with `background` in the colour; Vite inlines it). `overlay.html` has no scripts, so its `mic` is inlined there, and the native indicator draws the same `mic` in `overlay.rs`. A new icon: copy its file from the same Lucide version into `src/icons/`. The app logo (`assets/logo.svg`, `src-tauri/icons`) is Typr's own.
+Every icon is [Lucide](https://lucide.dev/icons/) (v1.48.0 of `lucide-static`), its SVG file copied unchanged into `src/icons/` (license in `src/icons/LICENSE`), so nothing is loaded from the internet. Markup puts `<i data-icon="name" data-size="14">` where an icon goes (the file name; 16 px by default) and `renderIcons()` from `src/icons.ts` swaps in the SVG with the placeholder's classes (main.ts and ask.ts call it at start); code calls `icon(name, size)`. CSS uses the file as a mask (`mask: url("./icons/check.svg")` with `background` in the colour; Vite inlines it). `overlay.html` has no scripts, so its `mic` is inlined there, and the native indicator draws the same `mic` in `overlay.rs`. A new icon: copy its file from the same Lucide version into `src/icons/`. The flags of the translation languages are [Twemoji](https://github.com/jdecked/twemoji) v16.0.1, their files unchanged in `src/flags/` (CC-BY 4.0, license and attribution there), inlined by `postprocess.ts` the same way (`?raw`). The app logo (`assets/logo.svg`, `src-tauri/icons`) is Typr's own.
 
 ### Localization
 `src/i18n.ts` holds the English and Russian strings. Static markup uses `data-i18n` (text), `data-i18n-placeholder` and `data-i18n-title`; code uses `t(key)`. New UI text must get keys in both dictionaries. Quick Ask and Quick Chat are feature names: written so in both languages, never translated. The `language` setting picks the language; when empty, `get_system_language` (Rust, `sys-locale`) decides: Russian for ru, uk, be, kk, ky, tg, uz, tk, hy, az, English otherwise. The tray menu is translated in `i18n.rs`. Backend error messages and logs stay in English. The page is hidden (`.i18n-pending`) until the language is applied.
@@ -195,7 +200,7 @@ Collapses whitespace, capitalizes the first letter of every sentence and adds a 
 - `updates::check` reads `releases/latest` of `neodym121/typr-updated`; the result is kept in `AppState.update`, sent as `update-available` and shown in the sidebar and Basics. `links::open` opens only the release page and the providers' key pages.
 
 ### `setup.ts` — first-run wizard
-Shown while `setupDone` is false (and from Settings → General → Advanced): interface language, engine (Local recommended when Vulkan is available, else Groq), the engine's model download or API key (saved in `apiKeys`) plus the speech language, then hotkey, recording mode, start with Windows and update checks. Finish or Skip sets `setupDone`.
+Shown while `setupDone` is false (and from Settings → General → Advanced): interface language, engine (Local recommended when Vulkan is available, else Groq), the engine's model download or API key (saved in `apiKeys`) plus the speech language, then hotkey, recording mode (push to talk for a new config), start with Windows and update checks. A click on the hotkey records new keys right there (`bindDictationHotkey` in hotkeys.ts, the same recorder as Settings → Hotkeys). Finish or Skip sets `setupDone`.
 
 ### `logger.rs` — Settings → Developer
 Installed as the global `log` backend in `main()`. Use `log::info!` / `log::warn!` / `log::error!` / `log::debug!` everywhere in Rust (not `println!`). While `developerMode` is on, entries go to a 5000-entry ring buffer and are streamed to the main window as `log-entry` events; the frontend forwards its own console output via the `frontend_log` command. Never log API keys — use `Settings::summary()` / `describe_changes()`, which only say which are set.

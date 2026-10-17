@@ -30,6 +30,7 @@ Typr — лёгкое приложение для голосового ввод�
 - **Локальное распознавание** через [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet TDT 0.6B v3, Whisper Large v3, Large v3 Turbo и Medium работают прямо на компьютере, звук никуда не уходит. Работают на видеокарте через Vulkan (NVIDIA, AMD или Intel) или на процессоре. Модели скачиваются и удаляются в настройках, неиспользуемая модель сама выгружается из памяти.
 - **Облачные провайдеры распознавания:** Groq (Whisper Large v3/v3 Turbo), [Polza.AI](https://polza.ai/), [AssemblyAI](https://www.assemblyai.com/) (Universal-3.5 Pro/Universal-2), а также любой OpenAI-совместимый эндпоинт. Запись уходит в FLAC, где сервис его принимает, по соединению, открытому, пока вы говорите.
 - **Постобработка:** нейросеть (Gemini, OpenRouter, Groq или Polza) дорабатывает текст перед вставкой в разных стилях.
+- **Перевод** продиктованного текста на многие языки.
 
 ### ИИ-помощник
 
@@ -49,8 +50,8 @@ Typr — лёгкое приложение для голосового ввод�
 Установщик собирает GitHub Actions (`.github/workflows/build.yml`) при пуше тега вида `v*` или при ручном запуске workflow:
 
 ```bash
-git tag v3.1.0
-git push origin v3.1.0
+git tag v3.2.0
+git push origin v3.2.0
 ```
 
 Для локальной разработки нужны [Rust](https://rustup.rs/) и [Node.js](https://nodejs.org/) 20+:
@@ -66,6 +67,7 @@ npm run tauri dev
 
 - Оригинальный проект — [albertshiney](https://github.com/albertshiney/typr)
 - Форк ведёт [neodym121](https://github.com/neodym121), доработан вместе с [Claude](https://claude.com/claude-code) (Anthropic)
+- Иконки: [Lucide](https://lucide.dev/) (ISC); флаги: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
 
 ## Лицензия
 

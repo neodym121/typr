@@ -1,5 +1,6 @@
 // Settings → Hotkeys: the dictation hotkey and the quick chat hotkey (the
-// recording mode next to them stays in main.ts). A hotkey is recorded by
+// recording mode next to them stays in main.ts); the setup's last step
+// records the dictation hotkey too. A hotkey is recorded by
 // pressing it: 2 or 3 keys, or the middle or a side mouse button. The chat
 // one may also be modifiers alone, like Ctrl+Alt, which fire when they are
 // let go (modifier_hotkey.rs); the plugin behind the dictation hotkey needs
@@ -225,19 +226,7 @@ export function initHotkeys(appHost: HotkeysHost) {
   const element = (id: string) => document.getElementById(id)!;
 
   recorders = [
-    {
-      button: element("hotkey-btn"),
-      text: element("hotkey-text"),
-      hint: element("hotkey-hint"),
-      idleHint: () => "recording.hotkeyHint",
-      prompt: "recording.pressKeys",
-      promptHint: "recording.pressKeysHint",
-      get: () => settings().hotkey,
-      set: (hotkey) => (settings().hotkey = hotkey),
-      modifiersAlone: false,
-      other: () => settings().chatHotkey || "Ctrl+Alt",
-      taken: "hotkeys.takenChat",
-    },
+    dictationRecorder(element("hotkey-btn"), element("hotkey-text"), element("hotkey-hint"), "recording.hotkeyHint"),
     {
       button: element("chat-hotkey-btn"),
       text: element("chat-hotkey-text"),
@@ -256,6 +245,31 @@ export function initHotkeys(appHost: HotkeysHost) {
   for (const recorder of recorders) {
     recorder.button.addEventListener("click", () => record(recorder));
   }
+}
+
+function dictationRecorder(button: HTMLElement, text: HTMLElement, hint: HTMLElement, idleHint: MessageKey): Recorder {
+  const settings = () => host!.settings();
+  return {
+    button,
+    text,
+    hint,
+    idleHint: () => idleHint,
+    prompt: "recording.pressKeys",
+    promptHint: "recording.pressKeysHint",
+    get: () => settings().hotkey,
+    set: (hotkey) => (settings().hotkey = hotkey),
+    modifiersAlone: false,
+    other: () => settings().chatHotkey || "Ctrl+Alt",
+    taken: "hotkeys.takenChat",
+  };
+}
+
+/** Makes `button` record the dictation hotkey like the one in Settings →
+ *  Hotkeys (the setup's last step), showing it in `text`. */
+export function bindDictationHotkey(button: HTMLElement, text: HTMLElement, hint: HTMLElement, idleHint: MessageKey) {
+  const recorder = dictationRecorder(button, text, hint, idleHint);
+  button.addEventListener("click", () => record(recorder));
+  render(recorder);
 }
 
 /** Shows the saved hotkeys (after the settings load or change). */

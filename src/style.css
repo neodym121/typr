@@ -751,6 +751,62 @@ kbd.inline-kbd:hover {
   color: var(--text-faint);
 }
 
+/* Post-processing → Translation: the language to translate into */
+.translate-languages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 6px;
+  padding: 2px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.language-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--ease), border-color var(--ease), box-shadow var(--ease);
+}
+
+.language-option span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.language-option:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.language-option[aria-checked="true"] {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 1px var(--text-primary);
+}
+
+.language-flag {
+  display: flex;
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.language-flag svg {
+  width: 100%;
+  height: 100%;
+}
+
 /* Local engine (src/local.ts): model rows, badges, download progress */
 .local-note {
   margin-bottom: 12px;
@@ -1861,11 +1917,16 @@ input.log-search {
   margin-bottom: 4px;
 }
 
+.setup-hotkey .hotkey-record-btn {
+  flex: none;
+}
+
 .setup-hotkey kbd {
   height: 40px;
   padding: 0 16px;
   font-size: 15px;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .setup-foot {

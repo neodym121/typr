@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { fillApiKeys, initApiKeys, translateApiKeys, type ApiKeys } from "./apikeys";
 import { enhanceSelect, syncSelect } from "./dropdown";
 import { fillHotkeys, initHotkeys, translateHotkeys } from "./hotkeys";
-import { fillLanguageOptions, formatHotkey, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
+import { fillLanguageOptions, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
 import { renderIcons } from "./icons";
 import { fillLocal, initLocal, showLocal, showLocalComponents, translateLocal } from "./local";
 import { enhanceSegmented } from "./segmented";
@@ -362,7 +362,6 @@ initSetup({
   settings: () => currentSettings,
   save: saveSettings,
   setLanguage: chooseLanguage,
-  hotkeyLabel: () => formatHotkey(currentSettings.hotkey),
   closed: () => {
     fillForm();
     loadAutostart();
@@ -509,7 +508,7 @@ function fillForm() {
   fallbackToggle.checked = currentSettings.fallbackLocal !== false;
 
   // Recording mode
-  setRecordingMode(currentSettings.recordingMode || "toggle");
+  setRecordingMode(currentSettings.recordingMode || "push-to-talk");
 
   // Hotkeys
   fillHotkeys();

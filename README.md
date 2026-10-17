@@ -30,6 +30,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 - **Local recognition** with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet TDT 0.6B v3, Whisper Large v3, Large v3 Turbo and Medium run on your computer, the audio never leaves it. They run on the GPU through Vulkan (NVIDIA, AMD or Intel) or on the CPU. Models are downloaded and deleted in the settings, and an idle model leaves memory by itself.
 - **Cloud speech-to-text providers:** Groq (Whisper Large v3/v3 Turbo), [Polza.AI](https://polza.ai/), [AssemblyAI](https://www.assemblyai.com/) (Universal-3.5 Pro/Universal-2), and any OpenAI-compatible endpoint. Recordings are sent as FLAC where the service takes it, over a connection opened while you speak.
 - **Post-processing:** an AI model (Gemini, OpenRouter, Groq or Polza) polishes the text before it is pasted, in different styles.
+- **Translation** of the dictated text into many languages.
 
 ### AI assistant
 
@@ -49,8 +50,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.1.0
-git push origin v3.1.0
+git tag v3.2.0
+git push origin v3.2.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:
@@ -66,6 +67,7 @@ Built with [Tauri 2](https://tauri.app/) (Rust) and vanilla TypeScript.
 
 - Original project by [albertshiney](https://github.com/albertshiney/typr)
 - Fork maintained by [neodym121](https://github.com/neodym121), improved together with [Claude](https://claude.com/claude-code) (Anthropic)
+- Icons: [Lucide](https://lucide.dev/) (ISC); flags: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
 
 ## License
 

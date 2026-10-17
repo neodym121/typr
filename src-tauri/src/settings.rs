@@ -93,7 +93,7 @@ impl Engine {
 }
 
 string_enum! {
-    RecordingMode (default Toggle) {
+    RecordingMode (default PushToTalk) {
         /// The hotkey starts a dictation, the next press stops it
         Toggle = "toggle",
         /// Records while the hotkey is held
@@ -128,6 +128,24 @@ string_enum! {
         /// "official" is the old name of this preset
         Proper = "proper" | "official",
         Custom = "custom",
+    }
+}
+
+string_enum! {
+    /// Language the dictation is translated into (Post-processing →
+    /// Translation); names and detection in translate.rs.
+    TranslationLanguage (default English) {
+        English = "en",
+        Russian = "ru",
+        Ukrainian = "uk",
+        Spanish = "es",
+        French = "fr",
+        German = "de",
+        Chinese = "zh",
+        Japanese = "ja",
+        Hindi = "hi",
+        Hebrew = "he",
+        Persian = "fa",
     }
 }
 
@@ -282,6 +300,11 @@ pub struct PostProcess {
     /// The user's own instructions for the "custom" preset
     #[serde(rename = "customPrompt")]
     pub custom_prompt: String,
+    /// The same model translates the dictation into `translate_to`, with
+    /// post-processing off too; a dictation already in that language isn't sent
+    pub translate: bool,
+    #[serde(rename = "translateTo")]
+    pub translate_to: TranslationLanguage,
     pub gemini: ProviderModel,
     pub openrouter: ProviderModel,
     pub groq: ProviderModel,
@@ -289,6 +312,11 @@ pub struct PostProcess {
 }
 
 impl PostProcess {
+    /// Whether dictations go to the model at all (edited, translated or both)
+    pub fn uses_model(&self) -> bool {
+        self.enabled || self.translate
+    }
+
     pub fn provider_settings(&self, provider: PostProvider) -> &ProviderModel {
         match provider {
             PostProvider::Gemini => &self.gemini,
@@ -562,11 +590,12 @@ impl Settings {
         let pp = &self.post_process;
         let model = pp.provider_settings(pp.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, preset {}, key {})",
+            "{} (provider {}, model {}, preset {}, translate {}, key {})",
             if pp.enabled { "on" } else { "off" },
             pp.provider,
             if model.is_empty() { "none" } else { model },
             pp.preset,
+            if pp.translate { format!("to {}", pp.translate_to) } else { "off".to_string() },
             key_state(self.api_keys.model(pp.provider))
         )
     }
@@ -626,6 +655,8 @@ impl Settings {
         changed("postProcess.enabled", &pp_old.enabled, &pp_new.enabled);
         changed("postProcess.provider", &pp_old.provider, &pp_new.provider);
         changed("postProcess.preset", &pp_old.preset, &pp_new.preset);
+        changed("postProcess.translate", &pp_old.translate, &pp_new.translate);
+        changed("postProcess.translateTo", &pp_old.translate_to, &pp_new.translate_to);
         for ((provider, before), (_, after)) in pp_old.providers().zip(pp_new.providers()) {
             changed(&format!("postProcess.{}.model", provider), &before.model, &after.model);
             changed(
@@ -693,7 +724,9 @@ mod tests {
         assert_eq!(settings.local_backend, "");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.language, "");
-        assert_eq!(settings.recording_mode, RecordingMode::Toggle);
+        assert_eq!(settings.recording_mode, RecordingMode::PushToTalk);
+        assert!(!settings.post_process.translate);
+        assert_eq!(settings.post_process.translate_to, TranslationLanguage::English);
         assert_eq!(settings.hotkey, "Ctrl+Shift+Space");
         assert_eq!(settings.chat_hotkey, "Ctrl+Alt");
         assert!(settings.show_indicator);
@@ -735,10 +768,14 @@ mod tests {
         assert_eq!(Engine::from("openai-compatible".to_string()), Engine::OpenAi);
         assert_eq!(Engine::from("whatever".to_string()), Engine::Groq);
         assert_eq!(Preset::from("official".to_string()), Preset::Proper);
-        assert_eq!(RecordingMode::from("push-to-talk".to_string()), RecordingMode::PushToTalk);
+        assert_eq!(RecordingMode::from("toggle".to_string()), RecordingMode::Toggle);
         for &position in IndicatorPosition::ALL {
             assert_eq!(IndicatorPosition::parse(position.id()), Some(position));
         }
+        for &language in TranslationLanguage::ALL {
+            assert_eq!(TranslationLanguage::parse(language.id()), Some(language));
+        }
+        assert_eq!(TranslationLanguage::from("xx".to_string()), TranslationLanguage::English);
 
         let settings: Settings = serde_json::from_str(
             r#"{"engine":"nonsense","indicatorPosition":"bottom-center","postProcess":{"provider":"openrouter"}}"#,
@@ -750,8 +787,25 @@ mod tests {
 
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(json.contains(r#""engine":"groq""#));
-        assert!(json.contains(r#""recordingMode":"toggle""#));
+        assert!(json.contains(r#""recordingMode":"push-to-talk""#));
         assert!(json.contains(r#""indicatorPosition":"top-right""#));
+        assert!(json.contains(r#""translate":false,"translateTo":"en""#));
+    }
+
+    #[test]
+    fn test_translation_reads_from_the_file_and_is_logged() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"postProcess":{"translate":true,"translateTo":"es"}}"#).unwrap();
+        assert!(settings.post_process.translate);
+        assert_eq!(settings.post_process.translate_to, TranslationLanguage::Spanish);
+        assert!(!settings.post_process.enabled);
+        assert!(settings.post_process.uses_model());
+        assert!(!Settings::default().post_process.uses_model());
+
+        let changes = settings.describe_changes(&Settings::default()).join("; ");
+        assert!(changes.contains("postProcess.translate: 'false' → 'true'"));
+        assert!(changes.contains("postProcess.translateTo: 'en' → 'es'"));
+        assert!(settings.summary().contains("translate to es"));
     }
 
     #[test]
