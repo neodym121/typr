@@ -60,6 +60,35 @@ export global Theme {
     out property <color> accent: #d97757;
     out property <color> accent-light: #e8a88f;
     in-out property <string> mono: "Consolas";
+    // The page's translucent fills and lines as they look over the card
+    out property <color> code-fill: self.card-fill.mix(#000000, 0.72);
+    out property <color> code-edge: self.code-fill.mix(#f8f8f6, 0.92);
+    out property <color> question-fill: self.card-fill.mix(#f8f8f6, 0.93);
+    out property <color> question-edge: self.question-fill.mix(#f8f8f6, 0.92);
+    out property <color> key-fill: self.card-fill.mix(#f8f8f6, 0.95);
+    out property <color> key-edge: self.key-fill.mix(#f8f8f6, 0.86);
+    out property <color> card-edge: self.card-fill.mix(#f8f8f6, 0.86);
+    out property <color> card-edge-listening: self.card-fill.mix(#d97757, 0.25);
+}
+
+// A rounded box with a 1px edge, drawn as two fills: where a border and a
+// background meet at a rounded corner, the software renderer leaves light
+// pixels. Colours that were translucent over the card come mixed with the
+// card's own (`Theme.over`)
+component Box inherits Rectangle {
+    in property <color> fill;
+    in property <color> edge;
+    in property <length> radius;
+    background: root.edge;
+    border-radius: root.radius;
+    Rectangle {
+        x: 1px;
+        y: 1px;
+        width: max(0px, parent.width - 2px);
+        height: max(0px, parent.height - 2px);
+        border-radius: max(0px, root.radius - 1px);
+        background: root.fill;
+    }
 }
 
 // Lucide icons (src/icons), stroked as their SVG files draw them
@@ -205,33 +234,39 @@ component BlockView inherits VerticalLayout {
         }
     }
 
+    // A code block; inside a list item it starts under the item's text
     if root.block.kind == 3: Rectangle {
+        property <length> indent: root.block.indent * 20px;
         height: code.preferred-height + 20px;
-        background: #00000047;
-        border-width: 1px;
-        border-color: Theme.border;
-        border-radius: 8px;
-        code := Text {
-            x: 12px;
-            y: 10px;
-            // Room for the copy button in the top right corner
-            width: root.column - 12px - 31px;
-            text: root.block.code;
-            font-family: Theme.mono;
-            font-size: 12.5px;
-            line-height-factor: 1.25;
-            color: Theme.text;
-            wrap: word-wrap;
-        }
-        CodeCopyButton {
-            x: parent.width - self.width - 4px;
-            y: 4px;
-            copied: root.code-copied;
-            clicked => {
-                root.copy-code();
+        Box {
+            x: parent.indent;
+            width: root.column - parent.indent;
+            height: parent.height;
+            fill: Theme.code-fill;
+            edge: Theme.code-edge;
+            radius: 8px;
+            code := Text {
+                x: 12px;
+                y: 10px;
+                // Room for the copy button in the top right corner
+                width: parent.width - 12px - 31px;
+                text: root.block.code;
+                font-family: Theme.mono;
+                font-size: 12.5px;
+                line-height-factor: 1.25;
+                color: Theme.text;
+                wrap: word-wrap;
             }
-            changed hovered => {
-                root.code-hover(self.hovered);
+            CodeCopyButton {
+                x: parent.width - self.width - 4px;
+                y: 4px;
+                copied: root.code-copied;
+                clicked => {
+                    root.copy-code();
+                }
+                changed hovered => {
+                    root.code-hover(self.hovered);
+                }
             }
         }
     }
@@ -427,15 +462,14 @@ component QuestionView inherits Rectangle {
     property <length> inner: min(root.limit - 22px, self.natural);
     height: box.height;
 
-    box := Rectangle {
+    box := Box {
         x: root.width - self.width - 8px;
         y: 0;
         width: root.inner + 22px;
         height: 1px + 3px + (root.quoted ? quote.height + 3px : 0px) + question.height + 3px + 1px;
-        border-width: 1px;
-        border-color: Theme.border;
-        border-radius: 8px;
-        background: #f8f8f612;
+        fill: Theme.question-fill;
+        edge: Theme.question-edge;
+        radius: 8px;
 
         // The start of the text it is about
         if root.quoted: Rectangle {
@@ -483,13 +517,8 @@ export component AskWindow inherits Window {
     in property <length> orb-inset: 18px;
     in property <length> card-width: 440px;
     in property <length> card-max-height: 560px;
-    // The card's shadow, a nine-slice image, and how far it reaches past
-    // the card on each side; the same for the dot
-    in property <image> card-shadow;
-    in property <length> card-shadow-left;
-    in property <length> card-shadow-top;
-    in property <length> card-shadow-right;
-    in property <length> card-shadow-bottom;
+    // The dot's shadow, as the indicator has it, and how far it reaches past
+    // the dot (the card has none)
     in property <image> dot-shadow;
     in property <length> dot-shadow-reach;
 
@@ -536,16 +565,54 @@ export component AskWindow inherits Window {
     property <length> strip: 34px;
     property <length> natural-height: 2px + root.strip + content.preferred-height;
     // The card's height follows its text, set only when it really changes:
-    // bound to the text's height, the card and its shadow would be redrawn
-    // with every streamed piece
+    // bound to the text's height, the card would be redrawn with every
+    // streamed piece
     property <length> open-height: 72px;
     changed natural-height => {
         root.fit();
+    }
+    changed open-height => {
+        root.follow();
+    }
+
+    // Once unfolded, the card's height follows its text on a critically
+    // damped spring, so it grows smoothly with the streamed lines (restarted
+    // with every line, an eased animation went in steps)
+    property <length> shown-height: 72px;
+    // Its speed, px/s
+    property <float> grow-speed: 0;
+    Timer {
+        interval: 16ms;
+        running: root.open && root.motion == 0
+            && (abs(root.open-height - root.shown-height) >= 0.5px || abs(root.grow-speed) >= 5);
+        triggered => {
+            // ω = 22/s: settles in about 0.2 s
+            root.grow-speed += ((root.open-height - root.shown-height) / 1px * 484 - 44 * root.grow-speed) * 0.016;
+            root.shown-height += root.grow-speed * 0.016 * 1px;
+            if abs(root.open-height - root.shown-height) < 0.5px && abs(root.grow-speed) < 5 {
+                root.shown-height = root.open-height;
+                root.grow-speed = 0;
+            }
+        }
+    }
+
+    // The spring starts where the unfolding left the card
+    public function follow-from(height: length) {
+        root.shown-height = height;
+        root.grow-speed = 0;
     }
     init => {
         root.fit();
     }
     property <bool> unfolding: root.motion == 1;
+    // How far the card's edges at the dot are from the dot's centre: the
+    // dot's own radius, the card's inset once it unfolds
+    property <length> anchor: root.open ? root.orb-inset : 20px;
+    animate anchor {
+        delay: root.unfolding ? (root.chat ? 170ms : 220ms) : 0ms;
+        duration: root.unfolding ? (root.chat ? 300ms : 380ms) : 360ms;
+        easing: cubic-bezier(0.22, 1, 0.36, 1);
+    }
     // The text column: the card less its border, padding and the answers'
     property <length> column: root.card-width - 38px;
     property <bool> morphing: root.motion == 2;
@@ -579,7 +646,7 @@ export component AskWindow inherits Window {
             y: card.y - self.spread;
             width: card.width + 2 * self.spread;
             height: card.height + 2 * self.spread;
-            border-radius: card.border-radius + self.spread;
+            border-radius: card.radius + self.spread;
             border-width: self.spread;
             border-color: Theme.accent.with-alpha(0.2 - 0.12 * self.k);
             Timer {
@@ -591,53 +658,40 @@ export component AskWindow inherits Window {
             }
         }
 
-        // The card's shadow: the nine-slice image needs a card of 70 px or
-        // more, so the bar while unfolding has none; it fades in after
-        if root.state != 0: Image {
-            property <bool> fits: min(card.width, card.height) >= 70px;
-            opacity: self.fits ? 1 : 0;
-            animate opacity { duration: self.fits ? 150ms : 0ms; }
-            x: card.x - root.card-shadow-left;
-            y: card.y - root.card-shadow-top;
-            width: card.width + root.card-shadow-left + root.card-shadow-right;
-            height: card.height + root.card-shadow-top + root.card-shadow-bottom;
-            source: root.card-shadow;
-            image-fit: fill;
-        }
-
-        card := Rectangle {
-            x: root.open
-                ? (root.bottom ? root.orb-x - root.card-width / 2 : root.orb-x + root.orb-inset - root.card-width)
-                : root.orb-x - 20px;
-            y: root.open
-                ? (root.bottom ? root.orb-y + root.orb-inset - root.open-height : root.orb-y - root.orb-inset)
-                : root.orb-y - 20px;
+        // Only the size is animated; the place follows from it, so the edges
+        // at the dot (the screen's edge, the corner or the middle) stay put.
+        // Animated apart, the place and the size drifted, and a card at the
+        // bottom slid down while it grew
+        card := Box {
+            x: root.bottom ? root.orb-x - self.width / 2 : root.orb-x + root.anchor - self.width;
+            y: root.bottom ? root.orb-y + root.anchor - self.height : root.orb-y - root.anchor;
             width: root.open ? root.card-width : 40px;
-            height: root.open ? root.open-height : 40px;
-            border-radius: root.open ? 16px : 20px;
+            height: !root.open ? 40px : root.motion == 0 ? root.shown-height : root.open-height;
+            radius: root.open ? 16px : 20px;
             opacity: root.state == 0 ? 0 : 1;
-            background: Theme.card-fill;
-            border-width: 1px;
-            border-color: root.phase == 1 && root.open ? #d97757bf : Theme.hairline;
+            fill: Theme.card-fill;
+            edge: root.phase == 1 && root.open ? Theme.card-edge-listening : Theme.card-edge;
             clip: true;
 
             // Opening: the dot stretches into a bar along the screen edge,
             // then the bar grows into the card; quick chat a little faster.
             // Closing folds it back; otherwise it follows its text
-            animate x, width {
+            animate width {
                 duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
                 easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
             }
-            animate y, height {
+            // Unfolding and folding; in between the spring below moves it
+            animate height {
+                enabled: root.motion != 0;
                 delay: root.unfolding ? (root.chat ? 170ms : 220ms) : 0ms;
                 duration: root.unfolding ? (root.chat ? 300ms : 380ms) : root.morphing ? 360ms : 200ms;
                 easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
             }
-            animate border-radius {
+            animate radius {
                 delay: root.unfolding ? (root.chat ? 110ms : 140ms) : 0ms;
                 duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
             }
-            animate border-color { duration: 300ms; }
+            animate edge { duration: 300ms; }
 
             // The status strip: "Copied" next to the status light
             Rectangle {
@@ -656,11 +710,14 @@ export component AskWindow inherits Window {
                 }
             }
 
+            // As tall as the card is going to be, at the card's edge away from
+            // the strip; the card hides what it hasn't grown over yet. So the
+            // text keeps its place while the card grows to it
             flick := Flickable {
                 x: 1px;
-                y: root.bottom ? 1px : 1px + root.strip;
+                y: root.bottom ? parent.height - 1px - root.strip - self.height : 1px + root.strip;
                 width: root.card-width - 2px;
-                height: max(0px, parent.height - 2px - root.strip);
+                height: max(0px, root.open-height - 2px - root.strip);
                 content-width: self.width;
                 content-height: content.preferred-height;
                 mouse-drag-pan-enabled: false;
@@ -696,11 +753,10 @@ export component AskWindow inherits Window {
                             color: Theme.text-muted;
                             vertical-alignment: center;
                         }
-                        Rectangle {
-                            border-width: 1px;
-                            border-color: Theme.hairline;
-                            border-radius: 5px;
-                            background: #f8f8f60d;
+                        Box {
+                            fill: Theme.key-fill;
+                            edge: Theme.key-edge;
+                            radius: 5px;
                             HorizontalLayout {
                                 padding-left: 6px;
                                 padding-right: 6px;
@@ -778,8 +834,10 @@ export component AskWindow inherits Window {
         }
 
         // The recording indicator's dot: it becomes the card's status light
+        // Even sizes, so the dot and the rings round it stay centred on the
+        // indicator's whole-pixel centre
         orb := Rectangle {
-            property <length> size: !root.open ? 40px : root.phase == 2 ? 17px : root.phase == 1 ? 15px : 12px;
+            property <length> size: !root.open ? 40px : root.phase == 2 ? 18px : root.phase == 1 ? 16px : 12px;
             property <float> breathe: root.open && root.phase == 3 ? breath.value : 0;
             x: root.orb-x - self.size / 2;
             y: root.orb-y - self.size / 2;
@@ -803,14 +861,16 @@ export component AskWindow inherits Window {
                 period: 1200ms;
             }
 
-            // Listening: a ring grows from the light and fades
+            // Listening: a ring grows from the light and fades, a whole pixel
+            // on each side at a time
             if root.open && root.phase == 1: Rectangle {
                 property <float> p: mod(animation-tick() / 1ms, 1400) / 1400;
                 property <float> e: 1 - (1 - self.p) * (1 - self.p);
-                width: orb.width + 20px * self.e;
+                property <length> grow: round(10 * self.e) * 1px;
+                width: orb.width + 2 * self.grow;
                 height: self.width;
-                x: (orb.width - self.width) / 2;
-                y: (orb.height - self.height) / 2;
+                x: -self.grow;
+                y: -self.grow;
                 border-radius: self.width / 2;
                 background: Theme.accent.with-alpha(0.55 * (1 - self.e));
             }
@@ -873,6 +933,10 @@ export component AskWindow inherits Window {
         root.open-height = max(72px, min(root.card-max-height, root.natural-height));
     }
 
+    // The newest text in view. The scroll area already has the card's
+    // coming height, so this changes only when that height or the text does,
+    // never while the card grows to it (pinned to the growing card, the text
+    // slid as the card caught up)
     function follow() {
         if root.stick {
             flick.content-y = min(0px, flick.height - flick.content-height);

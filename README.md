@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="28" alt="Slint" /></a><br />
-  The Quick Ask window is made with <a href="https://slint.dev/">Slint</a>
+  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="56" alt="Slint" /></a><br />
+  This app uses <a href="https://slint.dev/">Slint</a> technology
 </p>
 
 <p align="center">
@@ -52,11 +52,11 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 ## Building
 
-The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
+GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.3.0
-git push origin v3.3.0
+git tag v3.3.1
+git push origin v3.3.1
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

@@ -1,4 +1,6 @@
 name: Build Typr (Windows)
+# Запуск называется просто "typr v3.3.1" (тег или ветка при ручном запуске)
+run-name: typr ${{ github.ref_name }}
 
 # Запускается вручную из вкладки Actions на GitHub,
 # либо автоматически при пуше тега вида v0.1.0
@@ -30,15 +32,29 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      # Только MSI: портативная версия — это сам typr.exe из сборки
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles msi
+
+      # В корне артефакта: установщик .msi и портативный .exe
+      - name: Collect the installer and the portable exe
+        id: collect
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item src-tauri/target/release/bundle/msi/*.msi out/
+          Copy-Item src-tauri/target/release/typr.exe "out/Typr_${version}_x64_portable.exe"
+          Get-ChildItem out | Format-Table Name, Length
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: typr-windows
-          path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
+          name: typr-${{ steps.collect.outputs.version }}
+          path: out/
+          if-no-files-found: error

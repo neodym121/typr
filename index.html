@@ -17,7 +17,7 @@
             <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="app-title">
               <span class="app-name">Typr</span>
-              <span class="version-text" id="version-text">v3.3.0</span>
+              <span class="version-text" id="version-text">v3.3.1</span>
             </span>
           </div>
           <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
@@ -504,10 +504,12 @@
               <li data-i18n="ask.step2">Press the hotkey from Recording and ask your question out loud</li>
               <li data-i18n="ask.step3">The answer appears where the recording indicator is. Press the hotkey again to ask a follow-up; the cross closes the window</li>
             </ol>
-            <p class="ask-note" data-i18n="ask.copyNote">Click an answer to copy it. The button in the corner of a code block copies only the code</p>
-            <p class="ask-note" data-i18n="ask.terminalNote">In terminals the selection isn't read: a copy shortcut would interrupt the running program there</p>
-            <!-- The answer window is drawn with Slint, whose license asks for its logo -->
-            <div class="slint-credit" role="img" aria-label="Slint"></div>
+            <!-- The answer window is drawn with Slint, whose license asks for
+                 its logo; the line is always in English -->
+            <div class="slint-credit">
+              <span class="slint-logo" role="img" aria-label="Slint"></span>
+              <span class="slint-caption">Slint works on your machine</span>
+            </div>
           </div>
         </section>
       </main>

@@ -213,8 +213,6 @@ const en = {
   "ask.step1": "Select text in any app",
   "ask.step2": "Press the hotkey from Settings → Hotkeys and ask your question out loud",
   "ask.step3": "The answer appears where the recording indicator is. Press the hotkey again to ask a follow-up; the cross closes the window",
-  "ask.copyNote": "Click an answer to copy it. The button in the corner of a code block copies only the code",
-  "ask.terminalNote": "In terminals the selection isn't read: a copy shortcut would interrupt the running program there",
 
   "developer.all": "All",
   "developer.errors": "Errors",
@@ -478,8 +476,6 @@ const ru: Record<MessageKey, string> = {
   "ask.step1": "Выделите текст в любом приложении",
   "ask.step2": "Нажмите хоткей из «Параметры → Хоткеи» и задайте вопрос вслух",
   "ask.step3": "Ответ появится там, где индикатор записи. Нажмите хоткей ещё раз, чтобы задать уточняющий вопрос; крестик закрывает окно",
-  "ask.copyNote": "Нажмите на ответ, чтобы скопировать его. Кнопка в углу блока кода копирует только код",
-  "ask.terminalNote": "В терминалах выделение не читается: сочетание для копирования прервало бы там работающую программу",
 
   "developer.all": "Все",
   "developer.errors": "Ошибки",

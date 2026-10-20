@@ -539,29 +539,28 @@ button {
   color: var(--text-faint);
 }
 
-.ask-note {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  font-size: var(--text-small);
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-
-.ask-note + .ask-note {
-  margin-top: 6px;
-  padding-top: 0;
-  border-top: none;
-}
-
-/* Slint's logo under the notes (the answer window is drawn with Slint),
-   in the notes' grey: the file is a mask, like the icons */
+/* Slint's logo and a line under the steps (the answer window is drawn with
+   Slint), in the hints' grey: the logo file is a mask, like the icons */
 .slint-credit {
-  width: 60px;
-  height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.slint-logo {
+  flex: none;
+  width: 80px;
+  height: 24px;
   background: var(--text-muted);
   mask: url("../assets/slint-logo.png") left center / contain no-repeat;
+}
+
+.slint-caption {
+  font-size: var(--text-small);
+  color: var(--text-muted);
 }
 
 /* API keys: a wider field than the other rows have */

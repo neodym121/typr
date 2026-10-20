@@ -1,9 +1,9 @@
 //! Trying and measuring the native quick ask window without the rest of
 //! Typr (no Tauri, no microphone, no model):
 //!
-//! * `typr --ask-demo [chat] [bottom] [ru] [long]` plays sample answers in
-//!   it, as the old page's browser demo did (`long`: a first answer taller
-//!   than the card).
+//! * `typr --ask-demo [chat] [bottom] [ru] [long|code]` plays sample answers
+//!   in it, as the old page's browser demo did (`long`: a first answer
+//!   taller than the card; `code`: code blocks inside list items).
 //! * `typr --ask-bench` measures it: memory, time to the first frame (cold,
 //!   warm and as a process of its own), CPU while it unfolds and streams.
 //! * `typr --ask-child` is the process the bench starts for that last one.
@@ -105,7 +105,7 @@ const THIRD_RU: &str = "По данным [Exa](https://exa.ai), последн�
 const CHAT_EN: &str = "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\n- **`let`** is for values that change: counters, flags, intermediate results.\n- **`const`** is for everything else: it shows the value won't be swapped.\n- **`var`** is best avoided: it is seen in the whole function and hoisted to its top.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.\n\n```js\nconst user = { name: \"Anna\" };\nuser.name = \"Maria\"; // fine\nuser = {}; // error\n```";
 const CHAT_RU: &str = "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\n- **`let`** — для значений, которые меняются: счётчики, флаги, промежуточные результаты.\n- **`const`** — для всего остального: сразу видно, что значение не подменят.\n- **`var`** лучше не использовать: он виден во всей функции и поднимается наверх.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение.\n\n```js\nconst user = { name: \"Анна\" };\nuser.name = \"Мария\"; // можно\nuser = {}; // ошибка\n```";
 
-/// `typr --ask-demo [chat] [bottom] [ru] [long]`
+/// `typr --ask-demo [chat] [bottom] [ru] [long|code]`
 pub fn run_demo(args: &[String]) {
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let ru = has("ru");
@@ -181,6 +181,8 @@ pub fn run_demo(args: &[String]) {
         snapshot("04-typing");
         let first = if has("long") {
             LONG_ANSWER
+        } else if has("code") {
+            CODE_IN_LISTS
         } else if ru {
             FIRST_RU
         } else {
@@ -294,6 +296,10 @@ fn median(values: &mut [f64]) -> f64 {
     values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     values[values.len() / 2]
 }
+
+/// Code blocks indented under list items, and a closing fence with a
+/// language (a model's slip)
+const CODE_IN_LISTS: &str = "Для большинства дистрибутивов Linux достаточно установить пакет из репозиториев:\n\n- **Debian / Ubuntu / Mint**  \n  ```bash\n  sudo apt update\n  sudo apt install neofetch\n  ```\n\n- **Fedora / RHEL / CentOS**  \n  ```bash\n  sudo dnf install neofetch      # (или yum на старых версиях)\n  ```\n\n- **Arch Linux**  \n  ```bash\n  sudo pacman -S neofetch\n  ```\n\nЕсли в репозитории нет neofetch, можно собрать его из исходников:\n\n```bash\ngit clone https://github.com/dylanaraps/neofetch\ncd neofetch\nmake install   # возможно понадобится sudo\n```bash\n\nПосле установки запустите `neofetch` в терминале.";
 
 const LONG_ANSWER: &str = "## How the cache works\n\nThe cache keeps **recent results** in memory, so the second request for the same key is *much* faster. Entries expire after `ttl` seconds.\n\n1. A request comes in with a key.\n2. If the key is in the cache and fresh, the value is returned at once.\n3. Otherwise the value is computed, stored and returned.\n\n> Stale entries are removed lazily, on the next read.\n\n```rust\nfn get(&mut self, key: &str) -> Option<&Value> {\n    let entry = self.map.get(key)?;\n    if entry.expires < Instant::now() {\n        return None;\n    }\n    Some(&entry.value)\n}\n```\n\n| Setting | Default |\n|---|---|\n| ttl | 60 s |\n| size | 1000 |\n\nA few more notes:\n\n- Keys are case-sensitive.\n- Values larger than **1 MB** are never cached.\n- See [the docs](https://example.com/docs) for details.\n\nThat is all there is to it: a map, a clock and a limit. Most of the time you won't need to tune anything, but when you do, start with `ttl` and watch the hit rate.";
 
@@ -500,7 +506,8 @@ pub fn run_child() {
 // ── Snapshots ───────────────────────────────────────────
 
 /// With `TYPR_ASK_SNAPSHOTS` set to a folder, the demo saves the window's
-/// frame there as `<name>.png`, over a grey checkerboard
+/// frame there as `<name>.png`, over a grey checkerboard (or a dark desktop
+/// with `TYPR_ASK_DARK`)
 fn snapshot(name: &str) {
     let Some(dir) = std::env::var_os("TYPR_ASK_SNAPSHOTS") else { return };
     let path = std::path::PathBuf::from(dir).join(format!("{}.png", name));
@@ -510,7 +517,13 @@ fn snapshot(name: &str) {
             let mut over = Vec::with_capacity(rgba.len());
             for (i, pixel) in rgba.chunks(4).enumerate() {
                 let (x, y) = (i as u32 % width, i as u32 / width);
-                let back: u16 = if (x / 12 + y / 12) % 2 == 0 { 0x3a } else { 0x44 };
+                let back: u16 = if std::env::var_os("TYPR_ASK_DARK").is_some() {
+                    0x12
+                } else if (x / 12 + y / 12) % 2 == 0 {
+                    0x3a
+                } else {
+                    0x44
+                };
                 let a = pixel[3] as u16;
                 for c in &pixel[..3] {
                     over.push(((*c as u16 * a + back * (255 - a)) / 255) as u8);

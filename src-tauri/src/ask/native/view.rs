@@ -158,7 +158,6 @@ struct View {
 pub struct Controller {
     on_event: Rc<dyn Fn(Event)>,
     view: Option<Rc<RefCell<View>>>,
-    card_shadow: Option<shadow::CardShadow>,
 }
 
 impl Controller {
@@ -166,7 +165,6 @@ impl Controller {
         Self {
             on_event: Rc::new(on_event),
             view: None,
-            card_shadow: None,
         }
     }
 
@@ -174,8 +172,7 @@ impl Controller {
         match command {
             Command::Open(layout) => {
                 self.destroy();
-                let shadow = self.card_shadow.get_or_insert_with(shadow::card);
-                match View::open(layout, shadow, self.on_event.clone()) {
+                match View::open(layout, self.on_event.clone()) {
                     Ok(view) => self.view = Some(view),
                     Err(e) => log::error!("{}", e),
                 }
@@ -220,7 +217,7 @@ fn fonts() -> (&'static str, &'static str) {
 }
 
 impl View {
-    fn open(layout: Layout, card_shadow: &shadow::CardShadow, on_event: Rc<dyn Fn(Event)>) -> Result<Rc<RefCell<View>>, String> {
+    fn open(layout: Layout, on_event: Rc<dyn Fn(Event)>) -> Result<Rc<RefCell<View>>, String> {
         let ui = AskWindow::new().map_err(|e| format!("The quick ask window couldn't be created: {}", e))?;
         let window = platform::current().ok_or("The quick ask window has no native window")?;
         let g = layout.geometry;
@@ -237,11 +234,6 @@ impl View {
         ui.set_orb_inset(ORB_INSET as f32);
         ui.set_card_width(CARD_WIDTH as f32);
         ui.set_card_max_height(g.max_height as f32);
-        ui.set_card_shadow(card_shadow.image.clone());
-        ui.set_card_shadow_left(card_shadow.left);
-        ui.set_card_shadow_top(card_shadow.top);
-        ui.set_card_shadow_right(card_shadow.right);
-        ui.set_card_shadow_bottom(card_shadow.bottom);
         ui.set_dot_shadow(shadow::dot(g.scale as f32));
         ui.set_dot_shadow_reach(shadow::DOT_REACH);
         ui.set_searching_label(strings.searching.into());
@@ -409,6 +401,9 @@ impl View {
         after(view, done, |view| {
             let v = view.borrow();
             if v.state == STATE_OPEN {
+                // From here the card's height follows its text on a spring
+                // (ask.slint), starting where the unfolding left it
+                v.ui.invoke_follow_from(v.ui.get_card_h());
                 v.ui.set_motion(0);
             }
         });
@@ -760,7 +755,8 @@ fn to_row(block: &markdown::Block) -> Block {
         text: Default::default(),
         code: SharedString::new(),
         marker: SharedString::new(),
-        indent: 0,
+        // Code and text inside a list item sit under the item's text
+        indent: block.nest as i32,
         size: 14.0,
         gap: block.gap,
         quoted: block.quoted,

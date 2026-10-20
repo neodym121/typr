@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="28" alt="Slint" /></a><br />
-  Окно Quick Ask сделано на <a href="https://slint.dev/">Slint</a>
+  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="56" alt="Slint" /></a><br />
+  В этом приложении используются технологии <a href="https://slint.dev/">Slint</a>
 </p>
 
 <p align="center">
@@ -52,11 +52,11 @@ Typr — лёгкое приложение для голосового ввод�
 
 ## Сборка
 
-Установщик собирает GitHub Actions (`.github/workflows/build.yml`) при пуше тега вида `v*` или при ручном запуске workflow:
+GitHub Actions (`.github/workflows/build.yml`) собирает один zip с установщиком `.msi` и портативным `.exe` при пуше тега вида `v*` или при ручном запуске workflow:
 
 ```bash
-git tag v3.3.0
-git push origin v3.3.0
+git tag v3.3.1
+git push origin v3.3.1
 ```
 
 Для локальной разработки нужны [Rust](https://rustup.rs/) и [Node.js](https://nodejs.org/) 20+:

@@ -48,6 +48,9 @@ pub struct Block {
     pub quoted: bool,
     /// In the same block quote as the block above
     pub joined: bool,
+    /// Inside a list item (a code block or text indented under it): how many
+    /// list levels in
+    pub nest: usize,
     /// Space above, in logical pixels
     pub gap: f32,
 }
@@ -62,6 +65,7 @@ struct Parsed {
     kind: Kind,
     /// The block quote it is in (counted from 1), or 0
     quote: usize,
+    nest: usize,
     margins: Margins,
 }
 
@@ -84,6 +88,7 @@ pub fn parse(text: &str) -> Vec<Block> {
             kind: block.kind,
             quoted: block.quote > 0,
             joined,
+            nest: block.nest,
             gap,
         });
     }
@@ -94,8 +99,25 @@ fn push(out: &mut Vec<Parsed>, kind: Kind, quote: usize, top: f32, bottom: f32) 
     out.push(Parsed {
         kind,
         quote,
+        nest: 0,
         margins: Margins { top, bottom },
     });
+}
+
+/// Characters of indentation
+fn indent_of(line: &str) -> usize {
+    line.chars().take_while(|c| c.is_whitespace()).count()
+}
+
+/// `line` without up to `cut` characters of indentation
+fn dedent(line: &str, cut: usize) -> &str {
+    let skip: usize = line
+        .chars()
+        .take(cut)
+        .take_while(|c| c.is_whitespace())
+        .map(char::len_utf8)
+        .sum();
+    &line[skip..]
 }
 
 /// `quoted` is the block quote the lines are in, 0 for none; `quotes`
@@ -202,15 +224,69 @@ fn list(lines: &[&str], start: usize, depth: usize, quoted: usize, out: &mut Vec
 
         let mut body = vec![inline(item.rest)];
         i += 1;
-        // Continuation lines, indented under the item
-        while i < lines.len()
-            && !lines[i].trim().is_empty()
-            && list_item(lines[i]).is_none()
-            && lines[i].starts_with(char::is_whitespace)
-        {
-            body.push(inline(lines[i].trim()));
+        // What is indented under the item: more of its text, then maybe code
+        // blocks and paragraphs that belong to it
+        let mut nested: Vec<Parsed> = Vec::new();
+        let mut paragraph: Lines = Vec::new();
+        let mut apart = false;
+        let flush = |paragraph: &mut Lines, nested: &mut Vec<Parsed>| {
+            if !paragraph.is_empty() {
+                nested.push(Parsed {
+                    kind: Kind::Paragraph(std::mem::take(paragraph)),
+                    quote: quoted,
+                    nest: depth + 1,
+                    margins: Margins { top: 6.0, bottom: 6.0 },
+                });
+            }
+        };
+        while i < lines.len() {
+            let line = lines[i];
+            if line.trim().is_empty() {
+                // A blank line: the item goes on if more is indented under it
+                let mut next = i;
+                while next < lines.len() && lines[next].trim().is_empty() {
+                    next += 1;
+                }
+                match lines.get(next) {
+                    Some(after) if indent_of(after) > indent && list_item(after).is_none() => {
+                        flush(&mut paragraph, &mut nested);
+                        apart = true;
+                        i = next;
+                        continue;
+                    }
+                    _ => break,
+                }
+            }
+            if list_item(line).is_some() || indent_of(line) <= indent {
+                break;
+            }
+            if let Some(marker) = fence(line.trim_start()) {
+                flush(&mut paragraph, &mut nested);
+                apart = true;
+                let cut = indent_of(line);
+                let mut code = Vec::new();
+                i += 1;
+                while i < lines.len() && !lines[i].trim().starts_with(&marker) {
+                    code.push(dedent(lines[i], cut));
+                    i += 1;
+                }
+                i += 1; // the closing fence, if it has arrived
+                nested.push(Parsed {
+                    kind: Kind::Code(code.join("\n")),
+                    quote: quoted,
+                    nest: depth + 1,
+                    margins: Margins { top: 6.0, bottom: 8.0 },
+                });
+                continue;
+            }
+            if apart {
+                paragraph.push(inline(line.trim()));
+            } else {
+                body.push(inline(line.trim()));
+            }
             i += 1;
         }
+        flush(&mut paragraph, &mut nested);
         let marker = if ordered {
             format!("{}.", number)
         } else {
@@ -238,6 +314,7 @@ fn list(lines: &[&str], start: usize, depth: usize, quoted: usize, out: &mut Vec
             top,
             0.0,
         );
+        out.extend(nested);
 
         // A blank line inside the list, if the list goes on after it
         if i < lines.len() && lines[i].trim().is_empty() {
@@ -698,6 +775,33 @@ mod tests {
         // paragraph's 0 above, 3 between list items, 10 around the rule
         let gaps: Vec<f32> = blocks.iter().map(|b| b.gap).collect();
         assert_eq!(gaps, vec![0.0, 6.0, 8.0, 3.0, 3.0, 3.0, 8.0, 10.0, 10.0]);
+    }
+
+    #[test]
+    fn test_code_blocks_inside_list_items() {
+        let text = "Install it:\n\n- Debian / Ubuntu  \n  ```bash\n  sudo apt update\n  sudo apt install neofetch\n  ```\n\n- Arch\n  ```bash\n  sudo pacman -S neofetch\n  ```\n\nOr build it:\n\n```bash\nmake install\n```bash\n\nThen run it.";
+        let blocks = parse(text);
+        let kinds: Vec<&Kind> = blocks.iter().map(|b| &b.kind).collect();
+        assert!(matches!(kinds[0], Kind::Paragraph(_)));
+        assert!(matches!(kinds[1], Kind::ListItem { lines, .. } if lines.len() == 1));
+        assert!(matches!(kinds[2], Kind::Code(code) if code == "sudo apt update\nsudo apt install neofetch"));
+        assert_eq!(blocks[2].nest, 1);
+        assert!(matches!(kinds[3], Kind::ListItem { .. }));
+        assert!(matches!(kinds[4], Kind::Code(code) if code == "sudo pacman -S neofetch"));
+        assert!(matches!(kinds[5], Kind::Paragraph(_)));
+        // A closing fence with a language (a model's slip) still closes
+        assert!(matches!(kinds[6], Kind::Code(code) if code == "make install"));
+        assert_eq!(blocks[6].nest, 0);
+        assert!(matches!(kinds[7], Kind::Paragraph(_)));
+        assert_eq!(blocks.len(), 8);
+    }
+
+    #[test]
+    fn test_text_after_a_blank_line_stays_in_the_item() {
+        let blocks = parse("1. First\n\n   more about it\n2. Second");
+        assert!(matches!(&blocks[1].kind, Kind::Paragraph(_)));
+        assert_eq!(blocks[1].nest, 1);
+        assert!(matches!(&blocks[2].kind, Kind::ListItem { marker, .. } if marker == "2."));
     }
 
     #[test]
