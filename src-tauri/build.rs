@@ -17,4 +17,7 @@ fn main() {
     }
 
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
+
+    // The quick ask window (src/ask/native), drawn by Slint
+    slint_build::compile("ui/ask.slint").expect("failed to compile ui/ask.slint");
 }

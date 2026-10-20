@@ -19,6 +19,7 @@
 //! hotkey asks there, as in an open quick ask window; the chat hotkey or the
 //! cross closes it.
 
+pub mod native;
 pub mod search;
 pub mod stream;
 pub mod window;

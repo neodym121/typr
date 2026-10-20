@@ -179,6 +179,13 @@ pub fn set_enabled(app: &AppHandle, enabled: bool) {
     webview::set_enabled(app, enabled);
 }
 
+/// The primary screen's work area (without the taskbar) in physical pixels
+/// and its scale, read now.
+#[cfg(target_os = "windows")]
+pub fn primary_screen() -> Option<(ScreenRect, f64)> {
+    unsafe { native::primary_work_area() }
+}
+
 /// Hides the indicator at once and keeps it away while the quick ask window
 /// is open: the window took the dot's place, and its own dot listens.
 pub fn set_suppressed(app: &AppHandle, suppressed: bool) {
@@ -489,7 +496,7 @@ mod native {
 
     /// The primary screen's work area (without the taskbar) in physical
     /// pixels and its scale, the way Tauri reads them.
-    unsafe fn primary_work_area() -> Option<(ScreenRect, f64)> {
+    pub(super) unsafe fn primary_work_area() -> Option<(ScreenRect, f64)> {
         let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
         if monitor.is_null() {
             return None;

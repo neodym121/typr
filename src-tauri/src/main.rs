@@ -1016,6 +1016,17 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some(typr_lib::local::worker::ARG) {
         std::process::exit(typr_lib::local::worker::run());
     }
+    // The native quick ask window on its own: a demo and its measurements
+    {
+        use typr_lib::ask::native::demo;
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        match args.first().map(String::as_str) {
+            Some(demo::DEMO_ARG) => return demo::run_demo(&args[1..]),
+            Some(demo::BENCH_ARG) => return demo::run_bench(),
+            Some(demo::CHILD_ARG) => return demo::run_child(),
+            _ => {}
+        }
+    }
 
     logger::init();
 

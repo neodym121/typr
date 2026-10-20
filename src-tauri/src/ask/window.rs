@@ -29,7 +29,7 @@ use crate::settings::{IndicatorPosition, RecordingMode, Settings};
 pub const LABEL: &str = "ask";
 
 /// Card width in logical pixels
-const CARD_WIDTH: f64 = 440.0;
+pub const CARD_WIDTH: f64 = 440.0;
 const MAX_CARD_HEIGHT: f64 = 560.0;
 /// The card never takes more of the screen's height than this
 const MAX_SCREEN_SHARE: f64 = 0.7;

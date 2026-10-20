@@ -1,0 +1,881 @@
+// The quick ask window (src/ask/native): a transparent frame with one card
+// in it. The card starts as the recording indicator's dot, in the same place
+// and colours, and unfolds from it: first into a bar along the screen edge,
+// then into the card. Its dot stays as the card's status light. The Rust side
+// (view.rs) sets the state; the geometry and every animation are here.
+//
+// Colours, sizes and timings follow the WebView page this replaced.
+
+export struct Block {
+    // 0 paragraph, 1 heading, 2 list item, 3 code, 4 rule, 5 table row
+    kind: int,
+    text: styled-text,
+    code: string,
+    // List item: "•" or "1."
+    marker: string,
+    indent: int,
+    // Heading: 15px (h3) or 14px (h4)
+    size: length,
+    // Space above the block
+    gap: length,
+    // In the same quote as the block above
+    joined: bool,
+    // Inside a block quote: a bar on the left, muted text
+    quoted: bool,
+    cells: [styled-text],
+    header: bool,
+}
+
+export struct Message {
+    id: int,
+    // Quick chat: the question, on the right in a box; otherwise an answer
+    question: bool,
+    text: string,
+    // The start of the selection the question is about
+    quote: string,
+    blocks: [Block],
+    // Before the first words: 0 the typing dots, 1 "Search…"
+    status: int,
+    // The first words arrived: the status folds away
+    settled: bool,
+    error: string,
+    stopped: bool,
+    // Bumped when the answer is copied: it lights up
+    copied: int,
+    // The code block whose button shows a check mark, -1 none
+    copied-block: int,
+    // Space above, and a line in its middle between two answers
+    gap: length,
+    divider: bool,
+}
+
+export global Theme {
+    out property <color> dot-fill: #1f1e1df0;
+    out property <color> card-fill: #1f1e1df7;
+    out property <color> hairline: #f8f8f624;
+    out property <color> border: #f8f8f614;
+    out property <color> text: #d6d4cb;
+    out property <color> text-strong: #f8f8f6;
+    out property <color> text-muted: #9c9a92;
+    out property <color> accent: #d97757;
+    out property <color> accent-light: #e8a88f;
+    in-out property <string> mono: "Consolas";
+}
+
+// Lucide icons (src/icons), stroked as their SVG files draw them
+component Icon inherits Path {
+    in property <length> size: 16px;
+    width: self.size;
+    height: self.size;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    fill: transparent;
+    stroke-width: self.size / 12;
+    stroke-line-cap: round;
+    stroke-line-join: round;
+}
+
+// A quarter arc going round, as the indicator's spinner
+component Spinner inherits Path {
+    in property <length> ring: 2px;
+    in property <angle> head: animation-tick() / 900ms * 360deg;
+    property <float> c: self.width / 2px;
+    property <float> r: (self.width - self.ring) / 2px;
+    viewbox-width: self.width / 1px;
+    viewbox-height: self.height / 1px;
+    fill: transparent;
+    stroke-width: self.ring;
+    MoveTo {
+        x: root.c + root.r * sin(root.head - 45deg);
+        y: root.c - root.r * cos(root.head - 45deg);
+    }
+    ArcTo {
+        x: root.c + root.r * sin(root.head + 45deg);
+        y: root.c - root.r * cos(root.head + 45deg);
+        radius-x: root.r;
+        radius-y: root.r;
+        sweep: true;
+    }
+}
+
+// 0 → 1 → 0 over `period`, eased in and out, offset by `lag`
+component Wave {
+    in property <duration> period: 1200ms;
+    in property <duration> lag: 0ms;
+    property <float> t: mod((animation-tick() + self.period - self.lag) / 1ms, self.period / 1ms) / (self.period / 1ms);
+    property <float> tri: self.t < 0.5 ? self.t * 2 : (1 - self.t) * 2;
+    out property <float> value: self.tri * self.tri * (3 - 2 * self.tri);
+}
+
+component TypingDots inherits HorizontalLayout {
+    spacing: 4px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    alignment: start;
+    for i in 3: Rectangle {
+        // Up and bright at 40 % of the cycle, resting from 80 %
+        property <float> t: mod((animation-tick() + 1200ms - i * 150ms) / 1ms, 1200) / 1200;
+        property <float> k: self.t < 0.4 ? self.t / 0.4 : self.t < 0.8 ? (0.8 - self.t) / 0.4 : 0;
+        property <float> e: self.k * self.k * (3 - 2 * self.k);
+        width: 5px;
+        height: 5px;
+        Rectangle {
+            y: -2px * parent.e;
+            width: 5px;
+            height: 5px;
+            border-radius: 2.5px;
+            background: #f8f8f680;
+            opacity: 0.25 + 0.75 * parent.e;
+        }
+    }
+}
+
+component CodeCopyButton inherits Rectangle {
+    in property <bool> copied;
+    callback clicked();
+    out property <bool> hovered: ta.has-hover;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: ta.has-hover ? #f8f8f614 : transparent;
+    animate background { duration: 120ms; }
+    property <color> ink: ta.has-hover || root.copied ? Theme.text-strong : Theme.text-muted;
+    if !root.copied: Icon {
+        size: 14px;
+        stroke: root.ink;
+        commands: "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2";
+    }
+    if root.copied: Icon {
+        size: 14px;
+        stroke: root.ink;
+        commands: "M20 6 9 17l-5-5";
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Wrapping text is given its width explicitly, from the text column's:
+// a box layout measures a child's height before it has solved the child's
+// width, and wrapped lines would go uncounted.
+component BlockView inherits VerticalLayout {
+    in property <Block> block;
+    // The width of the text column
+    in property <length> column;
+    in property <bool> code-copied;
+    callback copy-code();
+    callback link(string);
+    callback code-hover(bool);
+    padding-top: root.block.gap;
+
+    // Paragraph, heading, list item, the same in a quote
+    if root.block.kind <= 2: Rectangle {
+        property <length> indent: root.block.indent * 20px + (root.block.quoted ? 12px : 0px);
+        property <length> start: self.indent + (root.block.kind == 2 ? 20px : 0px);
+        height: body.preferred-height;
+        // A quote's bar runs on through the gap above, to the block before
+        if root.block.quoted: Rectangle {
+            x: 0;
+            y: root.block.joined ? -root.block.gap : 0px;
+            width: 2px;
+            height: parent.height - self.y;
+            background: #f8f8f633;
+        }
+        if root.block.kind == 2: Text {
+            x: parent.indent;
+            y: 0;
+            width: 20px;
+            text: root.block.marker;
+            color: Theme.text-muted;
+        }
+        body := StyledText {
+            x: parent.start;
+            y: 0;
+            width: root.column - parent.start;
+            text: root.block.text;
+            default-color: root.block.quoted ? Theme.text-muted : root.block.kind == 1 ? Theme.text-strong : Theme.text;
+            default-font-size: root.block.kind == 1 ? root.block.size : 14px;
+            link-color: Theme.accent-light;
+            link-clicked(url) => {
+                root.link(url);
+            }
+        }
+    }
+
+    if root.block.kind == 3: Rectangle {
+        height: code.preferred-height + 20px;
+        background: #00000047;
+        border-width: 1px;
+        border-color: Theme.border;
+        border-radius: 8px;
+        code := Text {
+            x: 12px;
+            y: 10px;
+            // Room for the copy button in the top right corner
+            width: root.column - 12px - 31px;
+            text: root.block.code;
+            font-family: Theme.mono;
+            font-size: 12.5px;
+            line-height-factor: 1.25;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+        CodeCopyButton {
+            x: parent.width - self.width - 4px;
+            y: 4px;
+            copied: root.code-copied;
+            clicked => {
+                root.copy-code();
+            }
+            changed hovered => {
+                root.code-hover(self.hovered);
+            }
+        }
+    }
+
+    if root.block.kind == 4: Rectangle {
+        height: 1px;
+        background: Theme.border;
+    }
+
+    // A table row: cells with a hairline between and around them
+    if root.block.kind == 5: row := Rectangle {
+        property <int> count: max(1, root.block.cells.length);
+        property <length> cell-width: (root.column - 1px) / self.count;
+        height: cells.preferred-height;
+        cells := HorizontalLayout {
+            x: 0;
+            y: 0;
+            width: root.column;
+            padding-top: root.block.header ? 1px : 0px;
+            padding-bottom: 1px;
+            alignment: start;
+            for cell in root.block.cells: Rectangle {
+                min-width: row.cell-width;
+                max-width: row.cell-width;
+                height: text.preferred-height + 8px;
+                text := StyledText {
+                    x: 9px;
+                    y: 4px;
+                    width: row.cell-width - 17px;
+                    text: cell;
+                    default-font-size: 13px;
+                    default-color: root.block.header ? Theme.text-strong : Theme.text;
+                    link-color: Theme.accent-light;
+                    link-clicked(url) => {
+                        root.link(url);
+                    }
+                }
+            }
+        }
+        if root.block.header: Rectangle {
+            y: 0;
+            height: 1px;
+            background: Theme.border;
+        }
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: Theme.border;
+        }
+        for i in row.count + 1: Rectangle {
+            x: min(i * row.cell-width, root.column - 1px);
+            width: 1px;
+            background: Theme.border;
+        }
+    }
+}
+
+// One answer: a click copies it, so it shows it takes one. Its text takes
+// every click itself (for its links), so the answer only says it is under
+// the pointer (`hover-changed`); the window decides what a click was for
+// (view.rs)
+component AnswerView inherits TouchArea {
+    in property <Message> msg;
+    in property <length> column;
+    in property <string> searching-label;
+    in property <string> stopped-label;
+    callback copy-code(int);
+    callback link(string);
+    callback hover-changed(bool);
+
+    property <bool> copyable: self.msg.settled && self.msg.error == "";
+    property <bool> code-hover;
+    property <int> copied: self.msg.copied;
+    property <bool> flashing;
+    property <duration> flash-start;
+    property <float> flash: self.flashing ? max(0, 1 - (animation-tick() - self.flash-start) / 700ms) : 0;
+    changed copied => {
+        self.flash-start = animation-tick();
+        self.flashing = true;
+    }
+
+    mouse-cursor: root.copyable ? pointer : default;
+    changed has-hover => {
+        root.hover-changed(self.has-hover);
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: 8px;
+        background: root.flashing
+            ? Theme.accent.with-alpha(0.16 * (1 - (1 - root.flash) * (1 - root.flash)))
+            : (root.copyable && root.has-hover && !root.code-hover) ? #f8f8f606 : transparent;
+        animate background {
+            duration: 160ms;
+            enabled: !root.flashing;
+        }
+    }
+
+    Timer {
+        interval: 700ms;
+        running: root.flashing;
+        triggered => {
+            root.flashing = false;
+        }
+    }
+
+    // The line between two answers, in the middle of the gap
+    if root.msg.divider: Rectangle {
+        x: 8px;
+        y: -5px;
+        width: parent.width - 16px;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    VerticalLayout {
+        padding-top: 5px;
+        padding-bottom: 5px;
+        padding-left: 8px;
+        padding-right: 8px;
+
+        // Before the first words: the typing dots or "Search…", which fade
+        // and fold away once the answer starts
+        if root.msg.status <= 1: Rectangle {
+            property <length> natural: root.msg.status == 0 ? 19px : 25px;
+            height: root.msg.settled ? 0px : self.natural;
+            opacity: root.msg.settled ? 0 : 1;
+            clip: true;
+            animate height, opacity { duration: 420ms; easing: ease; }
+            if root.msg.status == 0: TypingDots {
+                x: 0;
+                y: 0;
+            }
+            if root.msg.status == 1: Text {
+                property <float> blink: wave.value;
+                x: 0;
+                y: 3px;
+                text: root.searching-label;
+                font-size: 13px;
+                color: Theme.text-muted;
+                opacity: 1 - 0.7 * self.blink;
+                wave := Wave {
+                    period: 1800ms;
+                }
+            }
+        }
+
+        for block[i] in root.msg.blocks: BlockView {
+            block: block;
+            column: root.column;
+            code-copied: root.msg.copied-block == i;
+            copy-code => {
+                root.copy-code(i);
+            }
+            link(url) => {
+                root.link(url);
+            }
+            code-hover(on) => {
+                root.code-hover = on;
+            }
+        }
+
+        if root.msg.error != "": Rectangle {
+            height: error.preferred-height;
+            error := Text {
+                x: 0;
+                y: 0;
+                width: root.column;
+                text: root.msg.error;
+                color: Theme.accent-light;
+                wrap: word-wrap;
+            }
+        }
+
+        // Under an answer cut short by a new question
+        if root.msg.stopped: Text {
+            text: root.stopped-label;
+            font-size: 12px;
+            color: Theme.text-muted;
+        }
+    }
+}
+
+// Quick chat: a question, on the right in a slightly rounded box. It can't
+// be copied
+component QuestionView inherits Rectangle {
+    in property <Message> msg;
+    // The widest the box may be
+    in property <length> limit;
+    property <bool> quoted: root.msg.quote != "";
+    property <length> natural: max(question.preferred-width, self.quoted ? quote.preferred-width + 9px : 0px);
+    property <length> inner: min(root.limit - 22px, self.natural);
+    height: box.height;
+
+    box := Rectangle {
+        x: root.width - self.width - 8px;
+        y: 0;
+        width: root.inner + 22px;
+        height: 1px + 3px + (root.quoted ? quote.height + 3px : 0px) + question.height + 3px + 1px;
+        border-width: 1px;
+        border-color: Theme.border;
+        border-radius: 8px;
+        background: #f8f8f612;
+
+        // The start of the text it is about
+        if root.quoted: Rectangle {
+            x: 11px;
+            y: 4px;
+            width: 2px;
+            height: quote.height;
+            background: #f8f8f633;
+        }
+        quote := Text {
+            x: 11px + 9px;
+            y: 4px;
+            width: root.inner - 9px;
+            height: root.quoted ? self.preferred-height : 0px;
+            visible: root.quoted;
+            text: root.msg.quote;
+            font-size: 12px;
+            color: Theme.text-muted;
+            wrap: word-wrap;
+            overflow: elide;
+            max-lines: 2;
+        }
+        question := Text {
+            x: 11px;
+            y: 4px + (root.quoted ? quote.height + 3px : 0px);
+            width: root.inner;
+            height: self.preferred-height;
+            text: root.msg.text;
+            color: Theme.text-strong;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component AskWindow inherits Window {
+    background: transparent;
+    default-font-size: 14px;
+
+    // Layout, from the Rust side: the indicator's centre in the window
+    in property <string> ui-font: "Segoe UI";
+    in property <bool> bottom;
+    in property <bool> chat;
+    in property <length> orb-x;
+    in property <length> orb-y;
+    in property <length> orb-inset: 18px;
+    in property <length> card-width: 440px;
+    in property <length> card-max-height: 560px;
+    // The card's shadow, a nine-slice image, and how far it reaches past
+    // the card on each side; the same for the dot
+    in property <image> card-shadow;
+    in property <length> card-shadow-left;
+    in property <length> card-shadow-top;
+    in property <length> card-shadow-right;
+    in property <length> card-shadow-bottom;
+    in property <image> dot-shadow;
+    in property <length> dot-shadow-reach;
+
+    // 0 the dot, 1 open, 2 closing
+    in property <int> state: 0;
+    // 0 idle, 1 listening, 2 thinking, 3 answering
+    in property <int> phase: 2;
+    // How the card moves: 0 grows to its text, 1 unfolds, 2 folds back
+    in property <int> motion: 0;
+    in property <bool> content-in;
+    // Folded back into the dot, it slides behind the edge it came from;
+    // quick chat's dot slides in from there
+    in property <bool> gone;
+    in property <bool> arriving;
+
+    in property <[Message]> messages;
+    in property <bool> show-empty;
+    in property <string> empty-before;
+    in property <string> empty-key;
+    in property <string> empty-after;
+    in property <string> notice;
+    in property <string> toast;
+    in property <bool> toast-visible;
+    in property <string> searching-label: "Search…";
+    in property <string> stopped-label: "Stopped";
+
+    // The answer under the pointer, -1 for none: a click there copies it
+    in-out property <int> hovered-answer: -1;
+    callback copy-code(int, int);
+    callback open-link(string);
+    callback close-clicked();
+
+    // Where the card is drawn now: the rest of the window lets clicks through
+    out property <length> card-x: card.x + frame.x;
+    out property <length> card-y: card.y + frame.y;
+    out property <length> card-w: card.width;
+    out property <length> card-h: card.height;
+    // Keep the newest text in view unless the user scrolled up
+    in-out property <bool> stick: true;
+
+    default-font-family: self.ui-font;
+
+    property <bool> open: root.state == 1;
+    property <length> strip: 34px;
+    property <length> natural-height: 2px + root.strip + content.preferred-height;
+    // The card's height follows its text, set only when it really changes:
+    // bound to the text's height, the card and its shadow would be redrawn
+    // with every streamed piece
+    property <length> open-height: 72px;
+    changed natural-height => {
+        root.fit();
+    }
+    init => {
+        root.fit();
+    }
+    property <bool> unfolding: root.motion == 1;
+    // The text column: the card less its border, padding and the answers'
+    property <length> column: root.card-width - 38px;
+    property <bool> morphing: root.motion == 2;
+
+    frame := Rectangle {
+        x: 0;
+        y: root.gone ? (root.bottom ? 64px : -64px) : 0px;
+        width: root.width;
+        height: root.height;
+        opacity: root.gone ? 0 : 1;
+        animate y {
+            duration: root.arriving ? 200ms : 230ms;
+            easing: root.arriving ? cubic-bezier(0.2, 0.8, 0.3, 1) : cubic-bezier(0.55, 0, 0.75, 0.3);
+        }
+        animate opacity {
+            duration: root.arriving ? 160ms : 230ms;
+            easing: root.arriving ? ease-out : ease-in;
+        }
+
+        // While the user asks a follow-up out loud: a soft accent ring. It
+        // pulses in 20 steps a second, from a timer: each step redraws the
+        // whole card under it, and anything bound to animation-tick() would
+        // be redrawn every frame
+        if root.open && root.phase == 1: Rectangle {
+            property <int> steps;
+            property <float> t: mod(self.steps * 50, 1400) / 1400;
+            property <float> tri: self.t < 0.5 ? self.t * 2 : (1 - self.t) * 2;
+            property <float> k: self.tri * self.tri * (3 - 2 * self.tri);
+            property <length> spread: 3px + 2px * self.k;
+            x: card.x - self.spread;
+            y: card.y - self.spread;
+            width: card.width + 2 * self.spread;
+            height: card.height + 2 * self.spread;
+            border-radius: card.border-radius + self.spread;
+            border-width: self.spread;
+            border-color: Theme.accent.with-alpha(0.2 - 0.12 * self.k);
+            Timer {
+                interval: 50ms;
+                running: true;
+                triggered => {
+                    parent.steps += 1;
+                }
+            }
+        }
+
+        // The card's shadow: the nine-slice image needs a card of 70 px or
+        // more, so the bar while unfolding has none; it fades in after
+        if root.state != 0: Image {
+            property <bool> fits: min(card.width, card.height) >= 70px;
+            opacity: self.fits ? 1 : 0;
+            animate opacity { duration: self.fits ? 150ms : 0ms; }
+            x: card.x - root.card-shadow-left;
+            y: card.y - root.card-shadow-top;
+            width: card.width + root.card-shadow-left + root.card-shadow-right;
+            height: card.height + root.card-shadow-top + root.card-shadow-bottom;
+            source: root.card-shadow;
+            image-fit: fill;
+        }
+
+        card := Rectangle {
+            x: root.open
+                ? (root.bottom ? root.orb-x - root.card-width / 2 : root.orb-x + root.orb-inset - root.card-width)
+                : root.orb-x - 20px;
+            y: root.open
+                ? (root.bottom ? root.orb-y + root.orb-inset - root.open-height : root.orb-y - root.orb-inset)
+                : root.orb-y - 20px;
+            width: root.open ? root.card-width : 40px;
+            height: root.open ? root.open-height : 40px;
+            border-radius: root.open ? 16px : 20px;
+            opacity: root.state == 0 ? 0 : 1;
+            background: Theme.card-fill;
+            border-width: 1px;
+            border-color: root.phase == 1 && root.open ? #d97757bf : Theme.hairline;
+            clip: true;
+
+            // Opening: the dot stretches into a bar along the screen edge,
+            // then the bar grows into the card; quick chat a little faster.
+            // Closing folds it back; otherwise it follows its text
+            animate x, width {
+                duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
+                easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
+            }
+            animate y, height {
+                delay: root.unfolding ? (root.chat ? 170ms : 220ms) : 0ms;
+                duration: root.unfolding ? (root.chat ? 300ms : 380ms) : root.morphing ? 360ms : 200ms;
+                easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
+            }
+            animate border-radius {
+                delay: root.unfolding ? (root.chat ? 110ms : 140ms) : 0ms;
+                duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
+            }
+            animate border-color { duration: 300ms; }
+
+            // The status strip: "Copied" next to the status light
+            Rectangle {
+                x: 1px;
+                y: root.bottom ? parent.height - 1px - root.strip : 1px;
+                width: root.card-width - 2px;
+                height: root.strip;
+                Text {
+                    x: 18px;
+                    y: (parent.height - self.height) / 2 + (root.toast-visible ? 0px : 2px);
+                    text: root.toast;
+                    font-size: 12px;
+                    color: Theme.text-muted;
+                    opacity: root.toast-visible ? 1 : 0;
+                    animate opacity, y { duration: 160ms; easing: ease; }
+                }
+            }
+
+            flick := Flickable {
+                x: 1px;
+                y: root.bottom ? 1px : 1px + root.strip;
+                width: root.card-width - 2px;
+                height: max(0px, parent.height - 2px - root.strip);
+                content-width: self.width;
+                content-height: content.preferred-height;
+                mouse-drag-pan-enabled: false;
+                opacity: root.content-in ? 1 : 0;
+                animate opacity { duration: 200ms; easing: ease; }
+
+                changed content-height => {
+                    root.follow();
+                }
+                changed height => {
+                    root.follow();
+                }
+                flicked => {
+                    root.stick = self.content-y <= self.height - self.content-height + 24px;
+                }
+
+                // Fixed width, so the text never reflows while the card unfolds
+                content := VerticalLayout {
+                    width: flick.width;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: root.bottom ? 14px : 0px;
+                    padding-bottom: root.bottom ? 0px : 14px;
+
+                    // Quick chat before the first question: which hotkey asks
+                    if root.show-empty: HorizontalLayout {
+                        alignment: center;
+                        padding-top: 2px;
+                        spacing: 0px;
+                        Text {
+                            text: root.empty-before;
+                            font-size: 13px;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                        Rectangle {
+                            border-width: 1px;
+                            border-color: Theme.hairline;
+                            border-radius: 5px;
+                            background: #f8f8f60d;
+                            HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                padding-top: 1px;
+                                padding-bottom: 2px;
+                                Text {
+                                    text: root.empty-key;
+                                    font-family: Theme.mono;
+                                    font-size: 11.5px;
+                                    color: Theme.text;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.empty-after;
+                            font-size: 13px;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    for msg in root.messages: VerticalLayout {
+                        padding-top: msg.gap;
+                        if msg.question: QuestionView {
+                            msg: msg;
+                            limit: root.column * 0.85;
+                        }
+                        if !msg.question: AnswerView {
+                            msg: msg;
+                            column: root.column;
+                            searching-label: root.searching-label;
+                            stopped-label: root.stopped-label;
+                            hover-changed(on) => {
+                                if on {
+                                    root.hovered-answer = msg.id;
+                                } else if root.hovered-answer == msg.id {
+                                    root.hovered-answer = -1;
+                                }
+                            }
+                            copy-code(i) => {
+                                root.copy-code(msg.id, i);
+                            }
+                            link(url) => {
+                                root.open-link(url);
+                            }
+                        }
+                    }
+
+                    if root.notice != "": Rectangle {
+                        height: notice.preferred-height + 10px;
+                        notice := Text {
+                            x: 8px;
+                            y: 10px;
+                            width: root.column;
+                            text: root.notice;
+                            font-size: 12px;
+                            color: Theme.accent-light;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+
+        // The dot's shadow, while it is the indicator
+        Image {
+            x: root.orb-x - 20px - root.dot-shadow-reach;
+            y: root.orb-y - 20px - root.dot-shadow-reach;
+            width: 40px + 2 * root.dot-shadow-reach;
+            height: self.width;
+            source: root.dot-shadow;
+            opacity: root.open ? 0 : 1;
+            animate opacity { duration: 260ms; }
+        }
+
+        // The recording indicator's dot: it becomes the card's status light
+        orb := Rectangle {
+            property <length> size: !root.open ? 40px : root.phase == 2 ? 17px : root.phase == 1 ? 15px : 12px;
+            property <float> breathe: root.open && root.phase == 3 ? breath.value : 0;
+            x: root.orb-x - self.size / 2;
+            y: root.orb-y - self.size / 2;
+            width: self.size;
+            height: self.size;
+            border-radius: self.size / 2;
+            animate size {
+                duration: 300ms;
+                easing: cubic-bezier(0.22, 1, 0.36, 1);
+            }
+            background: !root.open ? Theme.dot-fill
+                : root.phase == 2 ? transparent
+                : root.phase == 1 ? Theme.accent
+                : root.phase == 3 ? #f8f8f699 : #f8f8f64d;
+            animate background { duration: 260ms; }
+            border-width: root.open ? 0px : 1px;
+            border-color: #f8f8f633;
+            opacity: 1 - 0.6 * self.breathe;
+
+            breath := Wave {
+                period: 1200ms;
+            }
+
+            // Listening: a ring grows from the light and fades
+            if root.open && root.phase == 1: Rectangle {
+                property <float> p: mod(animation-tick() / 1ms, 1400) / 1400;
+                property <float> e: 1 - (1 - self.p) * (1 - self.p);
+                width: orb.width + 20px * self.e;
+                height: self.width;
+                x: (orb.width - self.width) / 2;
+                y: (orb.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: Theme.accent.with-alpha(0.55 * (1 - self.e));
+            }
+
+            Icon {
+                size: root.open ? 7px : 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                stroke: Theme.text-strong;
+                opacity: root.open ? 0 : 1;
+                animate opacity { duration: 150ms; }
+                animate size { duration: 220ms; }
+                commands: "M12 19v3 M19 10v2a7 7 0 0 1-14 0v-2 M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z";
+            }
+
+            // The spinner: round the dot until it unfolds (a quick ask
+            // question is being transcribed), then the status light while
+            // the model thinks
+            if root.open && root.phase == 2: Rectangle {
+                border-radius: self.width / 2;
+                border-width: 2px;
+                border-color: #f8f8f629;
+            }
+            if (root.state == 0 && !root.chat) || (root.open && root.phase == 2): Spinner {
+                width: parent.width;
+                height: parent.height;
+                stroke: Theme.text-strong;
+            }
+        }
+
+        // No tooltip: the window never has the focus anyway
+        close := Rectangle {
+            x: (root.bottom ? root.orb-x + root.card-width / 2 - 20px : root.orb-x - 30px) - 12px;
+            y: root.orb-y - 12px;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: close-ta.has-hover ? #f8f8f614 : transparent;
+            opacity: root.content-in ? 1 : 0;
+            animate opacity { duration: 160ms; }
+            animate background { duration: 120ms; }
+            Icon {
+                size: 14px;
+                x: 5px;
+                y: 5px;
+                stroke: close-ta.has-hover ? Theme.text-strong : Theme.text-muted;
+                commands: "M18 6 6 18 M6 6l12 12";
+            }
+            close-ta := TouchArea {
+                enabled: root.content-in;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.close-clicked();
+                }
+            }
+        }
+    }
+
+    function fit() {
+        root.open-height = max(72px, min(root.card-max-height, root.natural-height));
+    }
+
+    function follow() {
+        if root.stick {
+            flick.content-y = min(0px, flick.height - flick.content-height);
+        }
+    }
+}
