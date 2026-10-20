@@ -62,8 +62,6 @@ interface Settings {
   /** The first-run setup was finished or skipped */
   setupDone: boolean;
   developerMode: boolean;
-  /** Developer section: a hidden quick ask window stays loaded (ask/window.rs) */
-  keepAskWindow: boolean;
 }
 
 interface MicDevice {
@@ -158,7 +156,6 @@ const indicatorPositionRow = document.getElementById("indicator-position-row")!;
 const indicatorPositionButtons = document.querySelectorAll<HTMLButtonElement>("#indicator-position .segment");
 const autostartToggle = document.getElementById("autostart-toggle") as HTMLInputElement;
 const updatesToggle = document.getElementById("updates-toggle") as HTMLInputElement;
-const keepAskToggle = document.getElementById("keep-ask-toggle") as HTMLInputElement;
 const updatesStatus = document.getElementById("updates-status")!;
 const updatesCheck = document.getElementById("updates-check") as HTMLButtonElement;
 const setupRun = document.getElementById("setup-run")!;
@@ -478,7 +475,6 @@ function fillForm() {
   setIndicatorPosition(currentSettings.indicatorPosition === "bottom-center" ? "bottom-center" : "top-right");
   showIndicatorPosition();
   updatesToggle.checked = currentSettings.checkUpdates !== false;
-  keepAskToggle.checked = Boolean(currentSettings.keepAskWindow);
   if (getLanguage() !== resolveLanguage(currentSettings.language || "")) {
     applyLanguage(resolveLanguage(currentSettings.language || ""));
   }
@@ -632,7 +628,6 @@ bind(assemblyaiModel, () => (currentSettings.assemblyaiModel = assemblyaiModel.v
 bind(recognitionLanguage, () => (currentSettings.recognitionLanguage = recognitionLanguage.value));
 bind(fallbackToggle, () => (currentSettings.fallbackLocal = fallbackToggle.checked));
 bind(updatesToggle, () => (currentSettings.checkUpdates = updatesToggle.checked));
-bind(keepAskToggle, () => (currentSettings.keepAskWindow = keepAskToggle.checked));
 
 languageButtons.forEach((button) => {
   button.addEventListener("click", () => chooseLanguage(button.dataset.lang === "ru" ? "ru" : "en"));

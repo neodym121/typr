@@ -233,13 +233,6 @@ fn sync_overlay(app: &tauri::AppHandle) {
     overlay::set_enabled(app, allowed);
 }
 
-/// Developer option: a hidden quick ask window stays loaded while quick ask
-/// or quick chat is on, so it opens at once.
-fn sync_ask_window(app: &tauri::AppHandle, settings: &Settings) {
-    let keep = settings.keep_ask_window && (settings.quick_ask.enabled || settings.quick_ask.chat);
-    ask::window::keep_ready(app, keep, settings.indicator_position);
-}
-
 /// Applies settings saved from anywhere (the window or the tray): saves
 /// them, logs what changed and updates everything that depends on them.
 fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), String> {
@@ -285,7 +278,6 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
     let updates_turned_on = settings.check_updates && !old.check_updates;
     app.state::<LocalEngine>().settings_changed(&old, &settings);
-    sync_ask_window(app, &settings);
     *state.settings.lock().unwrap() = settings;
     if indicator_changed {
         sync_overlay(app);
@@ -297,9 +289,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
         update_tray_menu(app);
     }
     if close_ask_window {
-        // Off the event loop: closing destroys a window
-        let app = app.clone();
-        std::thread::spawn(move || ask::close(&app));
+        ask::close(app);
     }
     if updates_turned_on {
         let app = app.clone();
@@ -486,52 +476,6 @@ async fn list_postprocess_models(
         })
 }
 
-// ── Quick ask window ─────────────────────────────────
-
-/// The page of the quick ask window has loaded and listens for events
-#[tauri::command]
-fn ask_ready() {
-    ask::page_ready();
-}
-
-/// The quick ask window kept ready has loaded and waits for a question
-#[tauri::command]
-fn ask_standby() {
-    ask::window::standby_ready();
-}
-
-/// The page draws its dot over the indicator's: the native one can go
-#[tauri::command]
-fn ask_shown(app: tauri::AppHandle) {
-    ask::window::page_shown(&app);
-}
-
-/// Where the page draws the answer card (logical pixels inside the window);
-/// the rest of the window lets clicks through
-#[tauri::command]
-fn ask_card(x: f64, y: f64, width: f64, height: f64) {
-    ask::window::set_card(x, y, width, height);
-}
-
-/// Copies an answer. The window never has the focus, so the page itself
-/// can't use the clipboard
-#[tauri::command]
-fn ask_copy(text: String) -> Result<(), String> {
-    paste::copy_text(&text)
-}
-
-/// A link in an answer was clicked
-#[tauri::command]
-fn ask_open_link(url: String) -> Result<(), String> {
-    links::open_web_page(&url)
-}
-
-/// The close button: the window goes and the conversation is forgotten
-#[tauri::command]
-async fn ask_close(app: tauri::AppHandle) {
-    ask::close(&app);
-}
-
 #[tauri::command]
 fn get_autostart() -> bool {
     autostart::is_enabled()
@@ -625,7 +569,7 @@ fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), Strin
     }
     recorder::warm_up_connections(&settings);
     // Quick ask: the selection is read meanwhile, it decides what this is
-    ask::recording_started(app, &settings);
+    ask::recording_started(&settings);
     Ok(())
 }
 
@@ -1016,7 +960,8 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some(typr_lib::local::worker::ARG) {
         std::process::exit(typr_lib::local::worker::run());
     }
-    // The native quick ask window on its own: a demo and its measurements
+    // The quick ask window on its own: a demo and its measurements
+    #[cfg(target_os = "windows")]
     {
         use typr_lib::ask::native::demo;
         let args: Vec<String> = std::env::args().skip(1).collect();
@@ -1075,13 +1020,6 @@ fn main() {
             local_download_runtime,
             local_cancel_download,
             local_delete_model,
-            ask_ready,
-            ask_standby,
-            ask_shown,
-            ask_card,
-            ask_copy,
-            ask_open_link,
-            ask_close,
             get_logs,
             clear_logs,
             frontend_log,
@@ -1095,8 +1033,6 @@ fn main() {
                     if app.state::<AppState>().hotkeys_paused.swap(false, Ordering::SeqCst) {
                         resume_hotkeys(app);
                     }
-                } else if window.label() == ask::window::LABEL {
-                    ask::window_destroyed(window.app_handle());
                 }
             }
         })
@@ -1118,7 +1054,6 @@ fn main() {
             if let Err(e) = register_hotkeys(app.handle(), &startup_settings) {
                 log::error!("Failed to register the hotkeys at startup: {}", e);
             }
-            sync_ask_window(app.handle(), &startup_settings);
 
             // Started with Windows: straight to the tray, unless the first-run
             // setup still has to be done

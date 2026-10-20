@@ -5,14 +5,13 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  // Multi-page: the settings window, the WebView recording indicator (other
-  // platforms) and the quick ask window
+  // Multi-page: the settings window and the WebView recording indicator
+  // (other platforms). The quick ask window is drawn natively (src-tauri)
   build: {
     rollupOptions: {
       input: {
         main: "index.html",
         overlay: "src/overlay.html",
-        ask: "src/ask.html",
       },
     },
   },

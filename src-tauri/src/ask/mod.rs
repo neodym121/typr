@@ -1,8 +1,9 @@
 //! Quick ask: select text anywhere, press the dictation hotkey and ask about
 //! it out loud. The answer streams into a small window that grows out of the
-//! recording indicator (`window.rs`, `src/ask.ts`). While that window is
-//! open, every recording is a follow-up question in the same conversation;
-//! the window shows the answers only, the questions stay in the context.
+//! recording indicator (`window.rs`, drawn natively by `native/`). While that
+//! window is open, every recording is a follow-up question in the same
+//! conversation; the window shows the answers only, the questions stay in
+//! the context.
 //!
 //! How a recording becomes a question:
 //! 1. When a recording starts (quick ask on), the selection of the window in
@@ -19,33 +20,33 @@
 //! hotkey asks there, as in an open quick ask window; the chat hotkey or the
 //! cross closes it.
 
+#[cfg(target_os = "windows")]
 pub mod native;
 pub mod search;
 pub mod stream;
 pub mod window;
 
-use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::net;
 use crate::overlay;
 use crate::postprocess::{self, provider_label};
+use crate::recorder::RecordingState;
 use crate::selection;
 use crate::settings::{PostProvider, Settings};
 use serde_json::Value;
 use stream::{ChatMessage, Role, Tools};
+use window::{Command, Recording};
 
 /// How long transcribed speech waits for the selection to be read
 const SELECTION_WAIT: Duration = Duration::from_millis(1500);
-/// How long the page of a new window gets to load
-const READY_WAIT: Duration = Duration::from_secs(10);
 /// Older messages are left out of the request beyond this many
 const MAX_MESSAGES: usize = 24;
-/// Pieces of the answer go to the window at most this often: every event
-/// runs a script in the WebView
+/// Pieces of the answer go to the window at most this often: each lays the
+/// answer's last block out again
 const FLUSH_EVERY: Duration = Duration::from_millis(40);
 /// Web searches per answer; after that the model must answer
 const MAX_SEARCHES: usize = 3;
@@ -182,7 +183,8 @@ struct Running {
 }
 
 static STATE: Mutex<Conversation> = Mutex::new(Conversation::new());
-/// The page in the window has loaded and listens for events
+/// The window exists and takes commands; an answer still being written
+/// after it went says nothing
 static READY: AtomicBool = AtomicBool::new(false);
 static SELECTION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static WINDOW_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -210,50 +212,10 @@ fn still_open(generation: u64) -> bool {
     state.open && state.generation == generation
 }
 
-#[derive(Clone, Serialize)]
-struct AnswerEvent {
-    id: u64,
-}
-
-#[derive(Clone, Serialize)]
-struct DeltaEvent {
-    id: u64,
-    text: String,
-}
-
-#[derive(Clone, Serialize)]
-struct DoneEvent {
-    id: u64,
-    /// The whole answer, replacing what the pieces built
-    text: String,
-    /// Cut short by a new question
-    stopped: bool,
-}
-
-/// A question as quick chat shows it
-#[derive(Clone, Serialize)]
-struct QuestionEvent {
-    id: u64,
-    text: String,
-    /// The start of the text it is about, if something was selected
-    selection: Option<String>,
-}
-
-#[derive(Clone, Serialize)]
-struct SearchEvent {
-    id: u64,
-    query: String,
-}
-
-#[derive(Clone, Serialize)]
-struct ErrorEvent {
-    id: u64,
-    message: String,
-}
-
-fn emit<S: Serialize + Clone>(app: &AppHandle, event: &str, payload: S) {
-    if let Err(e) = app.emit_to(window::LABEL, event, payload) {
-        log::debug!("Failed to emit {}: {}", event, e);
+/// Tells the window, unless it is gone
+fn tell(command: Command) {
+    if READY.load(Ordering::SeqCst) {
+        window::send(command);
     }
 }
 
@@ -269,8 +231,8 @@ pub fn open_mode() -> Option<Mode> {
 
 /// A recording started: an answer still being written stops, and with quick
 /// ask on, the selection is read while the user speaks.
-pub fn recording_started(app: &AppHandle, settings: &Settings) {
-    stop_answer(app);
+pub fn recording_started(settings: &Settings) {
+    stop_answer();
     if settings.quick_ask.enabled {
         SELECTION_GENERATION.store(selection::begin_capture(), Ordering::SeqCst);
     }
@@ -360,7 +322,7 @@ pub async fn ask(app: &AppHandle, settings: &Settings, question: Question, text:
             }
         );
         // The chat shows the question, and the start of what it is about
-        let shown = (state.mode == Mode::Chat).then(|| QuestionEvent {
+        let shown = (state.mode == Mode::Chat).then(|| Command::Question {
             id: state.next_id,
             text: text.to_string(),
             selection: selection.as_deref().map(selection_preview),
@@ -369,33 +331,26 @@ pub async fn ask(app: &AppHandle, settings: &Settings, question: Question, text:
     };
 
     if first {
-        if let Err(e) = open_window(app, settings, mode).await {
+        if let Err(e) = open_window(app, settings, mode) {
             close(app);
             return Err(e);
         }
     }
 
-    start_answer(app, settings, id, mode, messages, shown);
+    start_answer(settings, id, mode, messages, shown);
 
     if first {
-        if !wait_ready(READY_WAIT).await {
-            close(app);
-            return Err("The quick ask window didn't load in time".to_string());
-        }
         window::reveal(app).await;
         mark_shown(generation);
     }
     Ok(())
 }
 
-/// Builds the window (hidden) off the async threads.
-async fn open_window(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), String> {
-    let opener = app.clone();
-    let page = window::Page::new(settings, mode);
-    tauri::async_runtime::spawn_blocking(move || window::open(&opener, &page))
-        .await
-        .map_err(|e| format!("The quick ask window couldn't be created: {}", e))
-        .and_then(|result| result)
+/// A new window, not yet on screen; it takes commands from now on.
+fn open_window(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), String> {
+    window::open(app, settings, mode)?;
+    READY.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 /// The quick chat hotkey: opens an empty chat, or closes the window that is
@@ -426,59 +381,56 @@ pub async fn toggle_chat(app: &AppHandle, settings: &Settings) {
         net::warm_up(search::HOST.to_string());
     }
 
-    if let Err(e) = open_window(app, settings, Mode::Chat).await {
+    if let Err(e) = open_window(app, settings, Mode::Chat) {
         log::error!("{}", e);
         close(app);
-        return;
-    }
-    if !wait_ready(READY_WAIT).await {
-        if still_open(generation) {
-            log::error!("The quick chat window didn't load in time");
-            close(app);
-        }
         return;
     }
     window::reveal(app).await;
     mark_shown(generation);
 }
 
-/// Closes the window the way its cross does: the page folds the card into
-/// the dot and asks to close. Should it not, the window goes anyway.
+/// Closes the window the way its cross does: the card folds into the dot,
+/// which slides away, and the window says it is done. Should it not, the
+/// window goes anyway.
 fn fold(app: &AppHandle) {
     let generation = STATE.lock().unwrap().generation;
     if !READY.load(Ordering::SeqCst) {
         close(app);
         return;
     }
-    emit(app, "ask-fold", ());
+    tell(Command::Fold);
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(FOLD_WAIT);
         if still_open(generation) {
-            log::warn!("The quick ask page didn't close itself, closing the window");
+            log::warn!("The quick ask window didn't fold away, closing it");
             close(&app);
         }
     });
 }
 
-async fn wait_ready(limit: Duration) -> bool {
-    let deadline = Instant::now() + limit;
-    while !READY.load(Ordering::SeqCst) {
-        if Instant::now() >= deadline || !is_open() {
-            return false;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    true
+/// The recorder's state, for the open window: the dot listens while the
+/// user asks a follow-up.
+pub fn recording_state(state: &RecordingState) {
+    tell(Command::Recording(match state {
+        RecordingState::Recording => Recording::Recording,
+        RecordingState::Transcribing => Recording::Transcribing,
+        RecordingState::Ready => Recording::Ready,
+    }));
+}
+
+/// A failed dictation, shown in the open window for a few seconds.
+pub fn recording_error(message: &str) {
+    tell(Command::RecordingError(message.to_string()));
 }
 
 fn start_answer(
-    app: &AppHandle,
     settings: &Settings,
     id: u64,
     mode: Mode,
     messages: Vec<ChatMessage>,
-    question: Option<QuestionEvent>,
+    question: Option<Command>,
 ) {
     let config = &settings.quick_ask;
     let provider = config.provider;
@@ -502,21 +454,13 @@ fn start_answer(
         partial: partial.clone(),
     });
 
-    // An open window shows the follow-up's answer coming before the
-    // recorder reports it is done
-    let announced = READY.load(Ordering::SeqCst);
-    let question = match question {
-        Some(question) if announced => {
-            emit(app, "ask-question", question);
-            None
-        }
-        question => question,
-    };
-    if announced {
-        emit(app, "ask-answer", AnswerEvent { id });
+    // The window shows the question (quick chat) and the answer coming
+    // before the recorder reports it is done
+    if let Some(question) = question {
+        tell(question);
     }
+    tell(Command::Answer { id });
 
-    let app = app.clone();
     let task = tauri::async_runtime::spawn(async move {
         let started = Instant::now();
         log::info!(
@@ -525,13 +469,9 @@ fn start_answer(
             if model.is_empty() { "none" } else { model.as_str() }
         );
         let mut outbox = Outbox {
-            app: app.clone(),
             id,
             partial,
             pending: String::new(),
-            announced,
-            question,
-            search: None,
             last_flush: Instant::now(),
         };
 
@@ -554,10 +494,8 @@ fn start_answer(
             ),
             Err(e) => log::error!("Quick ask failed after {} ms: {}", started.elapsed().as_millis(), e),
         }
-        // A new window's page may still be loading
-        wait_ready(READY_WAIT).await;
         outbox.flush(true);
-        finish(&app, id, result);
+        finish(id, result);
     });
 
     let mut state = STATE.lock().unwrap();
@@ -644,52 +582,30 @@ impl Answer<'_> {
     }
 }
 
-/// Passes the answer to the window in pieces, once its page listens.
+/// Passes the answer to the window in pieces.
 struct Outbox {
-    app: AppHandle,
     id: u64,
     partial: Arc<Mutex<String>>,
     pending: String,
-    announced: bool,
-    /// The question for the chat to show, held until the page listens
-    question: Option<QuestionEvent>,
-    /// A search to show, held until the page listens
-    search: Option<String>,
     last_flush: Instant,
 }
 
 impl Outbox {
     /// The model searches the web: the window says so until the answer comes.
     fn searching(&mut self, query: &str) {
-        self.search = Some(query.to_string());
+        log::debug!("Quick ask window shows a search for {:?}", query);
         self.flush(true);
+        tell(Command::Search { id: self.id });
     }
 
     fn flush(&mut self, force: bool) {
-        if !READY.load(Ordering::SeqCst) {
-            return;
-        }
-        if let Some(question) = self.question.take() {
-            emit(&self.app, "ask-question", question);
-        }
-        if !self.announced {
-            emit(&self.app, "ask-answer", AnswerEvent { id: self.id });
-            self.announced = true;
-        }
-        if let Some(query) = self.search.take() {
-            emit(&self.app, "ask-search", SearchEvent { id: self.id, query });
-        }
         if self.pending.is_empty() || (!force && self.last_flush.elapsed() < FLUSH_EVERY) {
             return;
         }
-        emit(
-            &self.app,
-            "ask-delta",
-            DeltaEvent {
-                id: self.id,
-                text: std::mem::take(&mut self.pending),
-            },
-        );
+        tell(Command::Delta {
+            id: self.id,
+            text: std::mem::take(&mut self.pending),
+        });
         self.last_flush = Instant::now();
     }
 }
@@ -708,7 +624,7 @@ impl stream::Sink for Outbox {
 
 /// The answer is complete or failed: it joins the conversation, or its
 /// question leaves it.
-fn finish(app: &AppHandle, id: u64, result: Result<String, String>) {
+fn finish(id: u64, result: Result<String, String>) {
     let mut state = STATE.lock().unwrap();
     if state.running.as_ref().map(|running| running.id) != Some(id) {
         // Stopped by a new question or closed meanwhile
@@ -723,26 +639,22 @@ fn finish(app: &AppHandle, id: u64, result: Result<String, String>) {
                 content: answer.clone(),
             });
             drop(state);
-            emit(
-                app,
-                "ask-done",
-                DoneEvent {
-                    id,
-                    text: answer,
-                    stopped: false,
-                },
-            );
+            tell(Command::Done {
+                id,
+                text: answer,
+                stopped: false,
+            });
         }
         Err(message) => {
             state.drop_question();
             drop(state);
-            emit(app, "ask-error", ErrorEvent { id, message });
+            tell(Command::Error { id, message });
         }
     }
 }
 
 /// Stops the answer being written; what it said so far stays.
-fn stop_answer(app: &AppHandle) {
+fn stop_answer() {
     let Some(running) = STATE.lock().unwrap().running.take() else {
         return;
     };
@@ -754,22 +666,18 @@ fn stop_answer(app: &AppHandle) {
     if text.is_empty() {
         state.drop_question();
         drop(state);
-        emit(app, "ask-cancel", AnswerEvent { id: running.id });
+        tell(Command::Cancel { id: running.id });
     } else {
         state.messages.push(ChatMessage {
             role: Role::Assistant,
             content: text.clone(),
         });
         drop(state);
-        emit(
-            app,
-            "ask-done",
-            DoneEvent {
-                id: running.id,
-                text,
-                stopped: true,
-            },
-        );
+        tell(Command::Done {
+            id: running.id,
+            text,
+            stopped: true,
+        });
     }
     log::info!("Quick ask: the answer being written was stopped by a new recording");
 }
@@ -791,30 +699,13 @@ pub async fn preview(app: &AppHandle, settings: &Settings, question: &str) {
     }
 }
 
-/// The page has loaded and listens for events.
-pub fn page_ready() {
-    READY.store(true, Ordering::SeqCst);
-}
-
 /// Closes the window and forgets the conversation.
 pub fn close(app: &AppHandle) {
     let was_open = forget_conversation();
-    window::destroy(app);
+    window::destroy();
     overlay::set_suppressed(app, false);
     if was_open {
         log::info!("Quick ask closed, the conversation is forgotten");
-    }
-}
-
-/// The window was destroyed (by [`close`] or otherwise).
-pub fn window_destroyed(app: &AppHandle) {
-    if window::destroyed(app) {
-        // The window kept ready for the next question: no conversation in it
-        return;
-    }
-    if forget_conversation() {
-        overlay::set_suppressed(app, false);
-        log::info!("Quick ask window gone, the conversation is forgotten");
     }
 }
 

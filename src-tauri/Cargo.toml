@@ -1,6 +1,6 @@
 [package]
 name = "typr"
-version = "3.2.0"
+version = "3.3.0"
 description = "Desktop dictation: speak, and the text is pasted into the active window"
 authors = ["neodym121"]
 edition = "2021"

@@ -554,6 +554,16 @@ button {
   border-top: none;
 }
 
+/* Slint's logo under the notes (the answer window is drawn with Slint),
+   in the notes' grey: the file is a mask, like the icons */
+.slint-credit {
+  width: 60px;
+  height: 18px;
+  margin-top: 12px;
+  background: var(--text-muted);
+  mask: url("../assets/slint-logo.png") left center / contain no-repeat;
+}
+
 /* API keys: a wider field than the other rows have */
 .key-row .setting-control {
   flex-basis: 300px;
@@ -905,12 +915,6 @@ kbd.inline-kbd:hover {
 
 .local-problem .local-error {
   margin-top: 0;
-}
-
-/* Developer: the switch above the log */
-.dev-card {
-  flex: none;
-  margin-bottom: 16px;
 }
 
 .btn-secondary.danger {

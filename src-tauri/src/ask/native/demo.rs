@@ -12,9 +12,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, Instant};
 
-use super::platform::Stats;
-use super::{send, start, Command, Event, Layout, Recording};
-use crate::ask::window::Geometry;
+use super::{send, start};
+use crate::ask::window::{Command, Event, Geometry, Layout, Recording, Stats};
 use crate::overlay::ScreenRect;
 use crate::settings::IndicatorPosition;
 

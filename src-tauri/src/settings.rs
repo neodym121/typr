@@ -442,10 +442,6 @@ pub struct Settings {
     /// Shows the Developer section and turns on log collection
     #[serde(rename = "developerMode")]
     pub developer_mode: bool,
-    /// Developer section: a hidden quick ask window stays loaded, so quick ask
-    /// and quick chat open faster; WebView2 then keeps running while idle
-    #[serde(rename = "keepAskWindow")]
-    pub keep_ask_window: bool,
 }
 
 impl Default for Settings {
@@ -477,7 +473,6 @@ impl Default for Settings {
             check_updates: true,
             setup_done: false,
             developer_mode: false,
-            keep_ask_window: false,
         }
     }
 }
@@ -540,7 +535,7 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, chatHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, openaiEndpoint={}, openaiModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}, keepAskWindow={}",
+            "engine={}, mode={}, hotkey={}, chatHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, openaiEndpoint={}, openaiModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
@@ -565,8 +560,7 @@ impl Settings {
             self.post_process_summary(),
             self.quick_ask_summary(),
             self.check_updates,
-            self.developer_mode,
-            self.keep_ask_window
+            self.developer_mode
         )
     }
 
@@ -648,7 +642,6 @@ impl Settings {
         changed("checkUpdates", &old.check_updates, &self.check_updates);
         changed("setupDone", &old.setup_done, &self.setup_done);
         changed("developerMode", &old.developer_mode, &self.developer_mode);
-        changed("keepAskWindow", &old.keep_ask_window, &self.keep_ask_window);
 
         let pp_old = &old.post_process;
         let pp_new = &self.post_process;
@@ -734,7 +727,6 @@ mod tests {
         assert!(settings.check_updates);
         assert!(!settings.setup_done);
         assert!(!settings.developer_mode);
-        assert!(!settings.keep_ask_window);
     }
 
     #[test]
@@ -751,7 +743,14 @@ mod tests {
         assert!(settings.fallback_local);
         assert!(settings.check_updates);
         assert!(!settings.developer_mode);
-        assert!(!settings.keep_ask_window);
+    }
+
+    #[test]
+    fn test_a_removed_setting_is_ignored() {
+        // "Keep WebView2 in the background" went with the WebView quick ask
+        // window (3.3.0)
+        let settings = Settings::from_json(r#"{"keepAskWindow":true,"developerMode":true}"#);
+        assert!(settings.developer_mode);
     }
 
     #[test]

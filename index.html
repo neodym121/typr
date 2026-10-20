@@ -17,7 +17,7 @@
             <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="app-title">
               <span class="app-name">Typr</span>
-              <span class="version-text" id="version-text">v3.2.0</span>
+              <span class="version-text" id="version-text">v3.3.0</span>
             </span>
           </div>
           <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
@@ -506,6 +506,8 @@
             </ol>
             <p class="ask-note" data-i18n="ask.copyNote">Click an answer to copy it. The button in the corner of a code block copies only the code</p>
             <p class="ask-note" data-i18n="ask.terminalNote">In terminals the selection isn't read: a copy shortcut would interrupt the running program there</p>
+            <!-- The answer window is drawn with Slint, whose license asks for its logo -->
+            <div class="slint-credit" role="img" aria-label="Slint"></div>
           </div>
         </section>
       </main>
@@ -630,21 +632,6 @@
 
             <!-- Shown while developer mode is on; fills the window's height -->
             <div class="settings-panel panel-fill" id="settings-developer" role="tabpanel">
-              <!-- WebView2 kept in the background: the Quick Ask window stays loaded (ask/window.rs) -->
-              <div class="card dev-card">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <label class="label-text" for="keep-ask-toggle" data-i18n="developer.keepAsk">Keep WebView2 in the background</label>
-                    <span class="label-hint" data-i18n="developer.keepAskHint">Quick Ask, Quick Chat and the Typr window open faster, but WebView2 always stays in the background, which takes more RAM.</span>
-                  </div>
-                  <div class="setting-control">
-                    <label class="switch">
-                      <input type="checkbox" id="keep-ask-toggle" role="switch" />
-                      <span class="switch-track"><span class="switch-thumb"></span></span>
-                    </label>
-                  </div>
-                </div>
-              </div>
               <div class="log-toolbar">
                 <div class="segmented" id="log-levels">
                   <button type="button" class="segment active" data-level="all"><span data-i18n="developer.all">All</span> <span class="count" data-count="all">0</span></button>

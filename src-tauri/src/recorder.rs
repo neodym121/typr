@@ -38,13 +38,17 @@ fn publish_state(app: &AppHandle, state: &RecordingState) {
         RecordingState::Transcribing => Indicator::Transcribing,
     };
     overlay::set_indicator(app, indicator);
+    // An open quick ask window listens while the user asks a follow-up
+    crate::ask::recording_state(state);
 }
 
-/// Shows a failed dictation in the main window and briefly flashes the overlay.
+/// Shows a failed dictation in the main window (and in an open quick ask
+/// window) and briefly flashes the overlay.
 pub fn notify_error(app: &AppHandle, message: &str) {
     if let Err(e) = app.emit("recording-error", message.to_string()) {
         log::warn!("Failed to emit recording-error: {}", e);
     }
+    crate::ask::recording_error(message);
     overlay::flash_error(app);
 }
 

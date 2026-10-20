@@ -172,20 +172,7 @@ pub struct NativeWindow {
     shown: Cell<bool>,
 }
 
-/// What the thread has done, for the measurements
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Stats {
-    /// Frames drawn, and how long drawing them and putting them on screen took
-    pub frames: u64,
-    pub render: Duration,
-    pub present: Duration,
-    /// The slowest frame
-    pub slowest: Duration,
-    /// Pixels redrawn (the dirty regions' bounding boxes)
-    pub area: u64,
-    /// CPU cycles the thread used
-    pub cycles: u64,
-}
+pub use crate::ask::window::Stats;
 
 thread_local! {
     static STATS: Cell<Stats> = const { Cell::new(Stats { frames: 0, render: Duration::ZERO, present: Duration::ZERO, slowest: Duration::ZERO, area: 0, cycles: 0 }) };

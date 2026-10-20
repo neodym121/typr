@@ -13,7 +13,7 @@ pub mod demo;
 
 slint::include_modules!();
 
-pub use view::{strings, Command, Event, Layout, Recording, Strings};
+pub use crate::ask::window::{Command, Event, Layout, Recording};
 
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Mutex;

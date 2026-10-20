@@ -34,15 +34,15 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 ### AI assistant
 
-- **Quick Ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer, and the app you were in keeps the focus.
+- **Quick Ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer, and the app you were in keeps the focus. The window is drawn by Typr itself, without a browser engine: it is on screen in about 16 ms and takes about 2 MB of RAM.
 - **Quick Chat:** a hotkey of its own (Ctrl+Alt by default) opens the same window as a chat with the AI. The same hotkey or the cross closes the chat.
 - **Web search:** with an [Exa](https://exa.ai/) key, the model searches the web when a question needs fresh facts.
 
 ### App
 
 - **API keys in one place:** each service's key is entered once, in Settings → API keys (an OpenAI-compatible server's next to its address in Engine); the other sections only pick the service and the model.
-- **Tiny footprint:** about 5 MB of RAM in the tray! The settings window's WebView is released when it's closed, and the recording indicator is drawn natively.
-- **Developer mode:** a live log of everything the app does, for troubleshooting. There you can also keep WebView2 in the background: Quick Ask, Quick Chat and the Typr window open faster, at the cost of more RAM while idle (about 140 MB).
+- **Tiny footprint:** about 5 MB of RAM in the tray! The settings window's WebView is released when it's closed, and the recording indicator and the Quick Ask window are drawn natively.
+- **Developer mode:** a live log of everything the app does, for troubleshooting.
 - **English and Russian interface**, dark and minimal, in the Anthropic style, with its own window buttons instead of the system title bar.
 
 ## Building
@@ -50,8 +50,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 The installer is built by GitHub Actions (`.github/workflows/build.yml`) when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.2.0
-git push origin v3.2.0
+git tag v3.3.0
+git push origin v3.3.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:
@@ -61,13 +61,23 @@ npm install
 npm run tauri dev
 ```
 
-Built with [Tauri 2](https://tauri.app/) (Rust) and vanilla TypeScript.
+Built with [Tauri 2](https://tauri.app/) (Rust) and vanilla TypeScript; the Quick Ask window with [Slint](https://slint.dev/).
 
 ## Credits
 
 - Original project by [albertshiney](https://github.com/albertshiney/typr)
 - Fork maintained by [neodym121](https://github.com/neodym121), improved together with [Claude](https://claude.com/claude-code) (Anthropic)
+- Quick Ask window: [Slint](https://slint.dev/) (Royalty-free license 2.0)
 - Icons: [Lucide](https://lucide.dev/) (ISC); flags: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
+
+<p>
+  <a href="https://slint.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/slint-logo-gray.png" />
+      <img src="assets/slint-logo.png" height="32" alt="Made with Slint" />
+    </picture>
+  </a>
+</p>
 
 ## License
 

@@ -27,67 +27,7 @@ use super::markdown::{self, Ink, Kind};
 use super::platform::{self, NativeWindow};
 use super::shadow;
 use super::{AskWindow, Block, Message, Theme};
-use crate::ask::window::{Geometry, CARD_WIDTH, ORB_INSET};
-
-/// What the window is opened with.
-#[derive(Debug, Clone)]
-pub struct Layout {
-    pub geometry: Geometry,
-    /// The indicator is at the bottom of the screen: the card grows upwards
-    pub bottom: bool,
-    /// "en" or "ru"
-    pub language: &'static str,
-    /// Quick chat: opened empty, the questions shown too
-    pub chat: bool,
-    /// The dictation hotkey, for the empty chat to name
-    pub hotkey: String,
-    pub push_to_talk: bool,
-}
-
-/// What the recorder is doing, while the window is open
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Recording {
-    Recording,
-    Transcribing,
-    Ready,
-}
-
-pub enum Command {
-    /// A new window, hidden, its dot over the indicator's
-    Open(Layout),
-    /// On screen: the dot unfolds (quick chat's slides in first)
-    Reveal,
-    /// Quick chat: a question, with the start of the text it is about
-    Question { id: u64, text: String, selection: Option<String> },
-    /// An answer is coming
-    Answer { id: u64 },
-    /// The model searches the web
-    Search { id: u64 },
-    Delta { id: u64, text: String },
-    /// The whole answer; `stopped` when a new question cut it short
-    Done { id: u64, text: String, stopped: bool },
-    Error { id: u64, message: String },
-    /// Nothing was answered: the answer (and its question) go
-    Cancel { id: u64 },
-    Recording(Recording),
-    RecordingError(String),
-    /// Folds the card away, as its cross does
-    Fold,
-    /// Gone at once
-    Destroy,
-    /// The demo: the window's pixels now, to the callback
-    Snapshot(Box<dyn FnOnce(Option<(u32, u32, Vec<u8>)>) + Send>),
-    /// The demo's measurements: what the window's thread has done so far
-    Stats(Box<dyn FnOnce(platform::Stats) + Send>),
-}
-
-pub enum Event {
-    /// The window's first frame is on screen, its dot exactly over the
-    /// indicator's: the native one can go
-    Shown(Instant),
-    /// Folded away: the window can be destroyed
-    Closed,
-}
+use crate::ask::window::{Command, Event, Layout, Recording, CARD_WIDTH, ORB_INSET};
 
 pub struct Strings {
     pub copied: &'static str,
