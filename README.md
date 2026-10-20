@@ -13,6 +13,11 @@
 </p>
 
 <p align="center">
+  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="28" alt="Slint" /></a><br />
+  The Quick Ask window is made with <a href="https://slint.dev/">Slint</a>
+</p>
+
+<p align="center">
   <b>English</b> · <a href="README.ru.md">Русский</a>
 </p>
 
@@ -69,16 +74,6 @@ Built with [Tauri 2](https://tauri.app/) (Rust) and vanilla TypeScript; the Quic
 - Fork maintained by [neodym121](https://github.com/neodym121), improved together with [Claude](https://claude.com/claude-code) (Anthropic)
 - Quick Ask window: [Slint](https://slint.dev/) (Royalty-free license 2.0)
 - Icons: [Lucide](https://lucide.dev/) (ISC); flags: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
-
-<p>
-  <a href="https://slint.dev/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/slint-logo-gray.png" />
-      <img src="assets/slint-logo.png" height="32" alt="Made with Slint" />
-    </picture>
-  </a>
-</p>
-
 ## License
 
 [MIT](LICENSE)

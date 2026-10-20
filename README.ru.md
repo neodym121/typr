@@ -13,6 +13,11 @@
 </p>
 
 <p align="center">
+  <a href="https://slint.dev/"><img src="assets/slint-logo.png" height="28" alt="Slint" /></a><br />
+  Окно Quick Ask сделано на <a href="https://slint.dev/">Slint</a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> · <b>Русский</b>
 </p>
 
@@ -69,16 +74,6 @@ npm run tauri dev
 - Форк ведёт [neodym121](https://github.com/neodym121), доработан вместе с [Claude](https://claude.com/claude-code) (Anthropic)
 - Окно Quick Ask: [Slint](https://slint.dev/) (лицензия Royalty-free 2.0)
 - Иконки: [Lucide](https://lucide.dev/) (ISC); флаги: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
-
-<p>
-  <a href="https://slint.dev/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/slint-logo-gray.png" />
-      <img src="assets/slint-logo.png" height="32" alt="Made with Slint" />
-    </picture>
-  </a>
-</p>
-
 ## Лицензия
 
 [MIT](LICENSE)
