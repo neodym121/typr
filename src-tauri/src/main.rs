@@ -240,8 +240,8 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     let old = state.settings.lock().unwrap().clone();
     // While the hotkeys are off (tray), the new ones are registered when they're turned back on
     let hotkeys_changed = settings.hotkey != old.hotkey
-        || settings.chat_hotkey != old.chat_hotkey
-        || settings.quick_ask.chat != old.quick_ask.chat;
+        || settings.ask_hotkey != old.ask_hotkey
+        || settings.quick_ask.enabled != old.quick_ask.enabled;
     if hotkeys_changed && state.hotkey_enabled.load(Ordering::SeqCst) {
         if let Err(e) = register_hotkeys(app, &settings) {
             log::error!("Failed to register the new hotkeys: {}", e);
@@ -267,12 +267,8 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
         log::info!("Settings saved: {}", changes.join("; "));
     }
 
-    // The window of a feature turned off goes
-    let close_ask_window = match ask::open_mode() {
-        Some(ask::Mode::Ask) => old.quick_ask.enabled && !settings.quick_ask.enabled,
-        Some(ask::Mode::Chat) => old.quick_ask.chat && !settings.quick_ask.chat,
-        None => false,
-    };
+    // Quick ask turned off: its window goes
+    let close_ask_window = ask::is_open() && old.quick_ask.enabled && !settings.quick_ask.enabled;
     let indicator_changed = settings.show_indicator != old.show_indicator;
     let new_position = (settings.indicator_position != old.indicator_position).then_some(settings.indicator_position);
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
@@ -728,25 +724,25 @@ fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, na
     }
 }
 
-/// The quick chat hotkey was pressed: the chat opens, or the window open
-/// closes. `keys` are checked like the dictation hotkey's: nothing else may
-/// be held (a hotkey of modifiers alone checks that itself).
-fn on_chat_hotkey(app: &tauri::AppHandle, keys: Option<&HotkeyKeys>, name: &str) {
+/// The quick ask hotkey was pressed: the window opens empty, or the window
+/// open closes. `keys` are checked like the dictation hotkey's: nothing else
+/// may be held (a hotkey of modifiers alone checks that itself).
+fn on_ask_hotkey(app: &tauri::AppHandle, keys: Option<&HotkeyKeys>, name: &str) {
     if let Some(keys) = keys {
         let extra = keys.extra_keys_held();
         if !extra.is_empty() {
-            log::info!("Quick chat hotkey ignored: other keys are held too ({})", extra.join(", "));
+            log::info!("Quick ask hotkey ignored: other keys are held too ({})", extra.join(", "));
             return;
         }
     }
     let settings = app.state::<AppState>().settings.lock().unwrap().clone();
-    if !settings.quick_ask.chat {
+    if !settings.quick_ask.enabled {
         return;
     }
-    log::debug!("Quick chat hotkey pressed: {}", name);
+    log::debug!("Quick ask hotkey pressed: {}", name);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        ask::toggle_chat(&app, &settings).await;
+        ask::toggle(&app, &settings).await;
     });
 }
 
@@ -759,16 +755,16 @@ fn unregister_hotkeys(app: &tauri::AppHandle) {
     modifier_hotkey::stop();
 }
 
-/// Listens to the dictation hotkey and, with quick chat on, to the chat one.
+/// Listens to the dictation hotkey and, with quick ask on, to its own one.
 fn register_hotkeys(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
     unregister_hotkeys(app);
     let dictation = register_dictation_hotkey(app, &settings.hotkey);
-    let chat = if settings.quick_ask.chat {
-        register_chat_hotkey(app, &settings.chat_hotkey, &settings.hotkey)
+    let ask = if settings.quick_ask.enabled {
+        register_ask_hotkey(app, &settings.ask_hotkey, &settings.hotkey)
     } else {
         Ok(())
     };
-    dictation.and(chat)
+    dictation.and(ask)
 }
 
 /// Listens to `hotkey_str` for dictation: a key combination through the
@@ -801,14 +797,14 @@ fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey_str: &str) -> Result
     Ok(())
 }
 
-/// Listens to `hotkey_str` for quick chat: modifiers alone (e.g. Ctrl+Alt)
-/// through a keyboard hook, a mouse button through the mouse hook, or a key
-/// combination through the global shortcut plugin. It must differ from the
-/// dictation hotkey.
-fn register_chat_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &str) -> Result<(), String> {
+/// Listens to `hotkey_str` for the quick ask window: modifiers alone (e.g.
+/// Ctrl+Alt) through a keyboard hook, a mouse button through the mouse hook,
+/// or a key combination through the global shortcut plugin. It must differ
+/// from the dictation hotkey.
+fn register_ask_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &str) -> Result<(), String> {
     let normalized = normalize_hotkey(hotkey_str);
     if normalized.is_empty() {
-        return Err("The quick chat hotkey isn't set".to_string());
+        return Err("The quick ask hotkey isn't set".to_string());
     }
     if normalized.eq_ignore_ascii_case(&normalize_hotkey(dictation)) {
         return Err(format!("{} is already the dictation hotkey", normalized));
@@ -818,21 +814,21 @@ fn register_chat_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &st
     if let Some(modifiers) = modifier_hotkey::Modifiers::parse(&normalized) {
         let handle = app.clone();
         let name = normalized.clone();
-        modifier_hotkey::start(modifiers, move || on_chat_hotkey(&handle, None, &name))
-            .map_err(|e| format!("Failed to use {} as the quick chat hotkey: {}", normalized, e))?;
-        log::info!("Quick chat hotkey registered: {} (modifiers alone)", normalized);
+        modifier_hotkey::start(modifiers, move || on_ask_hotkey(&handle, None, &name))
+            .map_err(|e| format!("Failed to use {} as the quick ask hotkey: {}", normalized, e))?;
+        log::info!("Quick ask hotkey registered: {} (modifiers alone)", normalized);
         return Ok(());
     }
 
     if let Some(button) = mouse::MouseButton::parse(&normalized) {
         let handle = app.clone();
-        mouse::start(mouse::Slot::Chat, button, move |pressed| {
+        mouse::start(mouse::Slot::Ask, button, move |pressed| {
             if pressed {
-                on_chat_hotkey(&handle, Some(&keys), button.id());
+                on_ask_hotkey(&handle, Some(&keys), button.id());
             }
         })
-        .map_err(|e| format!("Failed to use {} as the quick chat hotkey: {}", button.id(), e))?;
-        log::info!("Quick chat hotkey registered: {}", button.id());
+        .map_err(|e| format!("Failed to use {} as the quick ask hotkey: {}", button.id(), e))?;
+        log::info!("Quick ask hotkey registered: {}", button.id());
         return Ok(());
     }
 
@@ -840,11 +836,11 @@ fn register_chat_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &st
     app.global_shortcut()
         .on_shortcut(normalized.as_str(), move |_app, shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                on_chat_hotkey(&handle, Some(&keys), &format!("{:?}", shortcut));
+                on_ask_hotkey(&handle, Some(&keys), &format!("{:?}", shortcut));
             }
         })
-        .map_err(|e| format!("Failed to register the quick chat shortcut '{}': {}", normalized, e))?;
-    log::info!("Quick chat hotkey registered: {}", normalized);
+        .map_err(|e| format!("Failed to register the quick ask shortcut '{}': {}", normalized, e))?;
+    log::info!("Quick ask hotkey registered: {}", normalized);
     Ok(())
 }
 
@@ -1042,6 +1038,8 @@ fn main() {
             app.state::<LocalEngine>().restore_runtime();
             log_environment(&startup_dir, &startup_settings);
             autostart::refresh();
+            // A question typed into the quick ask window's field reads them when sent
+            ask::read_settings_with(|app| app.state::<AppState>().settings.lock().unwrap().clone());
 
             build_tray(app, &startup_settings)?;
 

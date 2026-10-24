@@ -39,8 +39,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 ### AI assistant
 
-- **Quick Ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"). The recording indicator unfolds into a small window with the answer, and the app you were in keeps the focus. The window is drawn by Typr itself, without a browser engine: it is on screen in about 16 ms and takes about 2 MB of RAM.
-- **Quick Chat:** a hotkey of its own (Ctrl+Alt by default) opens the same window as a chat with the AI. The same hotkey or the cross closes the chat.
+- **Quick Ask:** select text in any app, press the dictation hotkey and ask about it out loud ("translate this", "what does this error mean"), or press its own hotkey (Ctrl+Alt by default) to ask about anything. The recording indicator unfolds into a small window with your question and the answer, and the app you were in keeps the focus. Ask again for a follow-up, or click the pencil and type: while the text field is open, dictation goes into it, so you can edit the question before sending it. The window is drawn by Typr itself, without a browser engine: it is on screen in about 16 ms and takes about 2 MB of RAM.
 - **Web search:** with an [Exa](https://exa.ai/) key, the model searches the web when a question needs fresh facts.
 
 ### App
@@ -55,8 +54,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.3.1
-git push origin v3.3.1
+git tag v3.4.0
+git push origin v3.4.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

@@ -1,4 +1,4 @@
-//! A hotkey of modifier keys alone, such as Ctrl+Alt (quick chat). The
+//! A hotkey of modifier keys alone, such as Ctrl+Alt (quick ask). The
 //! global shortcut plugin needs a key besides the modifiers, so a low-level
 //! keyboard hook watches them on a thread of its own. The hotkey fires when
 //! its keys, held together with nothing else, are let go: a key or another

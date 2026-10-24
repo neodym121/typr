@@ -5,6 +5,10 @@
 //!   (`WS_EX_NOACTIVATE`, `MA_NOACTIVATE` on clicks), hidden from the
 //!   taskbar and Alt+Tab. Clicks pass through it everywhere but the card
 //!   (`WS_EX_TRANSPARENT` while the cursor is elsewhere).
+//! * Only the text field takes the keyboard ([`NativeWindow::take_keyboard`]):
+//!   while it is open the window comes to the front, clicks activate it, and
+//!   its keys and characters go to Slint; closing the field gives the
+//!   keyboard back to the window that had it.
 //! * Slint's software renderer draws straight into the window's bitmap
 //!   (premultiplied BGRA, what `UpdateLayeredWindow` takes), only the parts
 //!   that changed, and only those go to the screen.
@@ -20,8 +24,8 @@ use i_slint_core::cursor::MouseCursorInner;
 use i_slint_core::items::BuiltInMouseCursor;
 use i_slint_core::window::WindowAdapterInternal;
 use slint::platform::software_renderer::{PremultipliedRgbaColor, RepaintBufferType, SoftwareRenderer, TargetPixel};
-use slint::platform::{Platform, PointerEventButton, Renderer, WindowAdapter, WindowEvent};
-use slint::{LogicalPosition, LogicalSize, PhysicalSize, PlatformError, Window};
+use slint::platform::{Clipboard, Key, Platform, PointerEventButton, Renderer, WindowAdapter, WindowEvent};
+use slint::{LogicalPosition, LogicalSize, PhysicalSize, PlatformError, SharedString, Window};
 use windows_sys::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::DwmFlush;
 use windows_sys::Win32::Graphics::Gdi::{
@@ -30,17 +34,25 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::{
-    CreateWaitableTimerExW, SetWaitableTimer, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE, TIMER_ALL_ACCESS,
+    AttachThreadInput, CreateWaitableTimerExW, GetCurrentThreadId, SetWaitableTimer,
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE, TIMER_ALL_ACCESS,
 };
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, GetKeyState, MapVirtualKeyW, SetFocus, TrackMouseEvent, MAPVK_VSC_TO_VK_EX, TME_LEAVE,
+    TRACKMOUSEEVENT, VIRTUAL_KEY, VK_BACK, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_F4, VK_HOME,
+    VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LSHIFT, VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RETURN, VK_RIGHT,
+    VK_RSHIFT, VK_SHIFT, VK_TAB, VK_UP,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetWindowLongPtrW, KillTimer,
-    LoadCursorW, MsgWaitForMultipleObjects, PeekMessageW, RegisterClassExW, SetCursor, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, TranslateMessage, UpdateLayeredWindowIndirect, GWL_EXSTYLE, HTCLIENT, HWND_TOPMOST, IDC_ARROW,
-    IDC_HAND, MA_NOACTIVATE, MSG, PM_REMOVE, QS_ALLINPUT, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-    ULW_ALPHA, UPDATELAYEREDWINDOWINFO, WM_APP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetForegroundWindow,
+    GetWindowLongPtrW, GetWindowThreadProcessId, IsWindow, KillTimer, LoadCursorW, MsgWaitForMultipleObjects,
+    PeekMessageW, RegisterClassExW, SetCursor, SetForegroundWindow, SetTimer, SetWindowLongPtrW, SetWindowPos,
+    TranslateMessage, UpdateLayeredWindowIndirect, GWL_EXSTYLE, HTCLIENT, HWND_TOPMOST, IDC_ARROW, IDC_HAND,
+    IDC_IBEAM, MA_ACTIVATE, MA_NOACTIVATE, MSG, PM_REMOVE, QS_ALLINPUT, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_SHOWWINDOW, ULW_ALPHA, UPDATELAYEREDWINDOWINFO, WA_INACTIVE, WM_ACTIVATE, WM_APP, WM_CHAR, WM_CLOSE,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SYSCHAR, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TIMER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
@@ -56,6 +68,23 @@ const FRAME: Duration = Duration::from_micros(16_667);
 /// One notch of the wheel scrolls this far (logical pixels), as Slint's
 /// own backends do
 const WHEEL_STEP: f32 = 60.0;
+
+/// The modifiers Slint is told about, and the key that holds each down
+const MODIFIERS: [(Key, VIRTUAL_KEY); 5] = [
+    (Key::Shift, VK_LSHIFT),
+    (Key::ShiftR, VK_RSHIFT),
+    (Key::Control, VK_LCONTROL),
+    (Key::ControlR, VK_RCONTROL),
+    (Key::Alt, VK_MENU),
+];
+
+/// The mouse cursor Slint asks for
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pointer {
+    Arrow,
+    Hand,
+    Text,
+}
 
 /// A pixel as a layered window takes it: premultiplied BGRA.
 #[repr(C)]
@@ -161,8 +190,9 @@ pub struct NativeWindow {
     scale: Cell<f32>,
     needs_redraw: Cell<bool>,
     surface: RefCell<Option<Surface>>,
-    /// The pointer cursor is wanted (a TouchArea with `mouse-cursor: pointer`)
-    hand: Cell<bool>,
+    /// The cursor wanted over the card (a TouchArea's `mouse-cursor`, the
+    /// text field's I-beam)
+    pointer: Cell<Pointer>,
     /// Clicks pass through the window now
     through: Cell<bool>,
     /// `WM_MOUSELEAVE` is asked for
@@ -170,6 +200,18 @@ pub struct NativeWindow {
     hit_area: RefCell<Option<HitArea>>,
     button_hook: RefCell<Option<ButtonHook>>,
     shown: Cell<bool>,
+    /// The text field is open: the window takes the keyboard
+    keyboard: Cell<bool>,
+    /// The window in front before this one took the keyboard: it gets it back
+    previous: Cell<HWND>,
+    /// The modifiers Slint was told are down (bits of `MODIFIERS`)
+    held: Cell<u8>,
+    /// The first half of a character beyond the BMP, waiting for its pair
+    surrogate: Cell<u16>,
+    /// Activated or deactivated, for Slint to hear once the message loop
+    /// has it: Windows sends `WM_ACTIVATE` while the window is being brought
+    /// to the front, which may be in the middle of one of Slint's callbacks
+    activation: Cell<Option<bool>>,
 }
 
 pub use crate::ask::window::Stats;
@@ -226,12 +268,17 @@ impl NativeWindow {
             scale: Cell::new(1.0),
             needs_redraw: Cell::new(true),
             surface: RefCell::new(None),
-            hand: Cell::new(false),
+            pointer: Cell::new(Pointer::Arrow),
             through: Cell::new(true),
             tracking: Cell::new(false),
             hit_area: RefCell::new(None),
             button_hook: RefCell::new(None),
             shown: Cell::new(false),
+            keyboard: Cell::new(false),
+            previous: Cell::new(std::ptr::null_mut()),
+            held: Cell::new(0),
+            surrogate: Cell::new(0),
+            activation: Cell::new(None),
         })
     }
 
@@ -373,6 +420,8 @@ impl NativeWindow {
 
     /// Destroys the native window; Slint's side goes with the component.
     pub fn destroy(&self) {
+        // The app that had the keyboard gets it back, not whatever is next
+        self.release_keyboard();
         let hwnd = self.hwnd.replace(std::ptr::null_mut());
         if !hwnd.is_null() {
             unsafe {
@@ -413,15 +462,7 @@ impl NativeWindow {
         if self.through.replace(through) == through {
             return;
         }
-        unsafe {
-            let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let style = if through {
-                style | WS_EX_TRANSPARENT
-            } else {
-                style & !WS_EX_TRANSPARENT
-            };
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style as isize);
-        }
+        unsafe { set_ex_style(hwnd, WS_EX_TRANSPARENT, through) };
         if through {
             // No more mouse messages until it is back on the card
             self.tracking.set(false);
@@ -430,13 +471,199 @@ impl NativeWindow {
     }
 
     fn update_cursor(&self) {
+        let cursor = match self.pointer.get() {
+            Pointer::Arrow => IDC_ARROW,
+            Pointer::Hand => IDC_HAND,
+            Pointer::Text => IDC_IBEAM,
+        };
         unsafe {
-            SetCursor(LoadCursorW(
-                std::ptr::null_mut(),
-                if self.hand.get() { IDC_HAND } else { IDC_ARROW },
-            ));
+            SetCursor(LoadCursorW(std::ptr::null_mut(), cursor));
         }
     }
+
+    // ── The keyboard (the text field) ────────────────────
+
+    /// The window comes to the front and takes the keyboard; until
+    /// [`release_keyboard`](Self::release_keyboard), clicks on it activate it.
+    pub fn take_keyboard(&self) {
+        let hwnd = self.hwnd.get();
+        if hwnd.is_null() {
+            return;
+        }
+        self.keyboard.set(true);
+        unsafe {
+            set_ex_style(hwnd, WS_EX_NOACTIVATE, false);
+            let front = GetForegroundWindow();
+            if front == hwnd {
+                return;
+            }
+            self.previous.set(front);
+            // Called on a click on the window, so Windows lets it come to
+            // the front; should it not, the thread in front lends its input
+            // state for a moment
+            if SetForegroundWindow(hwnd) == 0 || GetForegroundWindow() != hwnd {
+                let own = GetCurrentThreadId();
+                let other = GetWindowThreadProcessId(front, std::ptr::null_mut());
+                if other != 0 && other != own && AttachThreadInput(own, other, 1) != 0 {
+                    SetForegroundWindow(hwnd);
+                    AttachThreadInput(own, other, 0);
+                }
+            }
+            SetFocus(hwnd);
+        }
+    }
+
+    /// The window is never activated again, and gives the keyboard back to
+    /// the window that had it, if it still has it.
+    pub fn release_keyboard(&self) {
+        if !self.keyboard.replace(false) {
+            return;
+        }
+        let hwnd = self.hwnd.get();
+        let previous = self.previous.replace(std::ptr::null_mut());
+        if hwnd.is_null() {
+            return;
+        }
+        unsafe {
+            set_ex_style(hwnd, WS_EX_NOACTIVATE, true);
+            if GetForegroundWindow() == hwnd && !previous.is_null() && IsWindow(previous) != 0 {
+                SetForegroundWindow(previous);
+            }
+        }
+    }
+
+    /// Tells Slint the window was activated or deactivated (outside its
+    /// callbacks). Keys let go in another window never come here: Slint
+    /// forgets the modifiers held.
+    fn settle_activation(&self) {
+        let Some(active) = self.activation.take() else { return };
+        if !active {
+            self.release_modifiers(false);
+        }
+        self.window.dispatch_event(WindowEvent::WindowActiveChanged(active));
+    }
+
+    /// Types `text` into the field with the focus, as if it was typed there:
+    /// at the caret, over the selection, undoable. A modifier whose key came
+    /// up elsewhere is let go first, or it would turn the text into a
+    /// shortcut.
+    pub fn type_text(&self, text: &str) {
+        self.release_modifiers(true);
+        let text = SharedString::from(text);
+        self.window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        self.window.dispatch_event(WindowEvent::KeyReleased { text });
+    }
+
+    /// Tells Slint about a key going down or up, keeping track of the
+    /// modifiers it thinks are held.
+    fn key(&self, key: Key, down: bool, repeat: bool) {
+        if let Some(index) = MODIFIERS.iter().position(|(modifier, _)| *modifier == key) {
+            let bit = 1u8 << index;
+            let held = self.held.get();
+            if down == (held & bit != 0) {
+                return; // a repeat, or an up Slint never saw going down
+            }
+            self.held.set(held ^ bit);
+        }
+        let text = SharedString::from(key);
+        self.window.dispatch_event(match (down, repeat) {
+            (true, false) => WindowEvent::KeyPressed { text },
+            (true, true) => WindowEvent::KeyPressRepeated { text },
+            (false, _) => WindowEvent::KeyReleased { text },
+        });
+    }
+
+    /// Lets go of the modifiers Slint thinks are held: all of them, or only
+    /// those whose key is up by now (`stale`).
+    fn release_modifiers(&self, stale: bool) {
+        for (index, (key, vk)) in MODIFIERS.into_iter().enumerate() {
+            let down = unsafe { GetAsyncKeyState(vk as i32) } < 0;
+            if self.held.get() & (1 << index) != 0 && !(stale && down) {
+                self.key(key, false, false);
+            }
+        }
+    }
+
+    /// A key went down or up: those that type no text of their own, and
+    /// letters and digits with Ctrl (the shortcuts, whatever the layout).
+    fn on_key(&self, vk: VIRTUAL_KEY, lparam: LPARAM, down: bool) {
+        let repeat = down && lparam & (1 << 30) != 0;
+        if let Some(key) = named_key(vk, lparam) {
+            self.key(key, down, repeat);
+            return;
+        }
+        let ctrl = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+        let alt = unsafe { GetKeyState(VK_MENU as i32) } < 0;
+        let letter = (b'A' as u16..=b'Z' as u16).contains(&vk) || (b'0' as u16..=b'9' as u16).contains(&vk);
+        // With Alt too it is AltGr, which types a character
+        if ctrl && !alt && letter {
+            let text = SharedString::from((vk as u8 as char).to_ascii_lowercase().to_string());
+            self.window.dispatch_event(match (down, repeat) {
+                (true, false) => WindowEvent::KeyPressed { text },
+                (true, true) => WindowEvent::KeyPressRepeated { text },
+                (false, _) => WindowEvent::KeyReleased { text },
+            });
+        }
+    }
+
+    /// A character typed (`WM_CHAR`, UTF-16, maybe in two halves). Control
+    /// characters came as their keys already.
+    fn on_char(&self, unit: u16) {
+        let text = match unit {
+            0xD800..=0xDBFF => {
+                self.surrogate.set(unit);
+                return;
+            }
+            0xDC00..=0xDFFF => String::from_utf16(&[self.surrogate.replace(0), unit]).ok(),
+            _ => char::from_u32(unit as u32).map(String::from),
+        };
+        let Some(text) = text.filter(|text| !text.chars().any(char::is_control)) else {
+            return;
+        };
+        let text = SharedString::from(text);
+        self.window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        self.window.dispatch_event(WindowEvent::KeyReleased { text });
+    }
+}
+
+/// The Slint key for a virtual key that types no text of its own
+fn named_key(vk: VIRTUAL_KEY, lparam: LPARAM) -> Option<Key> {
+    let extended = lparam & (1 << 24) != 0;
+    Some(match vk {
+        VK_BACK => Key::Backspace,
+        VK_TAB => Key::Tab,
+        VK_RETURN => Key::Return,
+        VK_ESCAPE => Key::Escape,
+        VK_DELETE => Key::Delete,
+        VK_INSERT => Key::Insert,
+        VK_HOME => Key::Home,
+        VK_END => Key::End,
+        VK_PRIOR => Key::PageUp,
+        VK_NEXT => Key::PageDown,
+        VK_LEFT => Key::LeftArrow,
+        VK_RIGHT => Key::RightArrow,
+        VK_UP => Key::UpArrow,
+        VK_DOWN => Key::DownArrow,
+        VK_SHIFT => {
+            let scan = ((lparam >> 16) & 0xff) as u32;
+            if unsafe { MapVirtualKeyW(scan, MAPVK_VSC_TO_VK_EX) } == VK_RSHIFT as u32 {
+                Key::ShiftR
+            } else {
+                Key::Shift
+            }
+        }
+        VK_CONTROL if extended => Key::ControlR,
+        VK_CONTROL => Key::Control,
+        VK_MENU => Key::Alt,
+        _ => return None,
+    })
+}
+
+/// Turns an extended window style on or off.
+unsafe fn set_ex_style(hwnd: HWND, flag: u32, on: bool) {
+    let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+    let style = if on { style | flag } else { style & !flag };
+    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style as isize);
 }
 
 impl WindowAdapter for NativeWindow {
@@ -463,8 +690,12 @@ impl WindowAdapter for NativeWindow {
 
 impl WindowAdapterInternal for NativeWindow {
     fn set_mouse_cursor(&self, cursor: MouseCursorInner) {
-        let hand = cursor == MouseCursorInner::BuiltIn(BuiltInMouseCursor::Pointer);
-        if self.hand.replace(hand) != hand && self.tracking.get() {
+        let pointer = match cursor {
+            MouseCursorInner::BuiltIn(BuiltInMouseCursor::Pointer) => Pointer::Hand,
+            MouseCursorInner::BuiltIn(BuiltInMouseCursor::Text) => Pointer::Text,
+            _ => Pointer::Arrow,
+        };
+        if self.pointer.replace(pointer) != pointer && self.tracking.get() {
             self.update_cursor();
         }
     }
@@ -477,6 +708,24 @@ impl Platform for AskPlatform {
         let window = NativeWindow::new();
         CURRENT.with(|current| *current.borrow_mut() = Some(window.clone()));
         Ok(window)
+    }
+
+    /// Ctrl+C and Ctrl+X in the text field
+    fn set_clipboard_text(&self, text: &str, clipboard: Clipboard) {
+        if clipboard != Clipboard::DefaultClipboard {
+            return;
+        }
+        if let Err(e) = arboard::Clipboard::new().and_then(|mut clipboard| clipboard.set_text(text)) {
+            log::warn!("Copying from the quick ask field failed: {}", e);
+        }
+    }
+
+    /// Ctrl+V in the text field
+    fn clipboard_text(&self, clipboard: Clipboard) -> Option<String> {
+        if clipboard != Clipboard::DefaultClipboard {
+            return None;
+        }
+        arboard::Clipboard::new().and_then(|mut clipboard| clipboard.get_text()).ok()
     }
 }
 
@@ -541,8 +790,41 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
     };
     match message {
         // A click never activates it: the app the question is about keeps
-        // the focus and its selection
+        // the focus and its selection. Only while the text field is open
+        // a click gives it the keyboard
+        WM_MOUSEACTIVATE if window.keyboard.get() => {
+            let front = GetForegroundWindow();
+            if front != hwnd {
+                window.previous.set(front);
+            }
+            MA_ACTIVATE as LRESULT
+        }
         WM_MOUSEACTIVATE => MA_NOACTIVATE as LRESULT,
+        WM_ACTIVATE => {
+            window.activation.set(Some((wparam & 0xffff) as u32 != WA_INACTIVE));
+            DefWindowProcW(hwnd, message, wparam, lparam)
+        }
+        WM_KEYDOWN | WM_KEYUP => {
+            window.on_key(wparam as VIRTUAL_KEY, lparam, message == WM_KEYDOWN);
+            0
+        }
+        // Alt+F4 closes the window (WM_CLOSE below); no other key with Alt
+        // reaches the system, which would open a menu the window hasn't got
+        WM_SYSKEYDOWN if wparam as VIRTUAL_KEY == VK_F4 => DefWindowProcW(hwnd, message, wparam, lparam),
+        WM_SYSKEYDOWN | WM_SYSKEYUP => {
+            window.on_key(wparam as VIRTUAL_KEY, lparam, message == WM_SYSKEYDOWN);
+            0
+        }
+        WM_CHAR => {
+            window.on_char(wparam as u16);
+            0
+        }
+        WM_SYSCHAR => 0,
+        // The window says what closing means (view.rs); it is never just destroyed
+        WM_CLOSE => {
+            window.window.dispatch_event(WindowEvent::CloseRequested);
+            0
+        }
         WM_MOUSEMOVE => {
             if !window.tracking.replace(true) {
                 let mut track = TRACKMOUSEEVENT {
@@ -642,8 +924,11 @@ pub fn run<C>(commands: Receiver<C>, mut handle: impl FnMut(C)) {
             }
         }
 
-        slint::platform::update_timers_and_animations();
         let window = current();
+        if let Some(window) = &window {
+            window.settle_activation();
+        }
+        slint::platform::update_timers_and_animations();
         if let Some(window) = &window {
             if window.render() {
                 last_frame = Instant::now();

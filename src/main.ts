@@ -20,7 +20,7 @@ import {
 import {
   fillQuickAsk,
   initQuickAsk,
-  renderChatHint,
+  renderAskHint,
   showQuickAsk,
   translateQuickAsk,
   type QuickAskSettings,
@@ -47,8 +47,8 @@ interface Settings {
   localUnload: string;
   recordingMode: string;
   hotkey: string;
-  /** Opens and closes quick chat (src/hotkeys.ts) */
-  chatHotkey: string;
+  /** Opens the quick ask window empty and closes it (src/hotkeys.ts) */
+  askHotkey: string;
   appendSpace: boolean;
   showIndicator: boolean;
   /** "top-right" | "bottom-center" (just above the taskbar) */
@@ -56,7 +56,8 @@ interface Settings {
   /** "en", "ru", or empty to follow the system */
   language: string;
   postProcess: PostProcessSettings;
-  /** Select text and ask about it with the hotkey (src/quickask.ts, src/ask.ts) */
+  /** Select text and ask about it with the hotkey, or open the window with
+   *  its own (src/quickask.ts) */
   quickAsk: QuickAskSettings;
   checkUpdates: boolean;
   /** The first-run setup was finished or skipped */
@@ -345,13 +346,13 @@ fillLanguageOptions(recognitionLanguage);
 document.querySelectorAll<HTMLElement>(".segmented").forEach(enhanceSegmented);
 
 initApiKeys({ settings: () => currentSettings, save: saveQuietly });
-// Quick ask names the chat hotkey too
-initHotkeys({ settings: () => currentSettings, save: () => saveSettings().then(renderChatHint) });
+// Quick ask names its hotkey too
+initHotkeys({ settings: () => currentSettings, save: () => saveSettings().then(renderAskHint) });
 initPostProcess({ settings: () => currentSettings, save: saveQuietly });
 initQuickAsk({
   settings: () => currentSettings,
   save: saveQuietly,
-  chatChanged: fillHotkeys,
+  enabledChanged: fillHotkeys,
   showHotkeys: () => openSettings("hotkeys"),
 });
 initLocal({ settings: () => currentSettings, save: saveQuietly });

@@ -71,7 +71,7 @@ pub struct FallbackNotice {
 
 /// Opens the connections a dictation will need while the user is still
 /// speaking: the cloud engine and, if they are on, post-processing (or
-/// translation) and quick ask (or the quick chat that is open).
+/// translation) and quick ask (or its window that is open).
 pub fn warm_up_connections(settings: &Settings) {
     let engine_url = match settings.engine {
         Engine::Local => None,

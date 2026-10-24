@@ -4,17 +4,24 @@
 //! it is on screen the native dot goes and this one unfolds into a card with
 //! the model's answers; its dot stays as the card's status light.
 //!
-//! The questions aren't shown, only the answers; a click on one copies it, a
-//! click on a link in it opens the page, and the button in the corner of a
+//! The questions are shown on the right in a box, under the start of the
+//! text they are about, and can't be copied. A click on an answer copies it,
+//! a click on a link in it opens the page, and the button in the corner of a
 //! code block copies that code alone. While the model searches the web,
 //! "Search…" blinks slowly where the answer will be. While the window is
 //! open, every recording is a follow-up: the dot turns orange and pulses
 //! while the user speaks. The cross folds the card back into the dot, which
 //! slides behind the edge of the screen, and the window closes.
 //!
-//! Quick chat is the same window opened empty by its hotkey: the dot slides
-//! in from behind the edge and unfolds into a card that says how to ask. The
-//! questions are shown too, on the right in a box.
+//! Opened empty by the quick ask hotkey, the dot slides in from behind the
+//! edge and unfolds into a card that says how to ask.
+//!
+//! Its pencil opens a text field: the pencil fades, a bar grows out of its
+//! place between the dot and the cross and then grows into the field,
+//! and the window takes the keyboard. Enter (or the arrow) sends what it
+//! holds; dictation goes into it at the caret instead of being asked, to be
+//! edited before sending. The cross (or Escape) folds the field back and
+//! gives the keyboard back to the window that had it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -33,8 +40,9 @@ pub struct Strings {
     pub copied: &'static str,
     pub code_copied: &'static str,
     pub searching: &'static str,
-    pub chat_empty: &'static str,
-    pub chat_empty_ptt: &'static str,
+    pub empty: &'static str,
+    pub empty_ptt: &'static str,
+    pub field_placeholder: &'static str,
     pub stopped: &'static str,
     pub error: &'static str,
     pub mouse_middle: &'static str,
@@ -46,8 +54,9 @@ const EN: Strings = Strings {
     copied: "Copied",
     code_copied: "Code copied",
     searching: "Search…",
-    chat_empty: "Press {hotkey} and ask out loud",
-    chat_empty_ptt: "Hold {hotkey} and ask out loud",
+    empty: "Press {hotkey} and ask out loud",
+    empty_ptt: "Hold {hotkey} and ask out loud",
+    field_placeholder: "Type or dictate a question",
     stopped: "Stopped",
     error: "Couldn't answer: {error}",
     mouse_middle: "Mouse: middle",
@@ -59,8 +68,9 @@ const RU: Strings = Strings {
     copied: "Скопировано",
     code_copied: "Код скопирован",
     searching: "Поиск…",
-    chat_empty: "Нажмите {hotkey} и задайте вопрос вслух",
-    chat_empty_ptt: "Удерживайте {hotkey} и задайте вопрос вслух",
+    empty: "Нажмите {hotkey} и задайте вопрос вслух",
+    empty_ptt: "Удерживайте {hotkey} и задайте вопрос вслух",
+    field_placeholder: "Напишите или продиктуйте вопрос",
     stopped: "Остановлено",
     error: "Не удалось ответить: {error}",
     mouse_middle: "Мышь: средняя",
@@ -96,15 +106,20 @@ fn format_hotkey(hotkey: &str, strings: &Strings) -> String {
 
 const NOTICE: Duration = Duration::from_millis(6000);
 const TOAST: Duration = Duration::from_millis(1400);
-/// When the text shows and the unfolding is over; quick chat, opened by its
-/// hotkey, unfolds a little faster (ask.slint)
-const UNFOLD_CHAT: (u64, u64) = (330, 500);
-const UNFOLD_ASK: (u64, u64) = (420, 640);
-/// Quick chat's dot slides in from behind the edge first
+/// When the text shows and the unfolding is over; a window opened empty by
+/// its hotkey unfolds a little faster (ask.slint)
+const UNFOLD_EMPTY: (u64, u64) = (330, 500);
+const UNFOLD_QUESTION: (u64, u64) = (420, 640);
+/// An empty window's dot slides in from behind the edge first
 const ARRIVE: Duration = Duration::from_millis(210);
 /// Folding back: the frame slides away, then the window can go
 const FOLD_GONE: Duration = Duration::from_millis(340);
 const FOLD_DONE: Duration = Duration::from_millis(600);
+/// The text field: the bar has grown out of the pencil's place and
+/// grows into the field; closing, the field has folded back into the bar,
+/// which goes back into the pencil (ask.slint)
+const FIELD_GROW: Duration = Duration::from_millis(240);
+const FIELD_SHRINK: Duration = Duration::from_millis(180);
 
 const STATE_DOT: i32 = 0;
 const STATE_OPEN: i32 = 1;
@@ -152,6 +167,10 @@ struct View {
     /// button took the click since
     pressed_answer: i32,
     click_taken: bool,
+    /// The text field is open (or opening)
+    typing: bool,
+    /// Tells the timers of one opening or closing of the field from the next
+    typing_turn: u32,
 }
 
 /// Runs the window on its thread: takes the commands, sends the events.
@@ -228,7 +247,7 @@ impl View {
         ui.set_ui_font(ui_font.into());
         ui.global::<Theme>().set_mono(mono.into());
         ui.set_bottom(layout.bottom);
-        ui.set_chat(layout.chat);
+        ui.set_empty(layout.empty);
         ui.set_orb_x(g.orb_x as f32);
         ui.set_orb_y(g.orb_y as f32);
         ui.set_orb_inset(ORB_INSET as f32);
@@ -238,6 +257,7 @@ impl View {
         ui.set_dot_shadow_reach(shadow::DOT_REACH);
         ui.set_searching_label(strings.searching.into());
         ui.set_stopped_label(strings.stopped.into());
+        ui.set_field_placeholder(strings.field_placeholder.into());
 
         let messages = Rc::new(VecModel::default());
         ui.set_messages(ModelRc::from(messages.clone()));
@@ -258,6 +278,8 @@ impl View {
             code_timer: Timer::default(),
             pressed_answer: -1,
             click_taken: false,
+            typing: false,
+            typing_turn: 0,
         }));
         view.borrow_mut().configure();
 
@@ -305,9 +327,39 @@ impl View {
         let weak = Rc::downgrade(&view);
         ui.on_close_clicked(move || {
             if let Some(view) = weak.upgrade() {
+                let typing = {
+                    let mut v = view.borrow_mut();
+                    v.click_taken = true;
+                    v.typing
+                };
+                if typing {
+                    View::stop_typing(&view);
+                } else {
+                    View::close(&view);
+                }
+            }
+        });
+        let weak = Rc::downgrade(&view);
+        ui.on_edit_clicked(move || {
+            if let Some(view) = weak.upgrade() {
                 view.borrow_mut().click_taken = true;
+                View::start_typing(&view);
+            }
+        });
+        let weak = Rc::downgrade(&view);
+        ui.on_send_clicked(move || {
+            if let Some(view) = weak.upgrade() {
+                view.borrow_mut().click_taken = true;
+                View::submit(&view);
+            }
+        });
+        // Alt+F4 while the field has the keyboard: the window folds away
+        let weak = Rc::downgrade(&view);
+        ui.window().on_close_requested(move || {
+            if let Some(view) = weak.upgrade() {
                 View::close(&view);
             }
+            slint::CloseRequestResponse::KeepWindowShown
         });
 
         ui.show().map_err(|e| format!("The quick ask window couldn't be shown: {}", e))?;
@@ -316,10 +368,10 @@ impl View {
 
     /// Lays the window out: the dot's place, the mode, the language
     fn configure(&mut self) {
-        self.awaiting_first = !self.layout.chat;
-        // Quick chat opens with nothing to do yet; its dot waits behind the
+        self.awaiting_first = !self.layout.empty;
+        // Opened empty, there is nothing to do yet; its dot waits behind the
         // edge of the screen, where the indicator would come from
-        if self.layout.chat {
+        if self.layout.empty {
             self.set_phase(Phase::Idle);
             self.ui.set_gone(true);
         } else {
@@ -341,6 +393,9 @@ impl View {
             Command::Cancel { id } => view.borrow_mut().on_cancel(id),
             Command::Recording(recording) => view.borrow_mut().on_recording(recording),
             Command::RecordingError(message) => view.borrow_mut().on_recording_error(message),
+            Command::Dictated(text) => View::on_dictated(view, &text),
+            Command::Field(true) => View::start_typing(view),
+            Command::Field(false) => View::stop_typing(view),
             Command::Open(_) | Command::Destroy | Command::Snapshot(_) | Command::Stats(_) => {}
         }
     }
@@ -353,19 +408,19 @@ impl View {
     // ── Unfolding and folding ────────────────────────────
 
     /// The dot is drawn and put on screen over the indicator's, then it
-    /// unfolds (quick chat's slides in from behind the edge first).
+    /// unfolds (an empty window's slides in from behind the edge first).
     fn reveal(view: &Rc<RefCell<View>>) {
-        let (chat, on_event) = {
+        let (empty, on_event) = {
             let v = view.borrow();
             if v.state != STATE_DOT {
                 return;
             }
             v.window.render();
             v.window.show();
-            (v.layout.chat, v.on_event.clone())
+            (v.layout.empty, v.on_event.clone())
         };
         on_event(Event::Shown(Instant::now()));
-        if chat {
+        if empty {
             View::arrive(view);
         } else {
             View::unfold(view);
@@ -394,7 +449,7 @@ impl View {
             v.state = STATE_OPEN;
             v.ui.set_motion(1);
             v.ui.set_state(STATE_OPEN);
-            let (content_in, done) = if v.layout.chat { UNFOLD_CHAT } else { UNFOLD_ASK };
+            let (content_in, done) = if v.layout.empty { UNFOLD_EMPTY } else { UNFOLD_QUESTION };
             (Duration::from_millis(content_in), Duration::from_millis(done))
         };
         after(view, content_in, |view| view.borrow().ui.set_content_in(true));
@@ -416,6 +471,14 @@ impl View {
                 return;
             }
             v.state = STATE_CLOSING;
+            // The field goes with the card, and the keyboard goes back now
+            if v.typing {
+                v.typing = false;
+                v.typing_turn += 1;
+                v.ui.set_field_tall(false);
+                v.ui.set_typing(false);
+                v.window.release_keyboard();
+            }
             v.ui.set_content_in(false);
             v.ui.set_motion(2);
             v.ui.set_state(STATE_CLOSING);
@@ -425,6 +488,104 @@ impl View {
             let on_event = view.borrow().on_event.clone();
             on_event(Event::Closed);
         });
+    }
+
+    // ── The text field ───────────────────────────────────
+
+    /// The pencil: the field grows out of its place and takes the keyboard.
+    fn start_typing(view: &Rc<RefCell<View>>) {
+        let (turn, on_event) = {
+            let mut v = view.borrow_mut();
+            if v.state != STATE_OPEN || v.typing {
+                return;
+            }
+            v.typing = true;
+            v.typing_turn += 1;
+            // Called on the click, so Windows lets the window come to the front
+            v.window.take_keyboard();
+            v.ui.set_field_text(SharedString::new());
+            v.ui.set_typing(true);
+            v.ui.invoke_focus_field();
+            (v.typing_turn, v.on_event.clone())
+        };
+        log::debug!("Quick ask: the text field opened");
+        on_event(Event::Typing(true));
+        after(view, FIELD_GROW, move |view| {
+            let v = view.borrow();
+            if v.typing && v.typing_turn == turn {
+                v.ui.set_field_tall(true);
+            }
+        });
+    }
+
+    /// The cross or Escape: the field folds back into the pencil, unsent
+    /// text and all, and the keyboard goes back to the window that had it.
+    fn stop_typing(view: &Rc<RefCell<View>>) {
+        let (turn, on_event) = {
+            let mut v = view.borrow_mut();
+            if !v.typing {
+                return;
+            }
+            v.typing = false;
+            v.typing_turn += 1;
+            v.ui.set_field_tall(false);
+            v.ui.invoke_blur_field();
+            v.window.release_keyboard();
+            (v.typing_turn, v.on_event.clone())
+        };
+        log::debug!("Quick ask: the text field closed");
+        on_event(Event::Typing(false));
+        after(view, FIELD_SHRINK, move |view| {
+            let v = view.borrow();
+            if !v.typing && v.typing_turn == turn {
+                v.ui.set_typing(false);
+                v.ui.set_field_text(SharedString::new());
+            }
+        });
+    }
+
+    /// Enter or the arrow: the field's text is asked; the field stays open
+    /// for the next question.
+    fn submit(view: &Rc<RefCell<View>>) {
+        let (text, on_event) = {
+            let v = view.borrow();
+            if !v.typing || v.state != STATE_OPEN {
+                return;
+            }
+            let text = v.ui.get_field_text().trim().to_string();
+            if text.is_empty() {
+                return;
+            }
+            v.ui.set_field_text(SharedString::new());
+            (text, v.on_event.clone())
+        };
+        on_event(Event::Submit(text));
+    }
+
+    /// Speech transcribed while the field is open goes into it at the caret
+    /// (over the selection), a space apart from the words around it.
+    fn on_dictated(view: &Rc<RefCell<View>>, text: &str) {
+        let (typing, on_event) = {
+            let v = view.borrow();
+            (v.typing, v.on_event.clone())
+        };
+        // The field closed while the speech was transcribed: it is a question
+        if !typing {
+            on_event(Event::Submit(text.to_string()));
+            return;
+        }
+        let v = view.borrow();
+        let field = v.ui.get_field_text();
+        let (anchor, cursor) = (v.ui.get_field_anchor().max(0) as usize, v.ui.get_field_cursor().max(0) as usize);
+        let start = anchor.min(cursor).min(field.len());
+        let end = anchor.max(cursor).min(field.len());
+        let (before, after) = if field.is_char_boundary(start) && field.is_char_boundary(end) {
+            (field[..start].chars().next_back(), field[end..].chars().next())
+        } else {
+            (field.chars().next_back(), None)
+        };
+        v.ui.invoke_focus_field();
+        v.window.type_text(&spaced(before, after, text));
     }
 
     // ── Messages ─────────────────────────────────────────
@@ -515,9 +676,6 @@ impl View {
     }
 
     fn on_question(&mut self, id: u64, text: &str, selection: Option<String>) {
-        if !self.layout.chat {
-            return;
-        }
         let (gap, _) = self.spacing(true);
         self.messages.push(Message {
             id: id as i32,
@@ -642,17 +800,17 @@ impl View {
         self.ui.set_notice(SharedString::new());
     }
 
-    /// Quick chat before the first question: which hotkey asks
+    /// An empty window before the first question: which hotkey asks
     fn render_empty(&self) {
-        let empty = self.layout.chat && self.messages.row_count() == 0;
+        let empty = self.layout.empty && self.messages.row_count() == 0;
         self.ui.set_show_empty(empty);
         if !empty {
             return;
         }
         let template = if self.layout.push_to_talk {
-            self.strings.chat_empty_ptt
+            self.strings.empty_ptt
         } else {
-            self.strings.chat_empty
+            self.strings.empty
         };
         let (before, after) = template.split_once("{hotkey}").unwrap_or((template, ""));
         self.ui.set_empty_before(before.into());
@@ -716,6 +874,20 @@ impl View {
             }
         });
     }
+}
+
+/// Dictated `text` as it goes between the characters `before` and `after`
+/// the caret: a space apart from a word on either side.
+fn spaced(before: Option<char>, after: Option<char>, text: &str) -> String {
+    let mut piece = String::with_capacity(text.len() + 2);
+    if before.is_some_and(|c| !c.is_whitespace()) {
+        piece.push(' ');
+    }
+    piece.push_str(text);
+    if after.is_some_and(|c| !c.is_whitespace()) {
+        piece.push(' ');
+    }
+    piece
 }
 
 /// Runs `then` on the view after `delay`, unless it is gone.
@@ -804,5 +976,13 @@ mod tests {
         assert_eq!(format_hotkey("Ctrl+Shift+Space", &EN), "Ctrl+Shift+Space");
         assert_eq!(format_hotkey("Control+KeyQ", &EN), "Ctrl+Q");
         assert_eq!(format_hotkey("MouseMiddle", &RU), "Мышь: средняя");
+    }
+
+    #[test]
+    fn test_dictation_goes_a_space_apart_from_the_words_around_it() {
+        assert_eq!(spaced(None, None, "Hello."), "Hello.");
+        assert_eq!(spaced(Some('e'), None, "Hello."), " Hello.");
+        assert_eq!(spaced(Some(' '), Some('w'), "big"), "big ");
+        assert_eq!(spaced(Some('\n'), Some(' '), "big"), "big");
     }
 }

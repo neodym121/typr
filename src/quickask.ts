@@ -1,30 +1,28 @@
-// Quick ask section: the quick ask and quick chat switches, the model that
-// answers (modelpicker.ts) and web search through Exa. The keys come from
-// the API keys section; the window itself is src/ask.ts.
+// Quick ask section: its switch (with a hint naming its own hotkey), the
+// model that answers (modelpicker.ts) and web search through Exa. The keys
+// come from the API keys section; the window itself is drawn by the backend
+// (src-tauri/src/ask).
 
 import { formatHotkey, t } from "./i18n";
 import { createModelPicker, type ModelPicker, type ProviderConfig } from "./modelpicker";
 
 export interface QuickAskSettings extends ProviderConfig {
   enabled: boolean;
-  /** Quick chat: the chat hotkey opens the window as a chat */
-  chat: boolean;
   /** The model may search the web with Exa */
   webSearch: boolean;
 }
 
 export interface QuickAskHost {
-  settings: () => { quickAsk: QuickAskSettings; chatHotkey: string };
+  settings: () => { quickAsk: QuickAskSettings; askHotkey: string };
   save: () => void;
-  /** Quick chat was switched on or off */
-  chatChanged: () => void;
+  /** Quick ask was switched on or off: its hotkey's hint follows */
+  enabledChanged: () => void;
   /** Opens Settings on the Hotkeys tab */
   showHotkeys: () => void;
 }
 
 const enabledToggle = document.getElementById("ask-enabled") as HTMLInputElement;
-const chatToggle = document.getElementById("ask-chat") as HTMLInputElement;
-const chatHint = document.getElementById("ask-chat-hint")!;
+const enabledHint = document.getElementById("ask-enabled-hint")!;
 const searchToggle = document.getElementById("ask-search") as HTMLInputElement;
 
 let host: QuickAskHost | undefined;
@@ -41,16 +39,11 @@ export function initQuickAsk(appHost: QuickAskHost) {
   enabledToggle.addEventListener("change", () => {
     host!.settings().quickAsk.enabled = enabledToggle.checked;
     host!.save();
-  });
-
-  chatToggle.addEventListener("change", () => {
-    host!.settings().quickAsk.chat = chatToggle.checked;
-    host!.save();
-    host!.chatChanged();
+    host!.enabledChanged();
   });
 
   // The hotkey named in the hint leads to where it is set
-  chatHint.addEventListener("click", (event) => {
+  enabledHint.addEventListener("click", (event) => {
     if ((event.target as Element).closest("kbd")) host!.showHotkeys();
   });
 
@@ -60,23 +53,22 @@ export function initQuickAsk(appHost: QuickAskHost) {
   });
 }
 
-/** "{hotkey} opens a chat…", with the hotkey as a key cap */
-export function renderChatHint() {
+/** "… {hotkey} opens the window …", with the hotkey as a key cap */
+export function renderAskHint() {
   if (!host) return;
-  const [before, after = ""] = t("ask.chatHint").split("{hotkey}");
+  const [before, after = ""] = t("ask.enabledHint").split("{hotkey}");
   const key = document.createElement("kbd");
   key.className = "inline-kbd";
-  key.textContent = formatHotkey(host.settings().chatHotkey || "Ctrl+Alt");
-  chatHint.replaceChildren(before, key, after);
+  key.textContent = formatHotkey(host.settings().askHotkey || "Ctrl+Alt");
+  enabledHint.replaceChildren(before, key, after);
 }
 
 /** Puts the saved settings into the form (after they are loaded). */
 export function fillQuickAsk() {
   const quickAsk = host!.settings().quickAsk;
   enabledToggle.checked = Boolean(quickAsk.enabled);
-  chatToggle.checked = Boolean(quickAsk.chat);
   searchToggle.checked = Boolean(quickAsk.webSearch);
-  renderChatHint();
+  renderAskHint();
   picker?.fill();
 }
 
@@ -88,5 +80,5 @@ export function showQuickAsk() {
 /** Texts set from code, after a language switch. */
 export function translateQuickAsk() {
   picker?.translate();
-  renderChatHint();
+  renderAskHint();
 }

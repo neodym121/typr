@@ -1,9 +1,13 @@
 //! Trying and measuring the native quick ask window without the rest of
 //! Typr (no Tauri, no microphone, no model):
 //!
-//! * `typr --ask-demo [chat] [bottom] [ru] [long|code]` plays sample answers
-//!   in it, as the old page's browser demo did (`long`: a first answer
-//!   taller than the card; `code`: code blocks inside list items).
+//! * `typr --ask-demo [empty] [bottom] [ru] [long|code|type]` plays sample
+//!   questions and answers in it, as the old page's browser demo did
+//!   (`empty`: opened by the quick ask hotkey; `long`: a first answer taller
+//!   than the card; `code`: code blocks inside list items; `type`, with
+//!   `empty`: the text field opening, dictation into it, closing, then the
+//!   rest with the field open). A question typed into the field gets a
+//!   sample answer.
 //! * `typr --ask-bench` measures it: memory, time to the first frame (cold,
 //!   warm and as a process of its own), CPU while it unfolds and streams.
 //! * `typr --ask-child` is the process the bench starts for that last one.
@@ -21,7 +25,7 @@ pub const DEMO_ARG: &str = "--ask-demo";
 pub const BENCH_ARG: &str = "--ask-bench";
 pub const CHILD_ARG: &str = "--ask-child";
 
-fn layout(chat: bool, bottom: bool, language: &'static str) -> Layout {
+fn layout(empty: bool, bottom: bool, language: &'static str) -> Layout {
     let (area, scale) = crate::overlay::primary_screen().unwrap_or((
         ScreenRect {
             x: 0,
@@ -40,7 +44,7 @@ fn layout(chat: bool, bottom: bool, language: &'static str) -> Layout {
         geometry: Geometry::new(position, area, scale),
         bottom,
         language,
-        chat,
+        empty,
         hotkey: "Ctrl+Shift+Space".to_string(),
         push_to_talk: false,
     }
@@ -102,22 +106,22 @@ const SECOND_EN: &str = "Yes, here is a stricter one:\n\n```js\nconst email = /^
 const SECOND_RU: &str = "Да, вот вариант построже:\n\n```js\nconst email = /^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)*\\.[a-z]{2,}$/i;\n```";
 const THIRD_EN: &str = "According to [Exa](https://exa.ai), the latest version is **2.1**, released last week.";
 const THIRD_RU: &str = "По данным [Exa](https://exa.ai), последняя версия — **2.1**, вышла на прошлой неделе.";
-const CHAT_EN: &str = "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\n- **`let`** is for values that change: counters, flags, intermediate results.\n- **`const`** is for everything else: it shows the value won't be swapped.\n- **`var`** is best avoided: it is seen in the whole function and hoisted to its top.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.\n\n```js\nconst user = { name: \"Anna\" };\nuser.name = \"Maria\"; // fine\nuser = {}; // error\n```";
-const CHAT_RU: &str = "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\n- **`let`** — для значений, которые меняются: счётчики, флаги, промежуточные результаты.\n- **`const`** — для всего остального: сразу видно, что значение не подменят.\n- **`var`** лучше не использовать: он виден во всей функции и поднимается наверх.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение.\n\n```js\nconst user = { name: \"Анна\" };\nuser.name = \"Мария\"; // можно\nuser = {}; // ошибка\n```";
+const LET_CONST_EN: &str = "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\n- **`let`** is for values that change: counters, flags, intermediate results.\n- **`const`** is for everything else: it shows the value won't be swapped.\n- **`var`** is best avoided: it is seen in the whole function and hoisted to its top.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.\n\n```js\nconst user = { name: \"Anna\" };\nuser.name = \"Maria\"; // fine\nuser = {}; // error\n```";
+const LET_CONST_RU: &str = "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\n- **`let`** — для значений, которые меняются: счётчики, флаги, промежуточные результаты.\n- **`const`** — для всего остального: сразу видно, что значение не подменят.\n- **`var`** лучше не использовать: он виден во всей функции и поднимается наверх.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение.\n\n```js\nconst user = { name: \"Анна\" };\nuser.name = \"Мария\"; // можно\nuser = {}; // ошибка\n```";
 
-/// `typr --ask-demo [chat] [bottom] [ru] [long|code]`
+/// `typr --ask-demo [empty] [bottom] [ru] [long|code|type]`
 pub fn run_demo(args: &[String]) {
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let ru = has("ru");
-    let chat = has("chat");
+    let empty = has("empty");
     let events = start_window();
-    send(Command::Open(layout(chat, has("bottom"), if ru { "ru" } else { "en" })));
+    send(Command::Open(layout(empty, has("bottom"), if ru { "ru" } else { "en" })));
     sleep(300);
     send(Command::Reveal);
     wait_shown(&events);
-    snapshot(if chat { "c01-shown" } else { "01-dot" });
+    snapshot(if empty { "c01-shown" } else { "01-dot" });
 
-    if chat {
+    if empty {
         let ask = |id: u64, question: &str, selection: Option<&str>| {
             send(Command::Recording(Recording::Recording));
             sleep(1600);
@@ -138,6 +142,9 @@ pub fn run_demo(args: &[String]) {
         snapshot("c03-unfolding");
         sleep(1400);
         snapshot("c04-empty");
+        if has("type") {
+            play_field(ru);
+        }
         send(Command::Recording(Recording::Recording));
         sleep(700);
         snapshot("c05-listening");
@@ -146,7 +153,7 @@ pub fn run_demo(args: &[String]) {
             if ru { "Чем let отличается от const в JavaScript?" } else { "How is let different from const in JavaScript?" },
             None,
         );
-        stream(1, if ru { CHAT_RU } else { CHAT_EN }, 6, 28);
+        stream(1, if ru { LET_CONST_RU } else { LET_CONST_EN }, 6, 28);
         sleep(600);
         snapshot("c06-answer");
         sleep(900);
@@ -172,6 +179,11 @@ pub fn run_demo(args: &[String]) {
         sleep(600);
         snapshot("c07-translation");
     } else {
+        send(Command::Question {
+            id: 1,
+            text: if ru { "Что проверяет это выражение?" } else { "What does this expression check?" }.to_string(),
+            selection: Some("^[\\w.+-]+@[\\w-]+\\.[a-z]{2,}$".to_string()),
+        });
         send(Command::Answer { id: 1 });
         sleep(110);
         snapshot("02-bar");
@@ -197,6 +209,11 @@ pub fn run_demo(args: &[String]) {
         snapshot("06-listening");
         sleep(1300);
         send(Command::Recording(Recording::Transcribing));
+        send(Command::Question {
+            id: 2,
+            text: if ru { "А можно построже?" } else { "Can it be stricter?" }.to_string(),
+            selection: None,
+        });
         send(Command::Answer { id: 2 });
         send(Command::Recording(Recording::Ready));
         sleep(800);
@@ -207,6 +224,11 @@ pub fn run_demo(args: &[String]) {
         send(Command::Recording(Recording::Recording));
         sleep(1500);
         send(Command::Recording(Recording::Transcribing));
+        send(Command::Question {
+            id: 3,
+            text: if ru { "Какая последняя версия?" } else { "What's the latest version?" }.to_string(),
+            selection: None,
+        });
         send(Command::Answer { id: 3 });
         send(Command::Recording(Recording::Ready));
         sleep(500);
@@ -226,12 +248,25 @@ pub fn run_demo(args: &[String]) {
         sleep(200);
         return;
     }
-    // Time to look, click, copy, scroll; the cross closes it
+    // Time to look, click, copy, scroll, type; the cross closes it
     println!("Demo playing; close the card with its cross (or wait 60 s)");
     let deadline = Instant::now() + Duration::from_secs(60);
+    let mut next_id = 10;
     loop {
         match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok((Event::Closed, _)) => break,
+            // A question typed into the field
+            Ok((Event::Submit(text), _)) => {
+                next_id += 1;
+                send(Command::Question {
+                    id: next_id,
+                    text,
+                    selection: None,
+                });
+                send(Command::Answer { id: next_id });
+                sleep(500);
+                stream(next_id, if ru { SECOND_RU } else { SECOND_EN }, 6, 28);
+            }
             Ok(_) => {}
             Err(_) => {
                 send(Command::Fold);
@@ -242,6 +277,53 @@ pub fn run_demo(args: &[String]) {
     }
     send(Command::Destroy);
     sleep(200);
+}
+
+/// The text field: it opens as the pencil does, speech goes into
+/// it, it grows with the text and closes as the cross does; then it opens
+/// again for the rest of the demo.
+fn play_field(ru: bool) {
+    send(Command::Field(true));
+    sleep(70);
+    snapshot("t01-fading");
+    sleep(70);
+    snapshot("t01b-bar-growing");
+    sleep(60);
+    snapshot("t02-bar");
+    sleep(150);
+    snapshot("t03-bar-grown");
+    sleep(350);
+    snapshot("t04-field");
+    send(Command::Recording(Recording::Recording));
+    sleep(900);
+    snapshot("t05-listening");
+    send(Command::Recording(Recording::Transcribing));
+    sleep(400);
+    send(Command::Dictated(
+        if ru { "Чем let отличается от const?" } else { "How is let different from const?" }.to_string(),
+    ));
+    send(Command::Recording(Recording::Ready));
+    sleep(400);
+    snapshot("t06-dictated");
+    send(Command::Dictated(
+        if ru {
+            "Объясни на примере с объектом и массивом, и скажи, что будет, если присвоить новое значение в цикле."
+        } else {
+            "Explain it with an object and an array, and say what happens when a new value is assigned in a loop."
+        }
+        .to_string(),
+    ));
+    sleep(400);
+    snapshot("t07-grown");
+    send(Command::Field(false));
+    sleep(90);
+    snapshot("t08-folding");
+    sleep(250);
+    snapshot("t09-shrinking");
+    sleep(500);
+    snapshot("t10-closed");
+    send(Command::Field(true));
+    sleep(800);
 }
 
 // ── Measurements ────────────────────────────────────────

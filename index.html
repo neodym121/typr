@@ -17,7 +17,7 @@
             <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="app-title">
               <span class="app-name">Typr</span>
-              <span class="version-text" id="version-text">v3.3.1</span>
+              <span class="version-text" id="version-text">v3.4.0</span>
             </span>
           </div>
           <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
@@ -41,7 +41,7 @@
           </button>
           <button type="button" class="nav-item" data-section="ask">
             <i class="nav-icon" data-icon="message-circle-question-mark"></i>
-            <span data-i18n="nav.ask">Quick Ask &amp; Chat</span>
+            <span data-i18n="nav.ask">Quick Ask</span>
           </button>
         </nav>
         <div class="sidebar-footer">
@@ -411,30 +411,18 @@
 
         <section id="section-ask" class="content-section">
           <header class="section-header">
-            <h1 class="section-title" data-i18n="ask.title">Quick Ask &amp; Chat</h1>
-            <p class="section-desc" data-i18n="ask.desc">Select text anywhere and ask about it by voice</p>
+            <h1 class="section-title" data-i18n="ask.title">Quick Ask</h1>
+            <p class="section-desc" data-i18n="ask.desc">Ask the AI about selected text or anything else, out loud or in writing</p>
           </header>
           <div class="card">
             <div class="setting-row">
               <div class="setting-label">
                 <label class="label-text" for="ask-enabled" data-i18n="ask.enabled">Quick Ask</label>
-                <span class="label-hint" data-i18n="ask.enabledHint">With text selected, the dictation hotkey asks the model about it instead of typing</span>
+                <span class="label-hint" id="ask-enabled-hint"></span>
               </div>
               <div class="setting-control">
                 <label class="switch">
                   <input type="checkbox" id="ask-enabled" role="switch" />
-                  <span class="switch-track"><span class="switch-thumb"></span></span>
-                </label>
-              </div>
-            </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="ask-chat" data-i18n="ask.chat">Quick Chat</label>
-                <span class="label-hint" id="ask-chat-hint"></span>
-              </div>
-              <div class="setting-control">
-                <label class="switch">
-                  <input type="checkbox" id="ask-chat" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
               </div>
@@ -500,15 +488,15 @@
           <h2 class="group-title" data-i18n="ask.howTitle">How it works</h2>
           <div class="card ask-steps">
             <ol>
-              <li data-i18n="ask.step1">Select text in any app</li>
-              <li data-i18n="ask.step2">Press the hotkey from Recording and ask your question out loud</li>
-              <li data-i18n="ask.step3">The answer appears where the recording indicator is. Press the hotkey again to ask a follow-up; the cross closes the window</li>
+              <li data-i18n="ask.step1">Select text in any app, or press the Quick Ask hotkey to ask about anything</li>
+              <li data-i18n="ask.step2">Press the dictation hotkey from Settings → Hotkeys and ask out loud, or click the pencil and type</li>
+              <li data-i18n="ask.step3">The answer appears where the recording indicator is, under your question. Ask again for a follow-up; the cross closes the window</li>
             </ol>
             <!-- The answer window is drawn with Slint, whose license asks for
                  its logo; the line is always in English -->
             <div class="slint-credit">
               <span class="slint-logo" role="img" aria-label="Slint"></span>
-              <span class="slint-caption">Slint works on your machine</span>
+              <span class="slint-caption">works on your machine</span>
             </div>
           </div>
         </section>
@@ -616,16 +604,16 @@
                 </div>
               </div>
 
-              <h2 class="group-title" data-i18n="hotkeys.chat">Quick Chat</h2>
+              <h2 class="group-title" data-i18n="hotkeys.ask">Quick Ask</h2>
               <div class="card">
                 <div class="setting-row">
                   <div class="setting-label">
                     <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                    <span class="label-hint" id="chat-hotkey-hint"></span>
+                    <span class="label-hint" id="ask-hotkey-hint"></span>
                   </div>
                   <div class="setting-control">
-                    <button type="button" id="chat-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
-                      <kbd id="chat-hotkey-text">Ctrl+Alt</kbd>
+                    <button type="button" id="ask-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                      <kbd id="ask-hotkey-text">Ctrl+Alt</kbd>
                     </button>
                   </div>
                 </div>

@@ -237,6 +237,27 @@ fn take_string(root: &mut Map<String, Value>, path: &[&str]) -> Option<String> {
     }
 }
 
+/// Quick chat, its own switch and hotkey before 3.4, is quick ask now: the
+/// chat hotkey becomes the quick ask one, and a chat that was on turns quick
+/// ask on.
+fn migrate_quick_chat(config: &mut Value) {
+    let Some(root) = config.as_object_mut() else {
+        return;
+    };
+    if let Some(hotkey) = take_string(root, &["chatHotkey"]) {
+        if !root.contains_key("askHotkey") {
+            root.insert("askHotkey".to_string(), Value::String(hotkey));
+        }
+    }
+    let Some(quick_ask) = root.get_mut("quickAsk").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if quick_ask.remove("chat").and_then(|chat| chat.as_bool()) == Some(true) {
+        quick_ask.insert("enabled".to_string(), Value::Bool(true));
+        log::info!("Quick chat is part of quick ask now: quick ask is on");
+    }
+}
+
 /// Moves the keys of a config from before the API keys section (each engine
 /// and section had its own) into `apiKeys`. A key already there stays.
 fn migrate_keys(config: &mut Value) {
@@ -335,15 +356,13 @@ impl PostProcess {
 
 /// Quick ask: with text selected anywhere, the hotkey records a question
 /// about it instead of a dictation, and a language model answers in a small
-/// window that grows out of the recording indicator. While that window is
-/// open, the hotkey asks follow-up questions.
+/// window that grows out of the recording indicator; `Settings::ask_hotkey`
+/// opens that window empty. While it is open, the hotkey asks follow-up
+/// questions (or types into its text field).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct QuickAsk {
     pub enabled: bool,
-    /// Quick chat: `Settings::chat_hotkey` opens the same window as a chat
-    /// with the same model, the questions shown too
-    pub chat: bool,
     pub provider: PostProvider,
     pub gemini: ProviderModel,
     pub openrouter: ProviderModel,
@@ -414,10 +433,10 @@ pub struct Settings {
     #[serde(rename = "recordingMode")]
     pub recording_mode: RecordingMode,
     pub hotkey: String,
-    /// Opens and closes quick chat: keys, two or three modifiers alone
-    /// (e.g. "Ctrl+Alt") or a mouse button
-    #[serde(rename = "chatHotkey")]
-    pub chat_hotkey: String,
+    /// Opens the quick ask window empty and closes it: keys, two or three
+    /// modifiers alone (e.g. "Ctrl+Alt") or a mouse button
+    #[serde(rename = "askHotkey")]
+    pub ask_hotkey: String,
     /// Adds a space after the pasted text, so the next dictation doesn't stick to it
     #[serde(rename = "appendSpace")]
     pub append_space: bool,
@@ -463,7 +482,7 @@ impl Default for Settings {
             local_unload: "5m".to_string(),
             recording_mode: RecordingMode::default(),
             hotkey: "Ctrl+Shift+Space".to_string(),
-            chat_hotkey: "Ctrl+Alt".to_string(),
+            ask_hotkey: "Ctrl+Alt".to_string(),
             append_space: false,
             show_indicator: true,
             indicator_position: IndicatorPosition::default(),
@@ -506,12 +525,14 @@ impl Settings {
         }
     }
 
-    /// Reads config.json, moving the keys of an older one into `apiKeys`.
-    /// A file that isn't JSON gives the defaults.
+    /// Reads config.json, moving the keys of an older one into `apiKeys`
+    /// and its quick chat into quick ask. A file that isn't JSON gives the
+    /// defaults.
     pub fn from_json(contents: &str) -> Self {
         match serde_json::from_str::<Value>(contents) {
             Ok(mut config) => {
                 migrate_keys(&mut config);
+                migrate_quick_chat(&mut config);
                 serde_json::from_value(config).unwrap_or_default()
             }
             Err(_) => Self::default(),
@@ -535,11 +556,11 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, chatHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, openaiEndpoint={}, openaiModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, askHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, openaiEndpoint={}, openaiModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
-            self.chat_hotkey,
+            self.ask_hotkey,
             self.append_space,
             self.microphone,
             or_auto(&self.recognition_language),
@@ -598,9 +619,8 @@ impl Settings {
         let qa = &self.quick_ask;
         let model = qa.provider_settings(qa.provider).model.as_str();
         format!(
-            "{} (chat {}, provider {}, model {}, key {}, web search {}, Exa key {})",
+            "{} (provider {}, model {}, key {}, web search {}, Exa key {})",
             if qa.enabled { "on" } else { "off" },
-            if qa.chat { "on" } else { "off" },
             qa.provider,
             if model.is_empty() { "none" } else { model },
             key_state(self.api_keys.model(qa.provider)),
@@ -623,7 +643,7 @@ impl Settings {
         changed("microphone", &old.microphone, &self.microphone);
         changed("recordingMode", &old.recording_mode, &self.recording_mode);
         changed("hotkey", &old.hotkey, &self.hotkey);
-        changed("chatHotkey", &old.chat_hotkey, &self.chat_hotkey);
+        changed("askHotkey", &old.ask_hotkey, &self.ask_hotkey);
         changed("recognitionLanguage", &old.recognition_language, &self.recognition_language);
         changed("fallbackLocal", &old.fallback_local, &self.fallback_local);
         changed("groqModel", &old.groq_model, &self.groq_model);
@@ -662,7 +682,6 @@ impl Settings {
         let qa_old = &old.quick_ask;
         let qa_new = &self.quick_ask;
         changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
-        changed("quickAsk.chat", &qa_old.chat, &qa_new.chat);
         changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
         changed("quickAsk.webSearch", &qa_old.web_search, &qa_new.web_search);
         for ((provider, before), (_, after)) in qa_old.providers().zip(qa_new.providers()) {
@@ -721,7 +740,7 @@ mod tests {
         assert!(!settings.post_process.translate);
         assert_eq!(settings.post_process.translate_to, TranslationLanguage::English);
         assert_eq!(settings.hotkey, "Ctrl+Shift+Space");
-        assert_eq!(settings.chat_hotkey, "Ctrl+Alt");
+        assert_eq!(settings.ask_hotkey, "Ctrl+Alt");
         assert!(settings.show_indicator);
         assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.check_updates);
@@ -918,14 +937,30 @@ mod tests {
         assert_eq!(settings.quick_ask.provider, PostProvider::Gemini);
 
         let settings: Settings = serde_json::from_str(
-            r#"{"quickAsk":{"enabled":true,"chat":true,"provider":"openrouter","openrouter":{"model":"m"}}}"#,
+            r#"{"quickAsk":{"enabled":true,"provider":"openrouter","openrouter":{"model":"m"}}}"#,
         )
         .unwrap();
         assert!(settings.quick_ask.enabled);
-        assert!(settings.quick_ask.chat);
         assert_eq!(settings.quick_ask.provider, PostProvider::OpenRouter);
         assert_eq!(settings.quick_ask.openrouter.model, "m");
         assert!(serde_json::to_string(&settings).unwrap().contains(r#""quickAsk":{"enabled":true"#));
+    }
+
+    #[test]
+    fn test_quick_chat_becomes_quick_ask() {
+        let settings = Settings::from_json(r#"{"chatHotkey":"MouseBack","quickAsk":{"enabled":false,"chat":true}}"#);
+        assert_eq!(settings.ask_hotkey, "MouseBack");
+        assert!(settings.quick_ask.enabled);
+        let saved = serde_json::to_string(&settings).unwrap();
+        assert!(!saved.contains("chat"));
+
+        // A chat that was off leaves quick ask as it was
+        let settings = Settings::from_json(r#"{"quickAsk":{"enabled":false,"chat":false}}"#);
+        assert!(!settings.quick_ask.enabled);
+        assert_eq!(settings.ask_hotkey, "Ctrl+Alt");
+        // A quick ask hotkey already set stays
+        let settings = Settings::from_json(r#"{"askHotkey":"Ctrl+Shift","chatHotkey":"MouseBack"}"#);
+        assert_eq!(settings.ask_hotkey, "Ctrl+Shift");
     }
 
     #[test]
@@ -934,8 +969,7 @@ mod tests {
         let mut new = Settings::default();
         new.quick_ask.enabled = true;
         new.quick_ask.provider = PostProvider::Polza;
-        new.quick_ask.chat = true;
-        new.chat_hotkey = "Ctrl+Shift".to_string();
+        new.ask_hotkey = "Ctrl+Shift".to_string();
         new.quick_ask.polza.model = "openai/gpt-5-mini".to_string();
         new.api_keys.polza = "pk_secret".to_string();
         new.quick_ask.web_search = true;
@@ -945,14 +979,13 @@ mod tests {
         assert!(changes.contains("quickAsk.enabled: 'false' → 'true'"));
         assert!(changes.contains("quickAsk.provider: 'gemini' → 'polza'"));
         assert!(changes.contains("quickAsk.polza.model: '' → 'openai/gpt-5-mini'"));
-        assert!(changes.contains("quickAsk.chat: 'false' → 'true'"));
-        assert!(changes.contains("chatHotkey: 'Ctrl+Alt' → 'Ctrl+Shift'"));
+        assert!(changes.contains("askHotkey: 'Ctrl+Alt' → 'Ctrl+Shift'"));
         assert!(changes.contains("apiKeys.polza updated (set)"));
         assert!(changes.contains("quickAsk.webSearch: 'false' → 'true'"));
         assert!(changes.contains("apiKeys.exa updated (set)"));
         let summary = new.summary();
         assert!(summary.contains(
-            "quickAsk=on (chat on, provider polza, model openai/gpt-5-mini, key set, web search on, Exa key set)"
+            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, Exa key set)"
         ));
         for secret in ["pk_secret", "exa_secret"] {
             assert!(!changes.contains(secret));

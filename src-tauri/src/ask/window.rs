@@ -8,7 +8,8 @@
 //!   dot goes and the window's own unfolds into the answer card.
 //! * It never takes the focus: the app the question is about stays in front
 //!   and keeps its selection and caret. Clicks pass through it everywhere
-//!   but the card.
+//!   but the card. Only its text field, opened with its pencil, takes the
+//!   keyboard until it is closed.
 //! * Its thread starts with the first window and stays, asleep while no
 //!   window is open; a closed window leaves nothing on screen or in memory
 //!   but that thread and its fonts (about a megabyte).
@@ -17,7 +18,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
-use super::Mode;
 use crate::overlay::{Placement, ScreenRect};
 use crate::settings::{IndicatorPosition, RecordingMode, Settings};
 
@@ -106,9 +106,10 @@ pub struct Layout {
     pub bottom: bool,
     /// "en" or "ru"
     pub language: &'static str,
-    /// Quick chat: opened empty, the questions shown too
-    pub chat: bool,
-    /// The dictation hotkey, for the empty chat to name
+    /// Opened empty by the quick ask hotkey: the dot slides in from behind
+    /// the screen edge, and the card says how to ask
+    pub empty: bool,
+    /// The dictation hotkey, for the empty window to name
     pub hotkey: String,
     pub push_to_talk: bool,
 }
@@ -125,9 +126,9 @@ pub enum Recording {
 pub enum Command {
     /// A new window, hidden, its dot over the indicator's
     Open(Layout),
-    /// On screen: the dot unfolds (quick chat's slides in first)
+    /// On screen: the dot unfolds (an empty window's slides in first)
     Reveal,
-    /// Quick chat: a question, with the start of the text it is about
+    /// A question, with the start of the text it is about
     Question { id: u64, text: String, selection: Option<String> },
     /// An answer is coming
     Answer { id: u64 },
@@ -141,6 +142,11 @@ pub enum Command {
     Cancel { id: u64 },
     Recording(Recording),
     RecordingError(String),
+    /// The text field is open: the transcribed speech goes into it
+    Dictated(String),
+    /// Opens or closes the text field, as its pencil and the cross do (the
+    /// demo)
+    Field(bool),
     /// Folds the card away, as its cross does
     Fold,
     /// Gone at once
@@ -158,6 +164,11 @@ pub enum Event {
     Shown(Instant),
     /// Folded away: the window can be destroyed
     Closed,
+    /// The text field opened or closed: while it is open, dictation goes
+    /// into it instead of asking
+    Typing(bool),
+    /// A question typed into the field
+    Submit(String),
 }
 
 /// What the window's thread has done, for the demo's measurements
@@ -197,10 +208,11 @@ fn screen() -> (ScreenRect, f64) {
 /// The window's first frame is on screen
 static SHOWN: AtomicBool = AtomicBool::new(false);
 
-/// Opens a new window for `mode`, not yet shown, its dot over the
-/// indicator's. The window's thread starts with the first one.
+/// Opens a new window, not yet shown, its dot over the indicator's (`empty`:
+/// opened by the quick ask hotkey). The window's thread starts with the
+/// first one.
 #[cfg(target_os = "windows")]
-pub fn open(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), String> {
+pub fn open(app: &AppHandle, settings: &Settings, empty: bool) -> Result<(), String> {
     use super::native;
     let handle = app.clone();
     native::start(move |event| match event {
@@ -209,16 +221,18 @@ pub fn open(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), Stri
             SHOWN.store(true, Ordering::SeqCst);
             crate::overlay::set_suppressed(&handle, true);
         }
-        // Folded away by its cross or the chat hotkey
+        // Folded away by its cross or the quick ask hotkey
         Event::Closed => super::close(&handle),
+        Event::Typing(on) => super::set_typing(on),
+        Event::Submit(text) => super::submit(&handle, text),
     })?;
 
     let (work_area, scale) = screen();
     let position = settings.indicator_position;
     let geometry = Geometry::new(position, work_area, scale);
     log::info!(
-        "Quick {} window at ({}, {}), {}×{} px ({})",
-        mode.id(),
+        "Quick ask window{} at ({}, {}), {}×{} px ({})",
+        if empty { ", empty," } else { "" },
         geometry.x,
         geometry.y,
         geometry.width,
@@ -230,7 +244,7 @@ pub fn open(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), Stri
         geometry,
         bottom: position == IndicatorPosition::BottomCenter,
         language: crate::i18n::resolve(&settings.language),
-        chat: mode == Mode::Chat,
+        empty,
         hotkey: settings.hotkey.clone(),
         push_to_talk: settings.recording_mode == RecordingMode::PushToTalk,
     }));
@@ -238,7 +252,7 @@ pub fn open(app: &AppHandle, settings: &Settings, mode: Mode) -> Result<(), Stri
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn open(_app: &AppHandle, _settings: &Settings, _mode: Mode) -> Result<(), String> {
+pub fn open(_app: &AppHandle, _settings: &Settings, _empty: bool) -> Result<(), String> {
     Err("The quick ask window is available on Windows only".to_string())
 }
 

@@ -543,7 +543,8 @@ button {
    Slint), in the hints' grey: the logo file is a mask, like the icons */
 .slint-credit {
   display: flex;
-  align-items: center;
+  /* The caption sits on the logo's bottom line */
+  align-items: flex-end;
   gap: 10px;
   margin-top: 12px;
   padding-top: 12px;
@@ -560,6 +561,7 @@ button {
 
 .slint-caption {
   font-size: var(--text-small);
+  line-height: 1;
   color: var(--text-muted);
 }
 

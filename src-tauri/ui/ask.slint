@@ -28,7 +28,7 @@ export struct Block {
 
 export struct Message {
     id: int,
-    // Quick chat: the question, on the right in a box; otherwise an answer
+    // The question, on the right in a box; otherwise an answer
     question: bool,
     text: string,
     // The start of the selection the question is about
@@ -69,6 +69,10 @@ export global Theme {
     out property <color> key-edge: self.key-fill.mix(#f8f8f6, 0.86);
     out property <color> card-edge: self.card-fill.mix(#f8f8f6, 0.86);
     out property <color> card-edge-listening: self.card-fill.mix(#d97757, 0.25);
+    // The text field: an orange edge, dimmer while another window has the
+    // keyboard
+    out property <color> field-fill: self.card-fill.mix(#000000, 0.86);
+    out property <color> field-edge-idle: self.card-fill.mix(#d97757, 0.5);
 }
 
 // A rounded box with a 1px edge, drawn as two fills: where a border and a
@@ -451,8 +455,8 @@ component AnswerView inherits TouchArea {
     }
 }
 
-// Quick chat: a question, on the right in a slightly rounded box. It can't
-// be copied
+// A question, on the right in a slightly rounded box, under the start of
+// the text it is about. It can't be copied
 component QuestionView inherits Rectangle {
     in property <Message> msg;
     // The widest the box may be
@@ -511,7 +515,9 @@ export component AskWindow inherits Window {
     // Layout, from the Rust side: the indicator's centre in the window
     in property <string> ui-font: "Segoe UI";
     in property <bool> bottom;
-    in property <bool> chat;
+    // Opened empty by the quick ask hotkey: the dot slides in, unfolds a
+    // little faster and has no spinner
+    in property <bool> empty;
     in property <length> orb-x;
     in property <length> orb-y;
     in property <length> orb-inset: 18px;
@@ -529,8 +535,8 @@ export component AskWindow inherits Window {
     // How the card moves: 0 grows to its text, 1 unfolds, 2 folds back
     in property <int> motion: 0;
     in property <bool> content-in;
-    // Folded back into the dot, it slides behind the edge it came from;
-    // quick chat's dot slides in from there
+    // Folded back into the dot, it slides behind the edge it came from; an
+    // empty window's dot slides in from there
     in property <bool> gone;
     in property <bool> arriving;
 
@@ -545,11 +551,35 @@ export component AskWindow inherits Window {
     in property <string> searching-label: "Search…";
     in property <string> stopped-label: "Stopped";
 
+    // The text field. `typing`: the pencil fades, the dot moves aside and a
+    // bar grows out of the pencil's place; `field-tall`: the bar
+    // grows into the field (away from the screen edge), the send button
+    // comes out of the cross
+    in property <bool> typing;
+    in property <bool> field-tall;
+    in property <string> field-placeholder: "Type or dictate a question";
+    in-out property <string> field-text <=> input.text;
+    // The selection in the field, as byte offsets: dictation goes there
+    out property <int> field-cursor: input.cursor-position-byte-offset;
+    out property <int> field-anchor: input.anchor-position-byte-offset;
+
     // The answer under the pointer, -1 for none: a click there copies it
     in-out property <int> hovered-answer: -1;
     callback copy-code(int, int);
     callback open-link(string);
+    // The cross; Escape in the field too. With the field open it closes the
+    // field, otherwise the window
     callback close-clicked();
+    callback edit-clicked();
+    // The send button, or Enter in the field (Shift+Enter starts a new line)
+    callback send-clicked();
+
+    public function focus-field() {
+        input.focus();
+    }
+    public function blur-field() {
+        input.clear-focus();
+    }
 
     // Where the card is drawn now: the rest of the window lets clicks through
     out property <length> card-x: card.x + frame.x;
@@ -563,7 +593,37 @@ export component AskWindow inherits Window {
 
     property <bool> open: root.state == 1;
     property <length> strip: 34px;
-    property <length> natural-height: 2px + root.strip + content.preferred-height;
+
+    // The cross's centre: right of the card's middle at the bottom, left of
+    // the dot in the corner. The pencil is left of it; the field ends there
+    property <length> close-cx: root.bottom ? root.orb-x + root.card-width / 2 - 20px : root.orb-x - 30px;
+    property <length> pencil-cx: root.close-cx - 28px;
+    // The open card's left edge, in the window
+    property <length> open-left: root.bottom ? root.orb-x - root.card-width / 2 : root.orb-x + root.orb-inset - root.card-width;
+    // The field in the card: from right of the dot (moved to the left end at
+    // the bottom of the screen) or the card's edge, to left of the cross
+    property <length> field-right: root.close-cx - 18px - root.open-left;
+    property <length> field-left: root.bottom ? root.orb-inset + 16px : 12px;
+    // Tall enough for its text, from two lines to about seven, then it scrolls
+    property <length> field-want: max(56px, min(150px, input.preferred-height + 16px));
+    property <length> field-h: root.typing && root.field-tall ? root.field-want : 20px;
+    // The strip holds the field: it grows with it, and the card with them
+    property <length> bar: max(root.strip, field.height + 14px);
+    // Nothing above the field yet: no room kept for it
+    property <length> content-pad: root.field-tall && root.messages.length == 0 && root.notice == "" ? 0px : 14px;
+    animate content-pad {
+        duration: 200ms;
+        easing: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    // The dot slides to the card's left end at the bottom of the screen, out
+    // of the field's way; in the corner it is out of the way already
+    property <length> orb-shift: root.typing && root.bottom ? root.orb-inset - root.card-width / 2 : 0px;
+    animate orb-shift {
+        delay: root.typing ? 0ms : 60ms;
+        duration: 340ms;
+        easing: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    property <length> natural-height: 2px + root.bar + content.preferred-height;
     // The card's height follows its text, set only when it really changes:
     // bound to the text's height, the card would be redrawn with every
     // streamed piece
@@ -609,8 +669,8 @@ export component AskWindow inherits Window {
     // dot's own radius, the card's inset once it unfolds
     property <length> anchor: root.open ? root.orb-inset : 20px;
     animate anchor {
-        delay: root.unfolding ? (root.chat ? 170ms : 220ms) : 0ms;
-        duration: root.unfolding ? (root.chat ? 300ms : 380ms) : 360ms;
+        delay: root.unfolding ? (root.empty ? 170ms : 220ms) : 0ms;
+        duration: root.unfolding ? (root.empty ? 300ms : 380ms) : 360ms;
         easing: cubic-bezier(0.22, 1, 0.36, 1);
     }
     // The text column: the card less its border, padding and the answers'
@@ -674,26 +734,27 @@ export component AskWindow inherits Window {
             clip: true;
 
             // Opening: the dot stretches into a bar along the screen edge,
-            // then the bar grows into the card; quick chat a little faster.
+            // then the bar grows into the card; an empty one a little faster.
             // Closing folds it back; otherwise it follows its text
             animate width {
-                duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
+                duration: root.unfolding ? (root.empty ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
                 easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
             }
             // Unfolding and folding; in between the spring below moves it
             animate height {
                 enabled: root.motion != 0;
-                delay: root.unfolding ? (root.chat ? 170ms : 220ms) : 0ms;
-                duration: root.unfolding ? (root.chat ? 300ms : 380ms) : root.morphing ? 360ms : 200ms;
+                delay: root.unfolding ? (root.empty ? 170ms : 220ms) : 0ms;
+                duration: root.unfolding ? (root.empty ? 300ms : 380ms) : root.morphing ? 360ms : 200ms;
                 easing: root.unfolding ? cubic-bezier(0.3, 0.7, 0.2, 1) : root.morphing ? cubic-bezier(0.22, 1, 0.36, 1) : cubic-bezier(0.25, 0.8, 0.3, 1);
             }
             animate radius {
-                delay: root.unfolding ? (root.chat ? 110ms : 140ms) : 0ms;
-                duration: root.unfolding ? (root.chat ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
+                delay: root.unfolding ? (root.empty ? 110ms : 140ms) : 0ms;
+                duration: root.unfolding ? (root.empty ? 250ms : 320ms) : root.morphing ? 360ms : 200ms;
             }
             animate edge { duration: 300ms; }
 
-            // The status strip: "Copied" next to the status light
+            // The status strip: "Copied" next to the status light (the field
+            // takes its place while it is open; the answer's flash says it)
             Rectangle {
                 x: 1px;
                 y: root.bottom ? parent.height - 1px - root.strip : 1px;
@@ -705,7 +766,7 @@ export component AskWindow inherits Window {
                     text: root.toast;
                     font-size: 12px;
                     color: Theme.text-muted;
-                    opacity: root.toast-visible ? 1 : 0;
+                    opacity: root.toast-visible && !root.typing ? 1 : 0;
                     animate opacity, y { duration: 160ms; easing: ease; }
                 }
             }
@@ -715,9 +776,9 @@ export component AskWindow inherits Window {
             // text keeps its place while the card grows to it
             flick := Flickable {
                 x: 1px;
-                y: root.bottom ? parent.height - 1px - root.strip - self.height : 1px + root.strip;
+                y: root.bottom ? parent.height - 1px - root.bar - self.height : 1px + root.bar;
                 width: root.card-width - 2px;
-                height: max(0px, root.open-height - 2px - root.strip);
+                height: max(0px, root.open-height - 2px - root.bar);
                 content-width: self.width;
                 content-height: content.preferred-height;
                 mouse-drag-pan-enabled: false;
@@ -739,43 +800,57 @@ export component AskWindow inherits Window {
                     width: flick.width;
                     padding-left: 10px;
                     padding-right: 10px;
-                    padding-top: root.bottom ? 14px : 0px;
-                    padding-bottom: root.bottom ? 0px : 14px;
+                    padding-top: root.bottom ? root.content-pad : 0px;
+                    padding-bottom: root.bottom ? 0px : root.content-pad;
 
-                    // Quick chat before the first question: which hotkey asks
-                    if root.show-empty: HorizontalLayout {
-                        alignment: center;
-                        padding-top: 2px;
-                        spacing: 0px;
-                        Text {
-                            text: root.empty-before;
-                            font-size: 13px;
-                            color: Theme.text-muted;
-                            vertical-alignment: center;
+                    // Opened empty, before the first question: which hotkey asks.
+                    // It fades as the field opens and folds away as the field
+                    // grows over its place
+                    if root.show-empty: Rectangle {
+                        height: root.field-tall ? 0px : hint.preferred-height;
+                        clip: true;
+                        opacity: root.typing ? 0 : 1;
+                        animate height {
+                            duration: 200ms;
+                            easing: cubic-bezier(0.22, 1, 0.36, 1);
                         }
-                        Box {
-                            fill: Theme.key-fill;
-                            edge: Theme.key-edge;
-                            radius: 5px;
-                            HorizontalLayout {
-                                padding-left: 6px;
-                                padding-right: 6px;
-                                padding-top: 1px;
-                                padding-bottom: 2px;
-                                Text {
-                                    text: root.empty-key;
-                                    font-family: Theme.mono;
-                                    font-size: 11.5px;
-                                    color: Theme.text;
-                                    vertical-alignment: center;
+                        animate opacity { duration: 160ms; }
+                        hint := HorizontalLayout {
+                            y: 0;
+                            height: self.preferred-height;
+                            alignment: center;
+                            padding-top: 2px;
+                            spacing: 0px;
+                            Text {
+                                text: root.empty-before;
+                                font-size: 13px;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
+                            Box {
+                                fill: Theme.key-fill;
+                                edge: Theme.key-edge;
+                                radius: 5px;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    padding-top: 1px;
+                                    padding-bottom: 2px;
+                                    Text {
+                                        text: root.empty-key;
+                                        font-family: Theme.mono;
+                                        font-size: 11.5px;
+                                        color: Theme.text;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
-                        }
-                        Text {
-                            text: root.empty-after;
-                            font-size: 13px;
-                            color: Theme.text-muted;
-                            vertical-alignment: center;
+                            Text {
+                                text: root.empty-after;
+                                font-size: 13px;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 
@@ -820,6 +895,105 @@ export component AskWindow inherits Window {
                     }
                 }
             }
+
+            // The text field, in the strip between the dot and the
+            // cross. It starts as a bar the pencil's size where the pencil
+            // was, grows to the left, then away from the screen edge
+            field := Box {
+                property <length> left: root.typing ? root.field-left : root.field-right - 20px;
+                animate left {
+                    delay: root.typing ? 50ms : 0ms;
+                    duration: root.typing ? 300ms : 240ms;
+                    easing: cubic-bezier(0.22, 1, 0.36, 1);
+                }
+                x: self.left;
+                y: root.bottom ? parent.height - 7px - self.height : 7px;
+                width: root.field-right - self.left;
+                height: root.field-h;
+                animate height {
+                    duration: 200ms;
+                    easing: cubic-bezier(0.22, 1, 0.36, 1);
+                }
+                radius: 10px;
+                // It comes out of the card's own colour rather than fading
+                // in: opacity applies to its two fills one by one, and the
+                // orange edge would show through the fill. Folding the card
+                // away takes it at once
+                property <float> show: root.typing && root.content-in ? 1 : 0;
+                animate show {
+                    delay: root.typing || !root.content-in ? 0ms : 160ms;
+                    duration: 160ms;
+                }
+                property <color> ink: input.has-focus ? Theme.accent : Theme.field-edge-idle;
+                animate ink { duration: 160ms; }
+                fill: Theme.field-fill.mix(Theme.card-fill, self.show);
+                edge: self.ink.mix(Theme.card-fill, self.show);
+                visible: self.show > 0;
+
+                Rectangle {
+                    x: 11px;
+                    y: 1px;
+                    width: max(0px, parent.width - 22px);
+                    height: max(0px, parent.height - 2px);
+                    clip: true;
+                    opacity: root.field-tall ? 1 : 0;
+                    animate opacity {
+                        delay: root.field-tall ? 80ms : 0ms;
+                        duration: root.field-tall ? 180ms : 60ms;
+                    }
+
+                    field-flick := Flickable {
+                        y: 7px;
+                        width: parent.width;
+                        height: max(0px, parent.height - 14px);
+                        content-width: self.width;
+                        content-height: max(self.height, input.preferred-height);
+                        mouse-drag-pan-enabled: false;
+
+                        Text {
+                            x: 0;
+                            y: 0;
+                            width: field-flick.width;
+                            text: root.field-placeholder;
+                            color: Theme.text-muted;
+                            visible: root.field-text == "" && input.preedit-text == "";
+                        }
+                        input := TextInput {
+                            x: 0;
+                            y: 0;
+                            width: field-flick.width;
+                            height: max(field-flick.height, self.preferred-height);
+                            single-line: false;
+                            wrap: word-wrap;
+                            color: Theme.text-strong;
+                            selection-background-color: Theme.accent.with-alpha(0.4);
+                            selection-foreground-color: Theme.text-strong;
+                            text-cursor-width: 1.5px;
+                            enabled: root.typing;
+                            key-pressed(event) => {
+                                if event.text == Key.Return && !event.modifiers.shift {
+                                    root.send-clicked();
+                                    return accept;
+                                }
+                                if event.text == Key.Escape {
+                                    root.close-clicked();
+                                    return accept;
+                                }
+                                reject
+                            }
+                            // The caret stays in view once the text is taller
+                            // than the field
+                            cursor-position-changed(position) => {
+                                if position.y + field-flick.content-y < 0px {
+                                    field-flick.content-y = -position.y;
+                                } else if position.y + 20px + field-flick.content-y > field-flick.height {
+                                    field-flick.content-y = min(0px, field-flick.height - position.y - 20px);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // The dot's shadow, while it is the indicator
@@ -839,7 +1013,7 @@ export component AskWindow inherits Window {
         orb := Rectangle {
             property <length> size: !root.open ? 40px : root.phase == 2 ? 18px : root.phase == 1 ? 16px : 12px;
             property <float> breathe: root.open && root.phase == 3 ? breath.value : 0;
-            x: root.orb-x - self.size / 2;
+            x: root.orb-x + root.orb-shift - self.size / 2;
             y: root.orb-y - self.size / 2;
             width: self.size;
             height: self.size;
@@ -894,16 +1068,84 @@ export component AskWindow inherits Window {
                 border-width: 2px;
                 border-color: #f8f8f629;
             }
-            if (root.state == 0 && !root.chat) || (root.open && root.phase == 2): Spinner {
+            if (root.state == 0 && !root.empty) || (root.open && root.phase == 2): Spinner {
                 width: parent.width;
                 height: parent.height;
                 stroke: Theme.text-strong;
             }
         }
 
-        // No tooltip: the window never has the focus anyway
+        // The pencil opens the text field. It fades and the field grows out
+        // of its place; it comes back once the field has folded into it
+        Rectangle {
+            x: root.pencil-cx - 12px;
+            y: root.orb-y - 12px;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: edit-ta.has-hover && !root.typing ? #f8f8f614 : transparent;
+            opacity: root.content-in && !root.typing ? 1 : 0;
+            animate opacity {
+                delay: root.typing || !root.content-in ? 0ms : 300ms;
+                duration: root.typing ? 140ms : 180ms;
+            }
+            animate background { duration: 120ms; }
+            Icon {
+                size: 14px;
+                x: 5px;
+                y: 5px;
+                stroke: edit-ta.has-hover ? Theme.text-strong : Theme.text-muted;
+                commands: "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5l4 4";
+            }
+            edit-ta := TouchArea {
+                enabled: root.content-in && !root.typing;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.edit-clicked();
+                }
+            }
+        }
+        // Sends what the field holds. It comes out of the cross as the field
+        // grows, and fades where it is as the field folds
+        Rectangle {
+            property <bool> ready: root.field-text != "";
+            property <bool> up: root.field-tall || (root.typing && self.opacity > 0);
+            x: root.close-cx - 12px;
+            y: root.orb-y - 12px + (self.up ? (root.bottom ? -30px : 30px) : 0px);
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            background: send-ta.has-hover && self.ready ? #f8f8f614 : transparent;
+            opacity: root.field-tall && root.content-in ? 1 : 0;
+            animate y {
+                duration: 200ms;
+                easing: cubic-bezier(0.22, 1, 0.36, 1);
+            }
+            animate opacity {
+                delay: root.field-tall ? 60ms : 0ms;
+                duration: root.field-tall ? 160ms : 100ms;
+            }
+            animate background { duration: 120ms; }
+            Icon {
+                size: 14px;
+                x: 5px;
+                y: 5px;
+                stroke: !parent.ready ? Theme.text-muted : send-ta.has-hover ? Theme.accent-light : Theme.text-strong;
+                commands: "M5 12l7-7 7 7 M12 19V5";
+            }
+            send-ta := TouchArea {
+                enabled: root.field-tall && parent.ready;
+                mouse-cursor: parent.ready ? pointer : default;
+                clicked => {
+                    root.send-clicked();
+                }
+            }
+        }
+
+        // No tooltip: the window seldom has the focus. With the field open
+        // the cross closes the field
         close := Rectangle {
-            x: (root.bottom ? root.orb-x + root.card-width / 2 - 20px : root.orb-x - 30px) - 12px;
+            x: root.close-cx - 12px;
             y: root.orb-y - 12px;
             width: 24px;
             height: 24px;

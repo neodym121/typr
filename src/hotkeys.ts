@@ -1,8 +1,8 @@
-// Settings → Hotkeys: the dictation hotkey and the quick chat hotkey (the
+// Settings → Hotkeys: the dictation hotkey and the quick ask hotkey (the
 // recording mode next to them stays in main.ts); the setup's last step
 // records the dictation hotkey too. A hotkey is recorded by
-// pressing it: 2 or 3 keys, or the middle or a side mouse button. The chat
-// one may also be modifiers alone, like Ctrl+Alt, which fire when they are
+// pressing it: 2 or 3 keys, or the middle or a side mouse button. The quick
+// ask one may also be modifiers alone, like Ctrl+Alt, which fire when they are
 // let go (modifier_hotkey.rs); the plugin behind the dictation hotkey needs
 // a key besides them. While a hotkey is recorded, Typr's own are paused:
 // Windows would swallow a registered combination before the page saw it.
@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { formatHotkey, formatKey, t, type MessageKey } from "./i18n";
 
 export interface HotkeysHost {
-  settings: () => { hotkey: string; chatHotkey: string; quickAsk: { chat: boolean } };
+  settings: () => { hotkey: string; askHotkey: string; quickAsk: { enabled: boolean } };
   save: () => Promise<void>;
 }
 
@@ -228,14 +228,14 @@ export function initHotkeys(appHost: HotkeysHost) {
   recorders = [
     dictationRecorder(element("hotkey-btn"), element("hotkey-text"), element("hotkey-hint"), "recording.hotkeyHint"),
     {
-      button: element("chat-hotkey-btn"),
-      text: element("chat-hotkey-text"),
-      hint: element("chat-hotkey-hint"),
-      idleHint: () => (settings().quickAsk.chat ? "hotkeys.chatHint" : "hotkeys.chatOffHint"),
-      prompt: "hotkeys.chatPressKeys",
-      promptHint: "hotkeys.chatPressKeysHint",
-      get: () => settings().chatHotkey || "Ctrl+Alt",
-      set: (hotkey) => (settings().chatHotkey = hotkey),
+      button: element("ask-hotkey-btn"),
+      text: element("ask-hotkey-text"),
+      hint: element("ask-hotkey-hint"),
+      idleHint: () => (settings().quickAsk.enabled ? "hotkeys.askHint" : "hotkeys.askOffHint"),
+      prompt: "hotkeys.askPressKeys",
+      promptHint: "hotkeys.askPressKeysHint",
+      get: () => settings().askHotkey || "Ctrl+Alt",
+      set: (hotkey) => (settings().askHotkey = hotkey),
       modifiersAlone: true,
       other: () => settings().hotkey,
       taken: "hotkeys.takenDictation",
@@ -259,8 +259,8 @@ function dictationRecorder(button: HTMLElement, text: HTMLElement, hint: HTMLEle
     get: () => settings().hotkey,
     set: (hotkey) => (settings().hotkey = hotkey),
     modifiersAlone: false,
-    other: () => settings().chatHotkey || "Ctrl+Alt",
-    taken: "hotkeys.takenChat",
+    other: () => settings().askHotkey || "Ctrl+Alt",
+    taken: "hotkeys.takenAsk",
   };
 }
 

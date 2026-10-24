@@ -1,5 +1,5 @@
 //! A mouse button as a hotkey: the middle button or a side button (back,
-//! forward), for dictation or quick chat. The global shortcut plugin only
+//! forward), for dictation or the quick ask window. The global shortcut plugin only
 //! knows keys, so a low-level mouse hook catches the buttons on a thread of
 //! its own. A bound button is swallowed, so it doesn't also go back in the
 //! browser while it starts a dictation. The hook exists only while a mouse
@@ -56,7 +56,7 @@ impl MouseButton {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
     Dictation,
-    Chat,
+    Ask,
 }
 
 impl Slot {
@@ -64,7 +64,7 @@ impl Slot {
     fn index(self) -> usize {
         match self {
             Slot::Dictation => 0,
-            Slot::Chat => 1,
+            Slot::Ask => 1,
         }
     }
 }
@@ -253,7 +253,7 @@ pub fn stop(slot: Slot) {
 /// Removes every mouse hotkey and the hook.
 pub fn stop_all() {
     imp::stop(Slot::Dictation);
-    imp::stop(Slot::Chat);
+    imp::stop(Slot::Ask);
 }
 
 #[cfg(test)]
