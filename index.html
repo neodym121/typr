@@ -12,43 +12,43 @@
     <div id="app">
       <div id="app-body">
       <aside id="sidebar" class="drag-region">
-        <div class="sidebar-header">
-          <div class="app-identity">
-            <img class="app-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
-            <span class="app-title">
-              <span class="app-name">Typr</span>
-              <span class="version-text" id="version-text">v3.4.0</span>
+        <div class="sidebar-top">
+          <div class="brand">
+            <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
+            <span class="brand-title">
+              <span class="brand-name">Typr</span>
+              <span class="brand-version" id="version-text">v3.4.0</span>
             </span>
           </div>
-          <div id="status-indicator" data-state="ready" role="status" aria-live="polite">
-            <span id="status-dot"></span>
-            <span id="status-text">Ready</span>
+          <div id="status" data-state="ready" role="status" aria-live="polite">
+            <span id="status-light"></span>
+            <span id="status-label">Ready</span>
           </div>
           <p id="status-detail" class="hidden"></p>
         </div>
-        <nav id="sidebar-nav">
-          <button type="button" class="nav-item active" data-section="general">
-            <i class="nav-icon" data-icon="sliders-horizontal"></i>
+        <nav id="nav">
+          <button type="button" class="nav-link active" data-section="general">
+            <i class="nav-link-icon" data-icon="sliders-horizontal"></i>
             <span data-i18n="nav.general">Basics</span>
           </button>
-          <button type="button" class="nav-item" data-section="engine">
-            <i class="nav-icon" data-icon="audio-lines"></i>
+          <button type="button" class="nav-link" data-section="engine">
+            <i class="nav-link-icon" data-icon="audio-lines"></i>
             <span data-i18n="nav.engine">Engine</span>
           </button>
-          <button type="button" class="nav-item" data-section="postprocess">
-            <i class="nav-icon" data-icon="sparkles"></i>
+          <button type="button" class="nav-link" data-section="postprocess">
+            <i class="nav-link-icon" data-icon="sparkles"></i>
             <span data-i18n="nav.postprocess">Post-processing</span>
           </button>
-          <button type="button" class="nav-item" data-section="ask">
-            <i class="nav-icon" data-icon="message-circle-question-mark"></i>
+          <button type="button" class="nav-link" data-section="ask">
+            <i class="nav-link-icon" data-icon="message-circle-question-mark"></i>
             <span data-i18n="nav.ask">Quick Ask</span>
           </button>
         </nav>
-        <div class="sidebar-footer">
+        <div class="sidebar-bottom">
           <button type="button" class="update-link hidden" id="update-link"></button>
           <!-- Opens the Settings window (#settings) -->
-          <button type="button" class="nav-item" id="nav-settings" aria-haspopup="dialog">
-            <i class="nav-icon" data-icon="settings"></i>
+          <button type="button" class="nav-link" id="nav-settings" aria-haspopup="dialog">
+            <i class="nav-link-icon" data-icon="settings"></i>
             <span id="nav-settings-label" data-i18n="nav.settings">Settings</span>
             <!-- Errors logged since the Developer tab was last seen -->
             <span class="nav-badge dev-badge hidden"></span>
@@ -60,27 +60,27 @@
       <!-- The window has no system title bar: this strip drags it -->
       <div id="titlebar" class="titlebar drag-region"></div>
       <main id="content">
-        <section id="section-general" class="content-section active">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="general.title">General</h1>
-            <p class="section-desc" data-i18n="general.desc">Audio input and app preferences</p>
+        <section id="section-general" class="page active">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="general.title">General</h1>
+            <p class="page-lead" data-i18n="general.desc">Audio input and app preferences</p>
           </header>
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="general.microphone">Microphone</span>
-                <span class="label-hint" data-i18n="general.microphoneHint">Input device used for dictation</span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="general.microphone">Microphone</span>
+                <span class="pref-hint" data-i18n="general.microphoneHint">Input device used for dictation</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <select id="mic-select"></select>
               </div>
             </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="indicator-toggle" data-i18n="general.indicator">Recording indicator</label>
-                <span class="label-hint" data-i18n="general.indicatorHint">Mic that slides in at the edge of the screen while you dictate</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="indicator-toggle" data-i18n="general.indicator">Recording indicator</label>
+                <span class="pref-hint" data-i18n="general.indicatorHint">Mic that slides in at the edge of the screen while you dictate</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="indicator-toggle" role="switch" checked />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -88,36 +88,36 @@
               </div>
             </div>
             <!-- Shown while the indicator is on -->
-            <div class="setting-row wide-control" id="indicator-position-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="general.indicatorPosition">Indicator position</span>
-                <span class="label-hint" data-i18n="general.indicatorPositionHint">Top right corner, or bottom center just above the taskbar</span>
+            <div class="pref wide-control" id="indicator-position-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="general.indicatorPosition">Indicator position</span>
+                <span class="pref-hint" data-i18n="general.indicatorPositionHint">Top right corner, or bottom center just above the taskbar</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <div class="segmented" id="indicator-position">
                   <button type="button" class="segment" data-position="top-right" data-i18n="general.indicatorTopRight">Top right</button>
                   <button type="button" class="segment" data-position="bottom-center" data-i18n="general.indicatorBottomCenter">Bottom center</button>
                 </div>
               </div>
             </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="general.language">Language</span>
-                <span class="label-hint" data-i18n="general.languageHint">Interface language</span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="general.language">Language</span>
+                <span class="pref-hint" data-i18n="general.languageHint">Interface language</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <div class="segmented" id="language-select">
                   <button type="button" class="segment" data-lang="en" lang="en">English</button>
                   <button type="button" class="segment" data-lang="ru" lang="ru">Русский</button>
                 </div>
               </div>
             </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="updates-toggle" data-i18n="general.updates">Check for updates</label>
-                <span class="label-hint" id="updates-status" data-i18n="general.updatesHint">Looks for new releases on GitHub</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="updates-toggle" data-i18n="general.updates">Check for updates</label>
+                <span class="pref-hint" id="updates-status" data-i18n="general.updatesHint">Looks for new releases on GitHub</span>
               </div>
-              <div class="setting-control control-group">
+              <div class="pref-control control-group">
                 <button type="button" class="btn btn-secondary btn-compact" id="updates-check" data-i18n="general.updatesCheck">Check now</button>
                 <label class="switch">
                   <input type="checkbox" id="updates-toggle" role="switch" checked />
@@ -128,21 +128,21 @@
           </div>
         </section>
 
-        <section id="section-engine" class="content-section">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="engine.title">Engine</h1>
-            <p class="section-desc" data-i18n="engine.desc">A local model or a cloud service turns your speech into text</p>
+        <section id="section-engine" class="page">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="engine.title">Engine</h1>
+            <p class="page-lead" data-i18n="engine.desc">A local model or a cloud service turns your speech into text</p>
           </header>
-          <div class="segmented full engine-tabs">
-            <button type="button" id="engine-local" class="segment" data-i18n="engine.local">Local</button>
-            <button type="button" id="engine-groq" class="segment active">Groq Cloud</button>
-            <button type="button" id="engine-polza" class="segment">Polza</button>
-            <button type="button" id="engine-assemblyai" class="segment">AssemblyAI</button>
-            <button type="button" id="engine-openai" class="segment" data-i18n="engine.openai">OpenAI Compatible</button>
+          <div class="segmented full engine-tabs" id="engine-select">
+            <button type="button" class="segment" data-engine="local" data-i18n="engine.local">Local</button>
+            <button type="button" class="segment active" data-engine="groq">Groq Cloud</button>
+            <button type="button" class="segment" data-engine="polza">Polza</button>
+            <button type="button" class="segment" data-engine="assemblyai">AssemblyAI</button>
+            <button type="button" class="segment" data-engine="openai" data-i18n="engine.openai">OpenAI Compatible</button>
           </div>
 
           <!-- Local recognition (src/local.ts) -->
-          <div id="local-settings" class="hidden">
+          <div id="local-panel" class="hidden" data-engine-panel="local">
             <p id="local-unsupported" class="local-note hidden" data-i18n="local.unsupported">Local recognition works on 64-bit Windows only</p>
             <h2 class="group-title" data-i18n="local.models">Models</h2>
             <p class="group-hint" data-i18n="local.modelsHint">Downloaded once and run on this computer. The audio never leaves it</p>
@@ -155,25 +155,25 @@
 
             <h2 class="group-title" data-i18n="local.performance">Performance</h2>
             <div class="card">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="local.acceleration">Acceleration</span>
-                  <span class="label-hint" data-i18n="local.accelerationHint">Run the model on the GPU or the processor</span>
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="local.acceleration">Acceleration</span>
+                  <span class="pref-hint" data-i18n="local.accelerationHint">Run the model on the GPU or the processor</span>
                   <span class="local-error hidden" id="local-fallback"></span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <div class="segmented" id="local-backends">
                     <button type="button" class="segment" data-backend="vulkan">Vulkan</button>
                     <button type="button" class="segment" data-backend="cpu" data-i18n="local.cpu">CPU</button>
                   </div>
                 </div>
               </div>
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="local.unloadAfter">Unload from memory</span>
-                  <span class="label-hint" data-i18n="local.unloadHint">When an idle model frees the memory it takes</span>
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="local.unloadAfter">Unload from memory</span>
+                  <span class="pref-hint" data-i18n="local.unloadHint">When an idle model frees the memory it takes</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <select id="local-unload">
                     <option value="immediate" data-i18n="local.unloadImmediate">Right after transcription</option>
                     <option value="30s" data-i18n="local.unload30s">After 30 seconds</option>
@@ -186,15 +186,15 @@
             </div>
           </div>
 
-          <div class="card" id="cloud-settings">
-            <!-- Groq Settings -->
-            <div id="groq-settings">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.model">Model</span>
-                  <span class="label-hint" data-i18n="engine.modelHint">Speech recognition model</span>
+          <!-- The cloud engines' settings, one panel each -->
+          <div class="card" id="cloud-panel">
+            <div data-engine-panel="groq">
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.model">Model</span>
+                  <span class="pref-hint" data-i18n="engine.modelHint">Speech recognition model</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <select id="groq-model">
                     <option value="whisper-large-v3-turbo">Whisper Large v3 Turbo</option>
                     <option value="whisper-large-v3">Whisper Large v3</option>
@@ -203,68 +203,65 @@
               </div>
             </div>
 
-            <!-- OpenAI Compatible Settings -->
-            <div id="openai-settings" class="hidden">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.endpoint">API Endpoint</span>
-                  <span class="label-hint" data-i18n="engine.endpointHint">Base URL or /audio/transcriptions</span>
+            <div class="hidden" data-engine-panel="openai">
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.endpoint">API Endpoint</span>
+                  <span class="pref-hint" data-i18n="engine.endpointHint">Base URL or /audio/transcriptions</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <input type="text" id="openai-endpoint" placeholder="https://api.openai.com/v1" />
                 </div>
               </div>
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.modelId">Model ID</span>
-                  <span class="label-hint" data-i18n="engine.openaiModelHint">Model identifier (e.g. whisper-1)</span>
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.modelId">Model ID</span>
+                  <span class="pref-hint" data-i18n="engine.openaiModelHint">Model identifier (e.g. whisper-1)</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <input type="text" id="openai-model" placeholder="whisper-1" />
                 </div>
               </div>
               <!-- apiKeys.openai: this server's key stays with its address, not in Settings → API keys -->
-              <div class="setting-row">
-                <div class="setting-label">
-                  <label class="label-text" for="openai-key" data-i18n="engine.apiKey">API key</label>
-                  <span class="label-hint" data-i18n="engine.openaiKeyHint">Leave empty if the server needs no key</span>
+              <div class="pref">
+                <div class="pref-text">
+                  <label class="pref-name" for="openai-key" data-i18n="engine.apiKey">API key</label>
+                  <span class="pref-hint" data-i18n="engine.openaiKeyHint">Leave empty if the server needs no key</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <input type="password" id="openai-key" placeholder="sk-…" spellcheck="false" autocomplete="off" />
                 </div>
               </div>
             </div>
 
-            <!-- Polza Settings -->
-            <div id="polza-settings" class="hidden">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.modelId">Model ID</span>
-                  <span class="label-hint" data-i18n="engine.polzaModelHint">e.g. openai/whisper-large-v3</span>
+            <div class="hidden" data-engine-panel="polza">
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.modelId">Model ID</span>
+                  <span class="pref-hint" data-i18n="engine.polzaModelHint">e.g. openai/whisper-large-v3</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <input type="text" id="polza-model" placeholder="openai/whisper-large-v3" />
                 </div>
               </div>
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.providerId">Provider ID</span>
-                  <span class="label-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.providerId">Provider ID</span>
+                  <span class="pref-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <input type="text" id="polza-provider" placeholder="e.g. openai-direct" data-i18n-placeholder="engine.providerIdPlaceholder" />
                 </div>
               </div>
             </div>
 
-            <!-- AssemblyAI Settings -->
-            <div id="assemblyai-settings" class="hidden">
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text" data-i18n="engine.model">Model</span>
-                  <span class="label-hint" data-i18n="engine.modelHint">Speech recognition model</span>
+            <div class="hidden" data-engine-panel="assemblyai">
+              <div class="pref">
+                <div class="pref-text">
+                  <span class="pref-name" data-i18n="engine.model">Model</span>
+                  <span class="pref-hint" data-i18n="engine.modelHint">Speech recognition model</span>
                 </div>
-                <div class="setting-control">
+                <div class="pref-control">
                   <select id="assemblyai-model">
                     <option value="universal-3-5-pro">Universal-3.5 Pro</option>
                     <option value="universal-2">Universal-2</option>
@@ -276,21 +273,21 @@
 
           <h2 class="group-title" data-i18n="engine.speech">Speech</h2>
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.recognitionLanguage">Language</span>
-                <span class="label-hint" data-i18n="engine.recognitionLanguageHint">The language you dictate in</span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.recognitionLanguage">Language</span>
+                <span class="pref-hint" data-i18n="engine.recognitionLanguageHint">The language you dictate in</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <select id="recognition-language"></select>
               </div>
             </div>
-            <div class="setting-row" id="fallback-row">
-              <div class="setting-label">
-                <label class="label-text" for="fallback-toggle" data-i18n="engine.fallback">Local fallback</label>
-                <span class="label-hint" data-i18n="engine.fallbackHint">If the cloud fails, a downloaded local model transcribes the dictation</span>
+            <div class="pref" id="fallback-row">
+              <div class="pref-text">
+                <label class="pref-name" for="fallback-toggle" data-i18n="engine.fallback">Local fallback</label>
+                <span class="pref-hint" data-i18n="engine.fallbackHint">If the cloud fails, a downloaded local model transcribes the dictation</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="fallback-toggle" role="switch" checked />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -300,30 +297,30 @@
           </div>
         </section>
 
-        <section id="section-postprocess" class="content-section">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="post.title">Post-processing</h1>
-            <p class="section-desc" data-i18n="post.desc">An AI model polishes the dictated text before it is pasted</p>
+        <section id="section-postprocess" class="page">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="post.title">Post-processing</h1>
+            <p class="page-lead" data-i18n="post.desc">An AI model polishes the dictated text before it is pasted</p>
           </header>
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="post-enabled" data-i18n="post.enabled">Post-processing</label>
-                <span class="label-hint" data-i18n="post.enabledHint">Send every dictation through the model below</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="post-enabled" data-i18n="post.enabled">Post-processing</label>
+                <span class="pref-hint" data-i18n="post.enabledHint">Send every dictation through the model below</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="post-enabled" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
               </div>
             </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="post-translate" data-i18n="post.translate">Translation</label>
-                <span class="label-hint" data-i18n="post.translateHint">Translates every dictation into the language below with the same model. When you already speak it, the text isn't translated</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="post-translate" data-i18n="post.translate">Translation</label>
+                <span class="pref-hint" data-i18n="post.translateHint">Translates every dictation into the language below with the same model. When you already speak it, the text isn't translated</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="post-translate" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -332,12 +329,12 @@
             </div>
             <!-- Buttons built by src/postprocess.ts, flags from src/flags -->
             <div class="translate-languages hidden" id="post-languages" role="radiogroup"></div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="post.provider">Provider</span>
-                <span class="label-hint" data-i18n="post.providerHint">Service that runs the model</span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="post.provider">Provider</span>
+                <span class="pref-hint" data-i18n="post.providerHint">Service that runs the model</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <select id="post-provider">
                   <option value="gemini">Gemini</option>
                   <option value="openrouter">OpenRouter</option>
@@ -349,21 +346,21 @@
           </div>
 
           <div class="card">
-            <div class="setting-row hidden" id="post-polza-provider-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.providerId">Provider ID</span>
-                <span class="label-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
+            <div class="pref hidden" id="post-polza-provider-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.providerId">Provider ID</span>
+                <span class="pref-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <input type="text" id="post-polza-provider" placeholder="e.g. openai-direct" data-i18n-placeholder="engine.providerIdPlaceholder" spellcheck="false" />
               </div>
             </div>
-            <div class="setting-row model-head">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.model">Model</span>
-                <span class="label-hint" id="post-model-current"></span>
+            <div class="pref model-head">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.model">Model</span>
+                <span class="pref-hint" id="post-model-current"></span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <button type="button" class="btn btn-secondary" id="post-model-refresh" data-i18n="post.refresh">Refresh</button>
               </div>
             </div>
@@ -375,12 +372,12 @@
           </div>
 
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="post.style">Style</span>
-                <span class="label-hint" id="post-preset-hint"></span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="post.style">Style</span>
+                <span class="pref-hint" id="post-preset-hint"></span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <div class="segmented" id="post-presets">
                   <button type="button" class="segment" data-preset="chill" data-i18n="post.chill">Chill</button>
                   <button type="button" class="segment" data-preset="proper" data-i18n="post.proper">Proper</button>
@@ -394,12 +391,12 @@
           </div>
 
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="append-space-toggle" data-i18n="post.appendSpace">Space after text</label>
-                <span class="label-hint" data-i18n="post.appendSpaceHint">Adds a space after the pasted text, so the next phrase doesn't stick to it. Works even with post-processing off</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="append-space-toggle" data-i18n="post.appendSpace">Space after text</label>
+                <span class="pref-hint" data-i18n="post.appendSpaceHint">Adds a space after the pasted text, so the next phrase doesn't stick to it. Works even with post-processing off</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="append-space-toggle" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -409,30 +406,30 @@
           </div>
         </section>
 
-        <section id="section-ask" class="content-section">
-          <header class="section-header">
-            <h1 class="section-title" data-i18n="ask.title">Quick Ask</h1>
-            <p class="section-desc" data-i18n="ask.desc">Ask the AI about selected text or anything else, out loud or in writing</p>
+        <section id="section-ask" class="page">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="ask.title">Quick Ask</h1>
+            <p class="page-lead" data-i18n="ask.desc">Ask the AI about selected text or anything else, out loud or in writing</p>
           </header>
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="ask-enabled" data-i18n="ask.enabled">Quick Ask</label>
-                <span class="label-hint" id="ask-enabled-hint"></span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="ask-enabled" data-i18n="ask.enabled">Quick Ask</label>
+                <span class="pref-hint" id="ask-enabled-hint"></span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="ask-enabled" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
                 </label>
               </div>
             </div>
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="post.provider">Provider</span>
-                <span class="label-hint" data-i18n="post.providerHint">Service that runs the model</span>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="post.provider">Provider</span>
+                <span class="pref-hint" data-i18n="post.providerHint">Service that runs the model</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <select id="ask-provider">
                   <option value="gemini">Gemini</option>
                   <option value="openrouter">OpenRouter</option>
@@ -444,21 +441,21 @@
           </div>
 
           <div class="card">
-            <div class="setting-row hidden" id="ask-polza-provider-row">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.providerId">Provider ID</span>
-                <span class="label-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
+            <div class="pref hidden" id="ask-polza-provider-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.providerId">Provider ID</span>
+                <span class="pref-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <input type="text" id="ask-polza-provider" placeholder="e.g. openai-direct" data-i18n-placeholder="engine.providerIdPlaceholder" spellcheck="false" />
               </div>
             </div>
-            <div class="setting-row model-head">
-              <div class="setting-label">
-                <span class="label-text" data-i18n="engine.model">Model</span>
-                <span class="label-hint" id="ask-model-current"></span>
+            <div class="pref model-head">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.model">Model</span>
+                <span class="pref-hint" id="ask-model-current"></span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <button type="button" class="btn btn-secondary" id="ask-model-refresh" data-i18n="post.refresh">Refresh</button>
               </div>
             </div>
@@ -471,12 +468,12 @@
 
           <h2 class="group-title" data-i18n="ask.searchTitle">Web search</h2>
           <div class="card">
-            <div class="setting-row">
-              <div class="setting-label">
-                <label class="label-text" for="ask-search" data-i18n="ask.search">Search the web</label>
-                <span class="label-hint" data-i18n="ask.searchHint">When a question needs fresh facts, the model looks them up with Exa and names its sources</span>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="ask-search" data-i18n="ask.search">Search the web</label>
+                <span class="pref-hint" data-i18n="ask.searchHint">When a question needs fresh facts, the model looks them up with Exa and names its sources</span>
               </div>
-              <div class="setting-control">
+              <div class="pref-control">
                 <label class="switch">
                   <input type="checkbox" id="ask-search" role="switch" />
                   <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -526,12 +523,12 @@
           <div class="settings-body" id="settings-body">
             <div class="settings-panel active" id="settings-main" role="tabpanel">
               <div class="card">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <label class="label-text" for="autostart-toggle" data-i18n="general.autostart">Start with Windows</label>
-                    <span class="label-hint" data-i18n="general.autostartHint">Typr starts in the tray when you sign in</span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <label class="pref-name" for="autostart-toggle" data-i18n="general.autostart">Start with Windows</label>
+                    <span class="pref-hint" data-i18n="general.autostartHint">Typr starts in the tray when you sign in</span>
                   </div>
-                  <div class="setting-control">
+                  <div class="pref-control">
                     <label class="switch">
                       <input type="checkbox" id="autostart-toggle" role="switch" />
                       <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -542,21 +539,21 @@
 
               <h2 class="group-title" data-i18n="general.advanced">Advanced</h2>
               <div class="card">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text" data-i18n="general.setup">Setup wizard</span>
-                    <span class="label-hint" data-i18n="general.setupHint">Go through the first-run setup again</span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <span class="pref-name" data-i18n="general.setup">Setup wizard</span>
+                    <span class="pref-hint" data-i18n="general.setupHint">Go through the first-run setup again</span>
                   </div>
-                  <div class="setting-control">
+                  <div class="pref-control">
                     <button type="button" class="btn btn-secondary btn-compact" id="setup-run" data-i18n="general.setupRun">Open</button>
                   </div>
                 </div>
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <label class="label-text" for="dev-mode-toggle" data-i18n="general.devMode">Developer mode</label>
-                    <span class="label-hint" data-i18n="general.devModeHint">Records everything the app does and shows it in the Developer tab</span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <label class="pref-name" for="dev-mode-toggle" data-i18n="general.devMode">Developer mode</label>
+                    <span class="pref-hint" data-i18n="general.devModeHint">Records everything the app does and shows it in the Developer tab</span>
                   </div>
-                  <div class="setting-control">
+                  <div class="pref-control">
                     <label class="switch">
                       <input type="checkbox" id="dev-mode-toggle" role="switch" />
                       <span class="switch-track"><span class="switch-thumb"></span></span>
@@ -579,26 +576,26 @@
               <!-- Hotkeys recorded by src/hotkeys.ts -->
               <h2 class="group-title" data-i18n="hotkeys.dictation">Dictation</h2>
               <div class="card">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                    <span class="label-hint" id="hotkey-hint"></span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <span class="pref-name" data-i18n="recording.hotkey">Hotkey</span>
+                    <span class="pref-hint" id="hotkey-hint"></span>
                   </div>
-                  <div class="setting-control">
-                    <button type="button" id="hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                  <div class="pref-control">
+                    <button type="button" id="hotkey-btn" class="hotkey-button" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
                       <kbd id="hotkey-text">Ctrl+Shift+Space</kbd>
                     </button>
                   </div>
                 </div>
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text" data-i18n="recording.mode">Recording Mode</span>
-                    <span class="label-hint" data-i18n="recording.modeHint">Toggle starts/stops, Push to Talk records while held</span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <span class="pref-name" data-i18n="recording.mode">Recording Mode</span>
+                    <span class="pref-hint" data-i18n="recording.modeHint">Toggle starts/stops, Push to Talk records while held</span>
                   </div>
-                  <div class="setting-control">
-                    <div class="segmented">
-                      <button type="button" id="mode-toggle" class="segment" data-i18n="recording.toggle">Toggle</button>
-                      <button type="button" id="mode-ptt" class="segment active" data-i18n="recording.ptt">Push to Talk</button>
+                  <div class="pref-control">
+                    <div class="segmented" id="recording-mode">
+                      <button type="button" class="segment" data-mode="toggle" data-i18n="recording.toggle">Toggle</button>
+                      <button type="button" class="segment active" data-mode="push-to-talk" data-i18n="recording.ptt">Push to Talk</button>
                     </div>
                   </div>
                 </div>
@@ -606,13 +603,13 @@
 
               <h2 class="group-title" data-i18n="hotkeys.ask">Quick Ask</h2>
               <div class="card">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text" data-i18n="recording.hotkey">Hotkey</span>
-                    <span class="label-hint" id="ask-hotkey-hint"></span>
+                <div class="pref">
+                  <div class="pref-text">
+                    <span class="pref-name" data-i18n="recording.hotkey">Hotkey</span>
+                    <span class="pref-hint" id="ask-hotkey-hint"></span>
                   </div>
-                  <div class="setting-control">
-                    <button type="button" id="ask-hotkey-btn" class="hotkey-record-btn" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                  <div class="pref-control">
+                    <button type="button" id="ask-hotkey-btn" class="hotkey-button" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
                       <kbd id="ask-hotkey-text">Ctrl+Alt</kbd>
                     </button>
                   </div>
@@ -654,7 +651,7 @@
         <div class="setup-titlebar drag-region"></div>
         <div class="setup-panel">
           <header class="setup-head drag-region">
-            <img class="app-mark" src="/assets/logo.svg" width="28" height="28" alt="" />
+            <img class="brand-mark" src="/assets/logo.svg" width="28" height="28" alt="" />
             <span class="setup-progress" id="setup-progress"></span>
             <button type="button" class="setup-skip" id="setup-skip" data-i18n="setup.skip">Skip setup</button>
           </header>

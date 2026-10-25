@@ -559,8 +559,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_missing_key() {
-        let result = list_models(PostProvider::Gemini, " ").await;
-        assert!(result.unwrap_err().contains("API key not set"));
+    async fn models_are_not_listed_without_a_key() {
+        let error = list_models(PostProvider::Gemini, " ").await.unwrap_err();
+        assert!(error.contains("API key not set"), "{}", error);
     }
 }

@@ -1,7 +1,9 @@
+//! Typr's settings and their file, config.json in the app data folder.
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// An enum saved as a plain string id in config.json. An unknown id (a typo,
 /// a value from a newer version) reads as the default instead of failing the
@@ -513,16 +515,15 @@ fn or_auto(value: &str) -> &str {
 }
 
 impl Settings {
-    pub fn config_path(app_dir: &PathBuf) -> PathBuf {
-        app_dir.join("config.json")
+    /// config.json in `dir`.
+    pub fn file_in(dir: &Path) -> PathBuf {
+        dir.join("config.json")
     }
 
-    pub fn load(app_dir: &PathBuf) -> Self {
-        let path = Self::config_path(app_dir);
-        match fs::read_to_string(&path) {
-            Ok(contents) => Self::from_json(&contents),
-            Err(_) => Self::default(),
-        }
+    /// The settings saved in `dir`; the defaults when there is no file yet
+    /// or it can't be read.
+    pub fn load(dir: &Path) -> Self {
+        fs::read_to_string(Self::file_in(dir)).map_or_else(|_| Self::default(), |json| Self::from_json(&json))
     }
 
     /// Reads config.json, moving the keys of an older one into `apiKeys`
@@ -545,11 +546,13 @@ impl Settings {
         (!code.is_empty()).then_some(code)
     }
 
-    pub fn save(&self, app_dir: &PathBuf) -> Result<(), String> {
-        let path = Self::config_path(app_dir);
-        fs::create_dir_all(app_dir).map_err(|e| e.to_string())?;
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        fs::write(&path, json).map_err(|e| e.to_string())
+    /// Writes config.json into `dir`, making the folder first if needed.
+    pub fn save(&self, dir: &Path) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("Settings can't be written as JSON: {}", e))?;
+        let file = Self::file_in(dir);
+        fs::create_dir_all(dir)
+            .and_then(|()| fs::write(&file, json))
+            .map_err(|e| format!("Failed to write {}: {}", file.display(), e))
     }
 
     /// One-line description for logs. API keys are never included,
@@ -713,12 +716,40 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env::temp_dir;
+
+    /// A folder of its own for one test under the system's temp folder,
+    /// empty at the start and removed at the end.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(test: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("typr-{}-{}", test, std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            Scratch(dir)
+        }
+
+        /// The folder with a config.json holding `json`.
+        fn with_config(test: &str, json: &str) -> Self {
+            let scratch = Self::new(test);
+            fs::create_dir_all(&scratch.0).unwrap();
+            fs::write(Settings::file_in(&scratch.0), json).unwrap();
+            scratch
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
-    fn test_default_settings() {
+    fn the_defaults_of_a_new_config() {
         let settings = Settings::default();
-        assert_eq!(settings.microphone, "default");
+        assert_eq!(
+            (settings.microphone.as_str(), settings.hotkey.as_str(), settings.ask_hotkey.as_str()),
+            ("default", "Ctrl+Shift+Space", "Ctrl+Alt")
+        );
         assert_eq!(settings.engine, Engine::Groq);
         assert_eq!(settings.api_keys, ApiKeys::default());
         assert_eq!(settings.groq_model, "whisper-large-v3-turbo");
@@ -739,8 +770,6 @@ mod tests {
         assert_eq!(settings.recording_mode, RecordingMode::PushToTalk);
         assert!(!settings.post_process.translate);
         assert_eq!(settings.post_process.translate_to, TranslationLanguage::English);
-        assert_eq!(settings.hotkey, "Ctrl+Shift+Space");
-        assert_eq!(settings.ask_hotkey, "Ctrl+Alt");
         assert!(settings.show_indicator);
         assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.check_updates);
@@ -752,7 +781,7 @@ mod tests {
     fn test_missing_fields_get_defaults() {
         let settings: Settings = serde_json::from_str(r#"{"engine":"local"}"#).unwrap();
         assert_eq!(settings.engine, Engine::Local);
-        assert_eq!(settings.microphone, "default");
+        assert_eq!(settings.microphone, Settings::default().microphone);
         assert_eq!(settings.local_model, "parakeet-tdt-0.6b-v3");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.post_process, PostProcess::default());
@@ -862,19 +891,8 @@ mod tests {
 
     #[test]
     fn test_official_preset_migrated_to_proper() {
-        let dir = temp_dir().join("typr_test_preset");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("config.json"),
-            r#"{"microphone":"default","postProcess":{"preset":"official"}}"#,
-        )
-        .unwrap();
-
-        let loaded = Settings::load(&dir);
-        assert_eq!(loaded.post_process.preset, Preset::Proper);
-
-        let _ = fs::remove_dir_all(&dir);
+        let scratch = Scratch::with_config("preset", r#"{"microphone":"default","postProcess":{"preset":"official"}}"#);
+        assert_eq!(Settings::load(&scratch.0).post_process.preset, Preset::Proper);
     }
 
     #[test]
@@ -885,14 +903,12 @@ mod tests {
 
     #[test]
     fn test_one_key_per_service() {
-        let mut settings = Settings::default();
-        settings.api_keys.groq = " gsk_key ".to_string();
-        settings.api_keys.gemini = "AIza_key".to_string();
-        assert_eq!(settings.api_keys.engine(Engine::Groq), "gsk_key");
-        assert_eq!(settings.api_keys.model(PostProvider::Groq), "gsk_key");
-        assert_eq!(settings.api_keys.model(PostProvider::Gemini), "AIza_key");
-        assert_eq!(settings.api_keys.model(PostProvider::Polza), "");
-        assert_eq!(settings.api_keys.engine(Engine::Local), "");
+        let keys = ApiKeys { groq: " gsk_key ".to_string(), gemini: "AIza_key".to_string(), ..Default::default() };
+        assert_eq!(keys.engine(Engine::Groq), "gsk_key");
+        assert_eq!(keys.model(PostProvider::Groq), "gsk_key");
+        assert_eq!(keys.model(PostProvider::Gemini), "AIza_key");
+        assert_eq!(keys.model(PostProvider::Polza), "");
+        assert_eq!(keys.engine(Engine::Local), "");
     }
 
     #[test]
@@ -932,9 +948,9 @@ mod tests {
 
     #[test]
     fn test_quick_ask_is_off_by_default_and_reads_from_the_file() {
-        let settings = Settings::default();
-        assert!(!settings.quick_ask.enabled);
-        assert_eq!(settings.quick_ask.provider, PostProvider::Gemini);
+        let defaults = QuickAsk::default();
+        assert!(!defaults.enabled);
+        assert_eq!(defaults.provider, PostProvider::Gemini);
 
         let settings: Settings = serde_json::from_str(
             r#"{"quickAsk":{"enabled":true,"provider":"openrouter","openrouter":{"model":"m"}}}"#,
@@ -995,10 +1011,9 @@ mod tests {
 
     #[test]
     fn test_language_hint() {
-        let mut settings = Settings::default();
-        assert_eq!(settings.language_hint(), None);
-        settings.recognition_language = "ru".to_string();
-        assert_eq!(settings.language_hint(), Some("ru"));
+        let with = |code: &str| Settings { recognition_language: code.to_string(), ..Default::default() };
+        assert_eq!(with("").language_hint(), None);
+        assert_eq!(with(" ru ").language_hint(), Some("ru"));
     }
 
     #[test]
@@ -1014,43 +1029,28 @@ mod tests {
     }
 
     #[test]
-    fn test_save_and_load() {
-        let dir = temp_dir().join("typr_test_settings");
-        let _ = fs::remove_dir_all(&dir);
-
-        let mut settings = Settings::default();
-        settings.engine = Engine::OpenAi;
-        settings.api_keys.openai = "test-key-123".to_string();
-        settings.openai_model = "whisper-custom".to_string();
-        settings.openai_endpoint = "https://custom.ai/v1".to_string();
-        settings.recognition_language = "en".to_string();
-
-        settings.save(&dir).unwrap();
-        let loaded = Settings::load(&dir);
-        assert_eq!(loaded, settings);
-
-        let _ = fs::remove_dir_all(&dir);
+    fn saved_settings_read_back_the_same() {
+        let scratch = Scratch::new("round-trip");
+        let settings = Settings {
+            engine: Engine::OpenAi,
+            openai_endpoint: "http://localhost:8080/v1".to_string(),
+            openai_model: "large-v3".to_string(),
+            recognition_language: "en".to_string(),
+            api_keys: ApiKeys { openai: "sk-local".to_string(), ..Default::default() },
+            ..Default::default()
+        };
+        // The folder doesn't exist yet: saving makes it
+        settings.save(&scratch.0).unwrap();
+        assert_eq!(Settings::load(&scratch.0), settings);
     }
 
     #[test]
-    fn test_load_missing_file_returns_default() {
-        let dir = temp_dir().join("typr_test_missing");
-        let _ = fs::remove_dir_all(&dir);
-        let settings = Settings::load(&dir);
-        assert_eq!(settings, Settings::default());
-        assert!(!settings.setup_done);
-    }
+    fn no_file_or_a_broken_one_gives_the_defaults() {
+        let missing = Settings::load(&Scratch::new("missing").0);
+        assert_eq!(missing, Settings::default());
+        assert!(!missing.setup_done);
 
-    #[test]
-    fn test_load_corrupt_json_returns_default() {
-        let dir = temp_dir().join("typr_test_corrupt");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("config.json"), "not json").unwrap();
-
-        let settings = Settings::load(&dir);
-        assert_eq!(settings, Settings::default());
-
-        let _ = fs::remove_dir_all(&dir);
+        let broken = Scratch::with_config("broken", "{ this is not json");
+        assert_eq!(Settings::load(&broken.0), Settings::default());
     }
 }

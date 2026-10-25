@@ -32,132 +32,144 @@ fn period_ends_sentence(word: &str) -> bool {
     !ABBREVIATIONS.contains(&body.to_lowercase().as_str())
 }
 
+/// The transcript as it gets pasted. Words are kept as they are, one space
+/// apart; only sentence starts gain a capital and the end gains a mark.
 pub fn cleanup_text(text: &str) -> String {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.is_empty() {
-        return String::new();
-    }
-
-    let mut result = String::with_capacity(text.len() + 1);
-    let mut capitalize_next = true;
-    for (i, word) in words.iter().enumerate() {
-        if i > 0 {
-            result.push(' ');
+    let mut out = String::with_capacity(text.len() + 1);
+    let mut starts_sentence = true;
+    for word in text.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
         }
-        // Words with a capital already (iPhone, eBay, USA) stay as they are
-        let mut capitalized = !capitalize_next || word.chars().any(char::is_uppercase);
-        for ch in word.chars() {
-            if !capitalized && ch.is_alphabetic() {
-                result.extend(ch.to_uppercase());
-                capitalized = true;
-            } else {
-                if !capitalized && !is_opener(ch) {
-                    // A sentence starting with a number or a symbol keeps it as is
-                    capitalized = true;
-                }
-                result.push(ch);
-            }
-        }
-
-        // Does this word end a sentence? Only . ! ? count (an ellipsis
-        // usually goes on in lowercase), possibly followed by closers.
-        let end = word.trim_end_matches(is_closer);
-        capitalize_next = if end.ends_with("...") || end.ends_with('…') {
-            false
-        } else if end.ends_with('!') || end.ends_with('?') {
-            true
-        } else if end.ends_with('.') {
-            period_ends_sentence(end)
+        if starts_sentence {
+            push_capitalized(&mut out, word);
         } else {
-            false
-        };
-    }
-
-    // Ensure ending punctuation
-    let end = result.trim_end_matches(is_closer);
-    match end.chars().last() {
-        Some('.' | '!' | '?' | '…' | ':') => {}
-        Some(',' | ';') => {
-            // A trailing comma becomes the period of the sentence
-            let cut = end.len() - 1;
-            let closers = result[end.len()..].to_string();
-            result.truncate(cut);
-            result.push('.');
-            result.push_str(&closers);
+            out.push_str(word);
         }
-        _ => result.push('.'),
+        starts_sentence = ends_sentence(word);
     }
+    if !out.is_empty() {
+        close_last_sentence(&mut out);
+    }
+    out
+}
 
-    result
+/// Appends `word` with its first letter in upper case, past any opening
+/// quotes or brackets. A word with a capital somewhere already (iPhone,
+/// eBay, USA) stays as it is, and so does one that starts with a digit or
+/// another symbol.
+fn push_capitalized(out: &mut String, word: &str) {
+    if word.chars().any(char::is_uppercase) {
+        out.push_str(word);
+        return;
+    }
+    let rest = word.trim_start_matches(is_opener);
+    let mut letters = rest.chars();
+    match letters.next() {
+        Some(first) if first.is_alphabetic() => {
+            out.push_str(&word[..word.len() - rest.len()]);
+            out.extend(first.to_uppercase());
+            out.push_str(letters.as_str());
+        }
+        _ => out.push_str(word),
+    }
+}
+
+/// Whether the word after `word` starts a new sentence: `word` ends with
+/// ! or ?, or with a period that isn't an abbreviation's, maybe followed by
+/// closing quotes and brackets. An ellipsis doesn't count, speech usually
+/// goes on after it in lower case.
+fn ends_sentence(word: &str) -> bool {
+    let end = word.trim_end_matches(is_closer);
+    match end.chars().next_back() {
+        Some('!' | '?') => true,
+        Some('.') if !end.ends_with("...") => period_ends_sentence(end),
+        _ => false,
+    }
+}
+
+/// Makes sure the text ends with a sentence mark, before any closing quotes
+/// and brackets. A trailing comma or semicolon becomes the period; with no
+/// mark at all, the period goes after the closers.
+fn close_last_sentence(out: &mut String) {
+    let body = out.trim_end_matches(is_closer).len();
+    match out[..body].chars().next_back() {
+        Some('.' | '!' | '?' | '…' | ':') => {}
+        Some(',' | ';') => out.replace_range(body - 1..body, "."),
+        _ => out.push('.'),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::cleanup_text;
 
-    #[test]
-    fn test_trim_whitespace() {
-        assert_eq!(cleanup_text("  hello world  "), "Hello world.");
+    /// Each pair is what was dictated and what gets pasted.
+    fn check(cases: &[(&str, &str)]) {
+        for &(dictated, pasted) in cases {
+            assert_eq!(cleanup_text(dictated), pasted, "dictated: {:?}", dictated);
+        }
     }
 
     #[test]
-    fn test_normalize_spaces() {
-        assert_eq!(cleanup_text("hello    world"), "Hello world.");
-        assert_eq!(cleanup_text("hello\n\tworld"), "Hello world.");
+    fn whitespace_collapses_to_single_spaces() {
+        check(&[
+            ("  one more time  ", "One more time."),
+            ("one    more\n\ttime", "One more time."),
+            ("", ""),
+            (" \n\t ", ""),
+        ]);
     }
 
     #[test]
-    fn test_capitalize_after_sentence_end() {
-        assert_eq!(cleanup_text("hello. world"), "Hello. World.");
-        assert_eq!(cleanup_text("hello? world"), "Hello? World.");
-        assert_eq!(cleanup_text("hello! world"), "Hello! World.");
-        assert_eq!(cleanup_text("привет. как дела"), "Привет. Как дела.");
-        assert_eq!(cleanup_text("он сказал «да.» потом ушёл"), "Он сказал «да.» Потом ушёл.");
+    fn every_sentence_starts_with_a_capital() {
+        check(&[
+            ("it works. ship it", "It works. Ship it."),
+            ("ready? go", "Ready? Go."),
+            ("stop! wait", "Stop! Wait."),
+            ("привет. как дела", "Привет. Как дела."),
+            ("он сказал «да.» потом ушёл", "Он сказал «да.» Потом ушёл."),
+        ]);
     }
 
     #[test]
-    fn test_no_capitals_inside_numbers_addresses_and_abbreviations() {
-        assert_eq!(cleanup_text("версия 3.14 вышла"), "Версия 3.14 вышла.");
-        assert_eq!(cleanup_text("open example.com now"), "Open example.com now.");
-        assert_eq!(cleanup_text("это т.е. вот так"), "Это т.е. вот так.");
-        assert_eq!(cleanup_text("яблоки, груши и т.д. и т.п."), "Яблоки, груши и т.д. и т.п.");
-        assert_eq!(cleanup_text("см. рисунок ниже"), "См. рисунок ниже.");
-        assert_eq!(cleanup_text("use tools e.g. hammers"), "Use tools e.g. hammers.");
+    fn numbers_addresses_and_abbreviations_end_nothing() {
+        check(&[
+            ("версия 3.14 вышла", "Версия 3.14 вышла."),
+            ("open example.com now", "Open example.com now."),
+            ("это т.е. вот так", "Это т.е. вот так."),
+            ("яблоки, груши и т.д. и т.п.", "Яблоки, груши и т.д. и т.п."),
+            ("см. рисунок ниже", "См. рисунок ниже."),
+            ("use tools e.g. hammers", "Use tools e.g. hammers."),
+        ]);
     }
 
     #[test]
-    fn test_ellipsis_keeps_lowercase() {
-        assert_eq!(cleanup_text("ну... ладно"), "Ну... ладно.");
-        assert_eq!(cleanup_text("ну… ладно"), "Ну… ладно.");
+    fn an_ellipsis_goes_on_in_lowercase() {
+        check(&[("ну... ладно", "Ну... ладно."), ("ну… ладно", "Ну… ладно.")]);
     }
 
     #[test]
-    fn test_sentence_starting_with_a_number_or_quote() {
-        assert_eq!(cleanup_text("5 apples. «ok» then"), "5 apples. «Ok» then.");
-        assert_eq!(cleanup_text("iPhone is here"), "iPhone is here.");
+    fn numbers_quotes_and_capitals_inside_words() {
+        check(&[
+            ("5 apples. «ok» then", "5 apples. «Ok» then."),
+            ("iPhone is here", "iPhone is here."),
+        ]);
     }
 
     #[test]
-    fn test_ending_punctuation() {
-        assert_eq!(cleanup_text("hello world"), "Hello world.");
-        assert_eq!(cleanup_text("hello world."), "Hello world.");
-        assert_eq!(cleanup_text("hello world!"), "Hello world!");
-        assert_eq!(cleanup_text("hello world?"), "Hello world?");
-        assert_eq!(cleanup_text("и так далее…"), "И так далее…");
-        assert_eq!(cleanup_text("he said \"stop!\""), "He said \"stop!\"");
-        assert_eq!(cleanup_text("(как-то так)"), "(Как-то так).");
-        assert_eq!(cleanup_text("список:"), "Список:");
-        assert_eq!(cleanup_text("hello world,"), "Hello world.");
-    }
-
-    #[test]
-    fn test_empty_string() {
-        assert_eq!(cleanup_text(""), "");
-        assert_eq!(cleanup_text("   "), "");
-    }
-
-    #[test]
-    fn test_already_clean() {
-        assert_eq!(cleanup_text("Hello world."), "Hello world.");
+    fn the_text_ends_with_one_mark() {
+        check(&[
+            ("that is all", "That is all."),
+            ("that is all.", "That is all."),
+            ("that is all!", "That is all!"),
+            ("is that all?", "Is that all?"),
+            ("и так далее…", "И так далее…"),
+            ("he said \"stop!\"", "He said \"stop!\""),
+            ("(как-то так)", "(Как-то так)."),
+            ("список:", "Список:"),
+            ("that is all,", "That is all."),
+            ("That is all.", "That is all."),
+        ]);
     }
 }

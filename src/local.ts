@@ -81,7 +81,7 @@ const UNLOAD_CHOICES = ["immediate", "30s", "5m", "10m", "never"];
 const RUNTIME_KEY = "runtime";
 const CONFIRM_TIMEOUT = 3000;
 
-const panel = document.getElementById("local-settings")!;
+const panel = document.getElementById("local-panel")!;
 const unsupportedNote = document.getElementById("local-unsupported")!;
 const modelList = document.getElementById("local-model-list")!;
 const backendButtons = document.querySelectorAll<HTMLButtonElement>("#local-backends .segment");
@@ -262,10 +262,10 @@ function renderModels() {
       }
 
       const desc = document.createElement("span");
-      desc.className = "label-hint";
+      desc.className = "pref-hint";
       desc.textContent = t(`local.about.${model.id}` as MessageKey);
       const meta = document.createElement("span");
-      meta.className = "label-hint local-model-meta";
+      meta.className = "pref-hint local-model-meta";
       meta.textContent = `${t(`local.languages.${model.id}` as MessageKey)} · ${formatSize(model.size)}`;
       info.append(title, desc, meta);
 

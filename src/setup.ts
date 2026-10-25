@@ -143,11 +143,11 @@ function choice(options: {
 
 /** A labelled field row like the settings rows */
 function field(label: string, hint: string, control: HTMLElement): HTMLElement {
-  const row = el("div", "setting-row");
-  const labels = el("div", "setting-label");
-  labels.append(el("span", "label-text", label));
-  if (hint) labels.append(el("span", "label-hint", hint));
-  const holder = el("div", "setting-control");
+  const row = el("div", "pref");
+  const labels = el("div", "pref-text");
+  labels.append(el("span", "pref-name", label));
+  if (hint) labels.append(el("span", "pref-hint", hint));
+  const holder = el("div", "pref-control");
   holder.append(control);
   row.append(labels, holder);
   return row;
@@ -411,12 +411,12 @@ function renderDone(): HTMLElement[] {
 
   // A click records new keys right here, as in Settings → Hotkeys
   const hotkey = el("div", "setup-hotkey");
-  const keys = el("button", "hotkey-record-btn");
+  const keys = el("button", "hotkey-button");
   keys.type = "button";
   keys.title = t("recording.hotkeyChange");
   const keysText = el("kbd");
   keys.append(keysText);
-  const keysHint = el("span", "label-hint");
+  const keysHint = el("span", "pref-hint");
   hotkey.append(keys, keysHint);
   bindDictationHotkey(keys, keysText, keysHint, "setup.hotkeyHint");
 

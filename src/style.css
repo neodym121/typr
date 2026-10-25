@@ -68,24 +68,25 @@
   --ease: 0.2s ease;
 }
 
-* {
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
 }
 
+/* A settings window rather than a document: nothing scrolls the whole page,
+   and text is selectable only where it is worth copying (the log, errors) */
 body {
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 400;
-  line-height: 1.5;
+  overflow: hidden;
   background: var(--surface-canvas);
   color: var(--text-primary);
-  user-select: none;
-  -webkit-user-select: none;
+  font: 400 var(--text-body) / 1.5 var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 button {
@@ -97,18 +98,18 @@ button {
   outline-offset: 2px;
 }
 
-/* ── App Shell ──────────────────────────────────────── */
+/* ── Window layout ──────────────────────────────────── */
 
+/* One row: the sidebar beside the page column. Settings, the setup and the
+   window buttons are fixed on top of it */
 #app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
-  width: 100vw;
 }
 
 #app-body {
   display: flex;
-  flex: 1;
   min-height: 0;
 }
 
@@ -174,139 +175,139 @@ button {
   background: var(--accent-soft);
 }
 
-/* ── Sidebar ────────────────────────────────────────── */
+/* ── Sidebar: logo, status, pages, Settings ─────────── */
 
 #sidebar {
-  width: 220px;
-  min-width: 220px;
-  background: var(--surface-sidebar);
-  border-right: 1px solid var(--border);
+  flex: 0 0 220px;
   display: flex;
   flex-direction: column;
   padding: 22px 12px 12px;
+  background: var(--surface-sidebar);
+  border-right: 1px solid var(--border);
 }
 
-.sidebar-header {
+.sidebar-top {
   padding: 0 4px 20px;
 }
 
-.app-identity {
-  display: flex;
+/* The logo, then the name with the version beside it */
+.brand {
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: start;
   align-items: center;
-  gap: 10px;
+  column-gap: 10px;
   margin: 0 4px 20px;
 }
 
-.app-mark {
+/* Also in the setup's header */
+.brand-mark {
   display: block;
-  flex-shrink: 0;
+  flex: none;
   /* Let the sidebar's mousedown handler drag the window instead of the image */
   pointer-events: none;
   -webkit-user-drag: none;
 }
 
-/* The name with the version beside it */
-.app-title {
+.brand-title {
   display: flex;
   align-items: baseline;
   gap: 7px;
   min-width: 0;
 }
 
-.app-name {
-  font-family: var(--font-serif);
-  font-size: var(--text-heading-sm);
-  font-weight: 400;
-  line-height: 1;
+.brand-name {
+  font: 400 var(--text-heading-sm) / 1 var(--font-serif);
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
-#status-indicator {
+.brand-version {
+  color: var(--text-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* What the dictation is doing: a light and a word. Each state sets the
+   light's and the word's colour; the light may also pulse or turn hollow */
+#status {
+  --status-light: var(--text-muted);
+  --status-word: var(--text-secondary);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 7px 10px;
-  background: var(--surface-hover);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
+  background: var(--surface-hover);
   transition: border-color var(--ease), background var(--ease);
 }
 
-#status-dot {
+#status-light {
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
-  flex-shrink: 0;
+  background: var(--status-light);
   transition: background var(--ease), box-shadow var(--ease);
 }
 
-#status-text {
+#status-label {
+  color: var(--status-word);
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
 }
 
-#status-indicator[data-state="recording"] {
+#status[data-state="recording"] {
+  --status-light: var(--accent);
+  --status-word: var(--text-primary);
   border-color: rgba(217, 119, 87, 0.35);
 }
 
-#status-indicator[data-state="recording"] #status-dot {
-  background: var(--accent);
+#status[data-state="recording"] #status-light {
   box-shadow: 0 0 0 4px var(--accent-soft);
   animation: breathe 1.2s ease-in-out infinite;
 }
 
-#status-indicator[data-state="recording"] #status-text,
-#status-indicator[data-state="transcribing"] #status-text {
-  color: var(--text-primary);
+#status[data-state="transcribing"] {
+  --status-light: var(--text-primary);
+  --status-word: var(--text-primary);
 }
 
-#status-indicator[data-state="transcribing"] #status-dot {
-  background: var(--text-primary);
+#status[data-state="transcribing"] #status-light {
   animation: breathe 1.6s ease-in-out infinite;
 }
 
-#status-indicator[data-state="error"] {
+#status[data-state="error"] {
+  --status-light: transparent;
+  --status-word: var(--accent-light);
   border-color: rgba(217, 119, 87, 0.35);
   background: rgba(217, 119, 87, 0.06);
 }
 
-#status-indicator[data-state="error"] #status-dot {
-  background: transparent;
+#status[data-state="error"] #status-light {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-#status-indicator[data-state="error"] #status-text {
-  color: var(--accent-light);
-}
-
 /* The cloud failed and the local model transcribed instead */
-#status-indicator[data-state="notice"] {
+#status[data-state="notice"] {
+  --status-light: var(--text-secondary);
+  --status-word: var(--text-primary);
   border-color: var(--border-strong);
 }
 
-#status-indicator[data-state="notice"] #status-dot {
-  background: var(--text-secondary);
-}
-
-#status-indicator[data-state="notice"] #status-text {
-  color: var(--text-primary);
-}
-
 /* Hotkey switched off from the tray */
-#status-indicator[data-state="paused"] #status-dot {
-  background: transparent;
+#status[data-state="paused"] {
+  --status-light: transparent;
+  --status-word: var(--text-muted);
+}
+
+#status[data-state="paused"] #status-light {
   box-shadow: inset 0 0 0 2px var(--text-faint);
 }
 
-#status-indicator[data-state="paused"] #status-text {
-  color: var(--text-muted);
-}
-
 @keyframes breathe {
-  0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
 
@@ -324,47 +325,49 @@ button {
   -webkit-user-select: text;
 }
 
-/* ── Navigation ─────────────────────────────────────── */
-
-#sidebar-nav {
+/* The pages of the main window, one link each */
+#nav {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  align-content: start;
   gap: 2px;
 }
 
-.nav-item {
+.nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
   padding: 8px 12px;
-  border: none;
+  border: 0;
   border-radius: var(--radius-control);
-  background: transparent;
+  background: none;
   color: var(--text-muted);
   font-size: var(--text-body);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  position: relative;
   transition: color var(--ease), background var(--ease);
 }
 
-.nav-item:hover {
+.nav-link:hover,
+.nav-link.active {
   color: var(--text-primary);
+}
+
+.nav-link:hover {
   background: var(--surface-hover);
 }
 
-.nav-item.active {
-  color: var(--text-primary);
+.nav-link.active {
   background: var(--surface-active);
 }
 
-.nav-icon {
+.nav-link-icon {
+  flex: none;
   width: 16px;
   height: 16px;
-  flex-shrink: 0;
   opacity: 0.85;
 }
 
@@ -383,22 +386,13 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Sidebar Footer ─────────────────────────────────── */
-
-/* The Settings button at the very bottom, under a hairline */
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
+/* The Settings button at the very bottom, under a hairline, and the update
+   link above it */
+.sidebar-bottom {
+  display: grid;
   gap: 6px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
-}
-
-.version-text {
-  font-size: var(--text-caption);
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* A newer release: a small link above the Settings button */
@@ -418,29 +412,29 @@ button {
   color: var(--text-primary);
 }
 
-.label-hint.update-note {
+.pref-hint.update-note {
   color: var(--accent-light);
 }
 
 /* A button next to a switch in one setting row */
-.setting-control.control-group {
+.pref-control.control-group {
   align-items: center;
   gap: 12px;
 }
 
 /* A row whose control is wider than the usual column: the control keeps its
    size, and in a narrow window it moves under the label */
-.setting-row.wide-control {
+.pref.wide-control {
   flex-wrap: wrap;
   row-gap: 10px;
 }
 
-.setting-row.wide-control > .setting-control {
+.pref.wide-control > .pref-control {
   flex: 0 0 auto;
   margin-left: auto;
 }
 
-/* ── Content Area ───────────────────────────────────── */
+/* ── Pages ──────────────────────────────────────────── */
 
 #content {
   flex: 1;
@@ -449,44 +443,39 @@ button {
   background: var(--surface-canvas);
 }
 
-.content-section {
-  display: none;
+/* Only the page chosen in the sidebar is shown */
+.page {
   max-width: 720px;
-  margin: 0 auto;
+  margin-inline: auto;
   padding: 4px 36px 36px;
 }
 
-.content-section.active {
-  display: block;
+.page:not(.active) {
+  display: none;
 }
 
-@keyframes fadeIn {
+@keyframes rise-in {
   from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes fadeInOpacity {
+@keyframes fade-in {
   from { opacity: 0; }
-  to { opacity: 1; }
 }
 
-.section-header {
+.page-head {
   margin-bottom: 24px;
 }
 
-.section-title {
-  font-family: var(--font-serif);
-  font-size: var(--text-heading);
-  font-weight: 400;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
+.page-title {
   margin-bottom: 8px;
+  color: var(--text-primary);
+  font: 400 var(--text-heading) / 1.2 var(--font-serif);
+  letter-spacing: -0.01em;
 }
 
-.section-desc {
-  font-size: var(--text-base);
+.page-lead {
   color: var(--text-muted);
+  font-size: var(--text-base);
 }
 
 .group-title {
@@ -566,7 +555,7 @@ button {
 }
 
 /* API keys: a wider field than the other rows have */
-.key-row .setting-control {
+.key-row .pref-control {
   flex-basis: 300px;
 }
 
@@ -596,40 +585,45 @@ kbd.inline-kbd:hover {
   border-color: var(--border-hover);
 }
 
-.setting-row {
+/* A setting in a card: its name and hint on the left, the control on the
+   right, a hairline between settings */
+.pref {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   padding: 12px 0;
+}
+
+.pref:not(:last-child) {
   border-bottom: 1px solid var(--border);
 }
 
-.setting-row:last-child {
-  border-bottom: none;
-}
-
-.setting-label {
+.pref-text {
   flex: 1 1 200px;
   min-width: 0;
 }
 
-.label-text {
+.pref-name,
+.pref-hint {
   display: block;
+}
+
+.pref-name {
+  margin-bottom: 2px;
+  color: var(--text-primary);
   font-size: var(--text-body);
   font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 2px;
 }
 
-.label-hint {
-  display: block;
+.pref-hint {
+  color: var(--text-muted);
   font-size: var(--text-small);
   line-height: 1.4;
-  color: var(--text-muted);
 }
 
-.setting-control {
+/* The control column; what is in it keeps to the right edge */
+.pref-control {
   flex: 0 1 260px;
   min-width: 0;
   display: flex;
@@ -637,12 +631,12 @@ kbd.inline-kbd:hover {
 }
 
 /* Post-processing: model list with search, custom prompt */
-.setting-row.model-head {
+.pref.model-head {
   border-bottom: none;
   padding-bottom: 8px;
 }
 
-.model-head .setting-control {
+.model-head .pref-control {
   flex: 0 0 auto;
 }
 
@@ -1106,26 +1100,29 @@ kbd.inline-kbd:hover {
   to { opacity: 1; transform: none; }
 }
 
-/* ── Form Controls ──────────────────────────────────── */
+/* ── Text fields ────────────────────────────────────── */
 
+/* Fields and native selects look alike: an inset box with a hairline that
+   brightens on hover and gets a halo with the focus. (The selects are
+   mostly hidden under dropdown.ts's lists.) */
 select,
 input[type="text"],
 input[type="password"],
 input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   max-width: 260px;
   height: 32px;
   padding: 0 10px;
-  background: var(--surface-inset);
-  color: var(--text-primary);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
+  outline: 0;
+  background: var(--surface-inset);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-body);
-  outline: none;
   transition: border-color var(--ease), box-shadow var(--ease);
-  appearance: none;
-  -webkit-appearance: none;
 }
 
 select {
@@ -1139,17 +1136,11 @@ select option {
   color: var(--text-primary);
 }
 
-select:hover,
-input[type="text"]:hover,
-input[type="password"]:hover,
-input[type="search"]:hover {
+:is(select, input[type="text"], input[type="password"], input[type="search"]):hover {
   border-color: var(--border-hover);
 }
 
-select:focus,
-input[type="text"]:focus,
-input[type="password"]:focus,
-input[type="search"]:focus {
+:is(select, input[type="text"], input[type="password"], input[type="search"]):focus {
   border-color: var(--border-focus);
   box-shadow: var(--focus-halo);
 }
@@ -1355,14 +1346,15 @@ input[type="search"]::-webkit-search-cancel-button {
   border-color: var(--border-hover);
 }
 
-/* ── Hotkey Record Button & Kbd ─────────────────────── */
+/* ── Hotkeys as keycaps ─────────────────────────────── */
 
-.hotkey-record-btn {
-  background: transparent;
-  border: none;
+/* A click records a new hotkey (src/hotkeys.ts) */
+.hotkey-button {
   padding: 0;
-  cursor: pointer;
+  border: 0;
   border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
 }
 
 kbd {
@@ -1381,12 +1373,12 @@ kbd {
   transition: color var(--ease), border-color var(--ease), box-shadow var(--ease);
 }
 
-.hotkey-record-btn:hover kbd {
+.hotkey-button:hover kbd {
   color: var(--text-primary);
   border-color: var(--border-hover);
 }
 
-.hotkey-record-btn.recording kbd {
+.hotkey-button.recording kbd {
   color: var(--text-primary);
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -1579,7 +1571,7 @@ input.log-search {
   position: absolute;
   inset: 0;
   background: rgba(12, 12, 11, 0.6);
-  animation: fadeInOpacity 0.18s ease;
+  animation: fade-in 0.18s ease;
 }
 
 .settings-dialog {
@@ -1599,7 +1591,7 @@ input.log-search {
 }
 
 .settings.closing .settings-backdrop {
-  animation: fadeOutOpacity 0.14s ease forwards;
+  animation: fade-out 0.14s ease forwards;
 }
 
 .settings.closing .settings-dialog {
@@ -1616,7 +1608,7 @@ input.log-search {
   to { opacity: 0; transform: translateY(4px) scale(0.99); }
 }
 
-@keyframes fadeOutOpacity {
+@keyframes fade-out {
   from { opacity: 1; }
   to { opacity: 0; }
 }
@@ -1699,15 +1691,15 @@ input.log-search {
 /* The window is narrower than the page: switches and buttons take only
    their own width, so the hints beside them keep their lines. Its width
    doesn't follow a narrow main window, so its rows never wrap either */
-.settings-panel .setting-row {
+.settings-panel .pref {
   flex-wrap: nowrap;
 }
 
-.settings-panel .setting-control {
+.settings-panel .pref-control {
   flex: 0 0 auto;
 }
 
-.settings-panel .key-row .setting-control {
+.settings-panel .key-row .pref-control {
   flex: 0 1 300px;
 }
 
@@ -1728,7 +1720,7 @@ input.log-search {
   display: flex;
   justify-content: center;
   background: var(--surface-canvas);
-  animation: fadeInOpacity 0.2s ease;
+  animation: fade-in 0.2s ease;
 }
 
 /* Drags the window: the strip above the panel, under the window buttons */
@@ -1782,7 +1774,7 @@ input.log-search {
   overflow-y: auto;
   margin: 0 -8px;
   padding: 0 8px 12px;
-  animation: fadeIn 0.25s ease;
+  animation: rise-in 0.25s ease;
 }
 
 .setup-title {
@@ -1922,7 +1914,7 @@ input.log-search {
   margin-bottom: 4px;
 }
 
-.setup-hotkey .hotkey-record-btn {
+.setup-hotkey .hotkey-button {
   flex: none;
 }
 
@@ -1945,8 +1937,9 @@ input.log-search {
   min-width: 96px;
 }
 
-/* ── Utility ────────────────────────────────────────── */
+/* ── Helpers ────────────────────────────────────────── */
 
+/* Wins over any display a component sets */
 .hidden {
   display: none !important;
 }
@@ -1960,7 +1953,7 @@ input.log-search {
   visibility: hidden;
 }
 
-/* ── Scrollbars ─────────────────────────────────────── */
+/* ── Scrollbars and selected text ───────────────────── */
 
 ::-webkit-scrollbar {
   width: 10px;
@@ -1988,8 +1981,7 @@ input.log-search {
   background: transparent;
 }
 
-/* ── Selection ──────────────────────────────────────── */
-
+/* A light veil; the text keeps its colour */
 ::selection {
   background: rgba(248, 248, 246, 0.18);
   color: var(--text-primary);
@@ -1998,16 +1990,16 @@ input.log-search {
 /* ── Narrow windows ─────────────────────────────────── */
 
 @media (max-width: 820px) {
-  .content-section {
+  .page {
     padding: 4px 28px 32px;
   }
 
-  .setting-row {
+  .pref {
     flex-wrap: wrap;
     gap: 12px 24px;
   }
 
-  .setting-control {
+  .pref-control {
     flex: 1 1 220px;
   }
 

@@ -9,6 +9,10 @@ use std::time::Duration;
 /// previous content is put back. Too short, and slow apps paste the old one.
 const RESTORE_DELAY: Duration = Duration::from_millis(300);
 
+/// Between setting the clipboard and pressing Ctrl+V, so the new content is
+/// in place before the target app asks for it.
+const SETTLE_DELAY: Duration = Duration::from_millis(50);
+
 /// What was on the clipboard before the dictation (or the selection capture).
 pub(crate) enum Saved {
     Text(String),
@@ -16,66 +20,78 @@ pub(crate) enum Saved {
     Nothing,
 }
 
+/// Pastes `text` into the window in front and then puts back what was on
+/// the clipboard before. If the keys can't be sent, the text stays on the
+/// clipboard, so it can still be pasted by hand.
 pub fn paste_text(text: &str) -> Result<(), String> {
-    // arboard is thread-safe
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("Clipboard is unavailable: {}", e))?;
-    let saved = save(&mut clipboard);
-
+    let mut clipboard = open_clipboard()?;
+    let previous = save(&mut clipboard);
     set_text_quietly(&mut clipboard, text)
         .map_err(|e| format!("Failed to copy text to the clipboard: {}", e))?;
     log::debug!("Copied {} characters to the clipboard", text.chars().count());
 
-    // Small delay to ensure clipboard is set
-    std::thread::sleep(Duration::from_millis(50));
+    std::thread::sleep(SETTLE_DELAY);
+    press_paste_keys()?;
 
-    // Simulate Cmd+V via osascript (works from any thread, unlike enigo which
-    // calls TSMGetInputSourceProperty requiring the main thread)
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("osascript")
-            .args(["-e", r#"tell application "System Events" to keystroke "v" using command down"#])
-            .output()
-            .map_err(|e| format!("Failed to simulate paste: {}", e))?;
-        log::debug!("Sent Cmd+V via osascript");
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-
-        // Virtual-key code of the V key. Key::Unicode('v') is looked up in the
-        // current keyboard layout and fails when that layout has no Latin "v"
-        // (e.g. Russian), which used to break the paste — and the whole dictation.
-        const VK_V: u32 = 0x56;
-
-        let mut enigo = Enigo::new(&Settings::default())
-            .map_err(|e| format!("Failed to initialise keyboard simulation: {}", e))?;
-        enigo
-            .key(Key::Control, Direction::Press)
-            .map_err(|e| format!("Failed to press Ctrl: {}", e))?;
-        let v_result = enigo.key(Key::Other(VK_V), Direction::Click);
-        // Release Ctrl even if V failed, so it never stays logically held down
-        let ctrl_result = enigo.key(Key::Control, Direction::Release);
-        v_result.map_err(|e| format!("Failed to send Ctrl+V: {}", e))?;
-        ctrl_result.map_err(|e| format!("Failed to release Ctrl: {}", e))?;
-        log::debug!("Sent Ctrl+V to the active window");
-    }
-
-    // Only after a successful paste: if it failed, the text stays on the
-    // clipboard so it can still be pasted by hand
     std::thread::sleep(RESTORE_DELAY);
-    restore(&mut clipboard, text, saved);
-
+    restore(&mut clipboard, text, previous);
     Ok(())
 }
 
 /// Puts `text` on the clipboard and leaves it there (kept out of the
 /// clipboard history), for when there is no window to paste into.
 pub fn copy_text(text: &str) -> Result<(), String> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("Clipboard is unavailable: {}", e))?;
+    let mut clipboard = open_clipboard()?;
     set_text_quietly(&mut clipboard, text).map_err(|e| format!("Failed to copy the text: {}", e))
+}
+
+fn open_clipboard() -> Result<arboard::Clipboard, String> {
+    arboard::Clipboard::new().map_err(|e| format!("Clipboard is unavailable: {}", e))
+}
+
+/// Ctrl+V for the window in front.
+#[cfg(target_os = "windows")]
+fn press_paste_keys() -> Result<(), String> {
+    use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+
+    // Virtual-key code of the V key. Key::Unicode('v') is looked up in the
+    // current keyboard layout and fails when that layout has no Latin "v"
+    // (e.g. Russian), which used to break the paste — and the whole dictation.
+    const VK_V: u32 = 0x56;
+
+    let mut keys = Enigo::new(&Settings::default())
+        .map_err(|e| format!("Failed to initialise keyboard simulation: {}", e))?;
+    keys.key(Key::Control, Direction::Press)
+        .map_err(|e| format!("Failed to press Ctrl: {}", e))?;
+    let v = keys.key(Key::Other(VK_V), Direction::Click);
+    // Ctrl goes up even if V failed, so it never stays logically held down
+    let ctrl = keys.key(Key::Control, Direction::Release);
+    v.map_err(|e| format!("Failed to send Ctrl+V: {}", e))?;
+    ctrl.map_err(|e| format!("Failed to release Ctrl: {}", e))?;
+    log::debug!("Sent Ctrl+V to the active window");
+    Ok(())
+}
+
+/// Cmd+V, sent by System Events: enigo would have to run on the main
+/// thread there.
+#[cfg(target_os = "macos")]
+fn press_paste_keys() -> Result<(), String> {
+    let script = "tell application \"System Events\" to keystroke \"v\" using {command down}";
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .status()
+        .map_err(|e| format!("Could not run osascript: {}", e))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("osascript could not press Cmd+V ({})", status))
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn press_paste_keys() -> Result<(), String> {
+    Err("Pasting isn't supported on this system; the text is on the clipboard".to_string())
 }
 
 /// The window in front now, where a paste lands (0 if none).

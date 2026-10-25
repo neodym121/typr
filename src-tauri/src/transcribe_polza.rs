@@ -19,17 +19,16 @@ pub const FORMAT: AudioFormat = AudioFormat::Wav;
 /// body whose `file` field is a base64 data URL (`data:audio/wav;base64,...`).
 /// The `model@provider=...` alias syntax only works for chat/responses
 /// endpoints, so a pinned sub-provider is sent as `provider.only` instead.
-pub async fn transcribe_polza(
+pub async fn transcribe(
     api_key: &str,
     model: &str,
     provider: &str,
     language: Option<&str>,
     audio: &EncodedAudio,
 ) -> Result<String, String> {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
+    let Some(api_key) = net::non_empty(api_key) else {
         return Err("Polza API key not set. Add it in the API keys section.".to_string());
-    }
+    };
 
     let data_url = format!(
         "data:{};base64,{}",
@@ -43,11 +42,7 @@ pub async fn transcribe_polza(
         ));
     }
 
-    let model_name = if model.trim().is_empty() {
-        DEFAULT_MODEL
-    } else {
-        model.trim()
-    };
+    let model_name = net::non_empty(model).unwrap_or(DEFAULT_MODEL);
 
     let mut body = json!({
         "model": model_name,
@@ -85,12 +80,12 @@ pub async fn transcribe_polza(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{transcribe, EncodedAudio, FORMAT};
 
     #[tokio::test]
-    async fn test_empty_api_key() {
-        let audio = EncodedAudio { bytes: Vec::new(), format: FORMAT };
-        let result = transcribe_polza("", "", "", None, &audio).await;
-        assert!(result.unwrap_err().contains("API key not set"));
+    async fn nothing_is_sent_without_a_key() {
+        let recording = EncodedAudio { bytes: Vec::new(), format: FORMAT };
+        let error = transcribe("", "", "", None, &recording).await.unwrap_err();
+        assert!(error.contains("API key not set"), "{}", error);
     }
 }

@@ -51,20 +51,20 @@ export function keyOf(id: KeyId): string {
 
 function buildRow(service: Service): HTMLElement {
   const row = document.createElement("div");
-  row.className = "setting-row key-row";
+  row.className = "pref key-row";
 
   const labels = document.createElement("div");
-  labels.className = "setting-label";
+  labels.className = "pref-text";
   const label = document.createElement("label");
-  label.className = "label-text";
+  label.className = "pref-name";
   label.htmlFor = `key-${service.id}`;
   label.textContent = service.name;
   const hint = document.createElement("span");
-  hint.className = "label-hint";
+  hint.className = "pref-hint";
   labels.append(label, hint);
 
   const control = document.createElement("div");
-  control.className = "setting-control";
+  control.className = "pref-control";
   const input = document.createElement("input");
   input.type = "password";
   input.id = `key-${service.id}`;

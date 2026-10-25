@@ -1,8 +1,11 @@
 //! HTTP helpers shared by the transcription and post-processing clients.
 
+use reqwest::multipart::{Form, Part};
 use std::error::Error;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+use crate::audio::EncodedAudio;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -68,6 +71,54 @@ pub fn describe_error(err: &reqwest::Error) -> String {
         source = cause.source();
     }
     message
+}
+
+/// `value` trimmed, or `None` when nothing is left (a key or model not set).
+pub fn non_empty(value: &str) -> Option<&str> {
+    Some(value.trim()).filter(|value| !value.is_empty())
+}
+
+/// Sends a recording to a Whisper-style `/audio/transcriptions` endpoint
+/// (Groq, OpenAI and the servers compatible with it) and returns the text.
+/// `language` is an ISO 639-1 code, `None` lets the model detect it.
+/// Without `api_key` the request goes without an Authorization header, as a
+/// local server may want it.
+pub async fn post_transcription(
+    provider: &str,
+    url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    language: Option<&str>,
+    audio: &EncodedAudio,
+) -> Result<String, String> {
+    let recording = Part::bytes(audio.bytes.clone())
+        .file_name(audio.format.file_name())
+        .mime_str(audio.format.mime())
+        .map_err(|e| format!("{}: the recording could not be attached: {}", provider, e))?;
+    let fields = [("model", Some(model)), ("response_format", Some("json")), ("language", language)];
+    let form = fields
+        .into_iter()
+        .filter_map(|(name, value)| Some((name, value?.to_owned())))
+        .fold(Form::new(), |form, (name, value)| form.text(name, value))
+        .part("file", recording);
+
+    let mut request = client()?.post(url).multipart(form);
+    if let Some(key) = api_key {
+        request = request.bearer_auth(key);
+    }
+    log::info!(
+        "{}: POST {} (model {}, language {}, {} KB {:?}, API key {})",
+        provider,
+        url,
+        model,
+        language.unwrap_or("auto"),
+        audio.size_kb(),
+        audio.format,
+        if api_key.is_some() { "set" } else { "not set" }
+    );
+    let started = Instant::now();
+    let response = request.send().await.map_err(|e| format!("{} API request failed: {}", provider, describe_error(&e)))?;
+    read_transcription(provider, response, started).await
 }
 
 /// Reads a Whisper-style JSON response (`{"text": "..."}`) and logs how it went.

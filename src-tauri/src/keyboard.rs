@@ -1,6 +1,8 @@
-//! Makes sure the hotkey was pressed on its own. A dictation starts only when
-//! nothing but the hotkey's keys is held, so pressing it by accident together
-//! with other keys or mouse buttons (e.g. W while gaming) does nothing.
+//! Hotkeys from the keyboard's side: the spelling the global shortcut plugin
+//! reads, and making sure the hotkey was pressed on its own. A dictation
+//! starts only when nothing but the hotkey's keys is held, so pressing it by
+//! accident together with other keys or mouse buttons (e.g. W while gaming)
+//! does nothing.
 
 const VK_SHIFT: u8 = 0x10;
 const VK_CONTROL: u8 = 0x11;
@@ -79,6 +81,42 @@ impl HotkeyKeys {
         }
         extra
     }
+}
+
+/// A hotkey spelled the way the global shortcut plugin reads it: modifiers
+/// by one name each, a lone letter or digit as its key code ("ctrl+shift+a"
+/// becomes "Ctrl+Shift+KeyA"). Other keys stay as they are.
+pub fn canonical(hotkey: &str) -> String {
+    const MODIFIERS: &[(&str, &[&str])] = &[
+        ("Ctrl", &["ctrl", "control"]),
+        ("Shift", &["shift"]),
+        ("Alt", &["alt"]),
+        ("Super", &["super", "meta", "cmd"]),
+        ("CmdOrCtrl", &["cmdorctrl"]),
+        ("Space", &["space"]),
+    ];
+    let spell = |part: &str| -> String {
+        let mut chars = part.chars();
+        if let (Some(ch), None) = (chars.next(), chars.next()) {
+            if ch.is_ascii_alphabetic() {
+                return format!("Key{}", ch.to_ascii_uppercase());
+            }
+            if ch.is_ascii_digit() {
+                return format!("Digit{}", ch);
+            }
+        }
+        MODIFIERS
+            .iter()
+            .find(|(_, names)| names.iter().any(|name| part.eq_ignore_ascii_case(name)))
+            .map_or_else(|| part.to_string(), |(canonical, _)| canonical.to_string())
+    };
+    hotkey
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(spell)
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// Virtual-key code for a key name as the settings store it (`KeyboardEvent.code`).
@@ -238,6 +276,18 @@ mod tests {
         let keys = HotkeyKeys::parse("Ctrl+IntlRo");
         assert!(keys.extra_keys(&[VK_CONTROL, 0xC1]).is_empty());
         assert_eq!(keys.extra_keys(&[VK_CONTROL, 0xC1, 0x57]), vec![0x57]);
+    }
+
+    #[test]
+    fn hotkeys_are_spelled_for_the_plugin() {
+        assert_eq!(canonical("ctrl+shift+a"), "Ctrl+Shift+KeyA");
+        assert_eq!(canonical(" Control + Alt + 7 "), "Ctrl+Alt+Digit7");
+        assert_eq!(canonical("meta+space"), "Super+Space");
+        assert_eq!(canonical("CmdOrCtrl+F5"), "CmdOrCtrl+F5");
+        assert_eq!(canonical("Ctrl+Shift+Space"), "Ctrl+Shift+Space");
+        assert_eq!(canonical("MouseBack"), "MouseBack");
+        assert_eq!(canonical("Alt++KeyD"), "Alt+KeyD");
+        assert_eq!(canonical(""), "");
     }
 
     #[test]

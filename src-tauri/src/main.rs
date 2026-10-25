@@ -1,32 +1,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::TrayIconBuilder,
-    Emitter, Manager, State, WebviewWindowBuilder,
-};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::tray::TrayIconBuilder;
+use tauri::{Emitter, Manager, State, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use typr_lib::ask;
-use typr_lib::audio;
-use typr_lib::autostart;
-use typr_lib::i18n;
-use typr_lib::keyboard::HotkeyKeys;
-use typr_lib::links;
+use typr_lib::keyboard::{self, HotkeyKeys};
 use typr_lib::local::{runtime::Paths as LocalPaths, LocalEngine, LocalStatus};
 use typr_lib::logger::{self, LogEntry};
-use typr_lib::modifier_hotkey;
-use typr_lib::mouse;
-use typr_lib::overlay;
-use typr_lib::paste;
 use typr_lib::postprocess::{self, ModelInfo};
 use typr_lib::recorder::{self, Outcome, Recorder, RecordingState};
 use typr_lib::settings::{Engine, PostProvider, RecordingMode, Settings};
 use typr_lib::updates::{self, UpdateInfo};
+use typr_lib::{ask, audio, autostart, i18n, links, modifier_hotkey, mouse, overlay, paste};
 
 /// First check a little after startup, then this often
 const UPDATE_CHECK_DELAY: Duration = Duration::from_secs(15);
@@ -40,10 +30,13 @@ struct LastDictation {
     window: isize,
 }
 
+/// What the whole app shares, managed by Tauri.
 struct AppState {
-    recorder: Recorder,
+    /// As saved in config.json; changed only through `apply_settings`
     settings: Mutex<Settings>,
-    app_dir: PathBuf,
+    /// The folder of config.json
+    config_dir: PathBuf,
+    recorder: Recorder,
     /// Whether the push-to-talk hotkey is physically held down right now
     ptt_held: AtomicBool,
     /// Global hotkey listening; switched off from the tray (e.g. while gaming)
@@ -53,6 +46,26 @@ struct AppState {
     last_dictation: Mutex<Option<LastDictation>>,
     /// A newer release found on GitHub
     update: Mutex<Option<UpdateInfo>>,
+}
+
+impl AppState {
+    fn new(settings: Settings, config_dir: PathBuf) -> Self {
+        AppState {
+            settings: Mutex::new(settings),
+            config_dir,
+            recorder: Recorder::default(),
+            ptt_held: AtomicBool::new(false),
+            hotkey_enabled: AtomicBool::new(true),
+            hotkeys_paused: AtomicBool::new(false),
+            last_dictation: Mutex::new(None),
+            update: Mutex::new(None),
+        }
+    }
+
+    /// A copy of the settings as they are now, to use without holding the lock
+    fn settings(&self) -> Settings {
+        self.settings.lock().unwrap().clone()
+    }
 }
 
 /// Tray menu items whose text or state changes while Typr runs
@@ -106,25 +119,25 @@ fn update_tray_menu(app: &tauri::AppHandle) {
     }
 }
 
-fn get_app_dir() -> PathBuf {
-    // Development builds can keep their settings apart from the installed Typr
+/// Where config.json lives: `%APPDATA%\com.typr.app`. Development builds
+/// take `TYPR_CONFIG_DIR` instead when it is set, so they can keep their
+/// settings apart from the installed Typr.
+fn config_dir() -> PathBuf {
     #[cfg(debug_assertions)]
     if let Some(dir) = std::env::var_os("TYPR_CONFIG_DIR") {
-        return PathBuf::from(dir);
+        return dir.into();
     }
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("com.typr.app")
+    dirs::config_dir().unwrap_or_default().join("com.typr.app")
 }
 
-fn log_environment(app_dir: &PathBuf, settings: &Settings) {
+fn log_environment(config_dir: &Path, settings: &Settings) {
     log::info!(
         "Typr v{} on {} ({})",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH
     );
-    log::info!("Config folder: {}", app_dir.display());
+    log::info!("Config folder: {}", config_dir.display());
     log::info!("Settings: {}", settings.summary());
 }
 
@@ -199,8 +212,7 @@ fn set_hotkey_enabled(app: &tauri::AppHandle, enabled: bool) {
     state.hotkey_enabled.store(enabled, Ordering::SeqCst);
 
     if enabled {
-        let settings = state.settings.lock().unwrap().clone();
-        if let Err(e) = register_hotkeys(app, &settings) {
+        if let Err(e) = register_hotkeys(app, &state.settings()) {
             log::error!("Failed to turn the hotkeys back on: {}", e);
         } else {
             log::info!("Hotkeys turned on from the tray");
@@ -209,10 +221,9 @@ fn set_hotkey_enabled(app: &tauri::AppHandle, enabled: bool) {
         unregister_hotkeys(app);
         state.ptt_held.store(false, Ordering::SeqCst);
         // Never paste into whatever is focused now (e.g. a game)
-        if state.recorder.cancel_recording(app) {
+        if state.recorder.cancel(app) {
             ask::recording_cancelled();
-            let settings = state.settings.lock().unwrap().clone();
-            typr_lib::transcribe_local::dictation_ended(app, &settings);
+            typr_lib::transcribe_local::dictation_ended(app, &state.settings());
         }
         log::info!("Hotkey turned off from the tray, shortcuts are ignored until it is back on");
     }
@@ -237,7 +248,7 @@ fn sync_overlay(app: &tauri::AppHandle) {
 /// them, logs what changed and updates everything that depends on them.
 fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let old = state.settings.lock().unwrap().clone();
+    let old = state.settings();
     // While the hotkeys are off (tray), the new ones are registered when they're turned back on
     let hotkeys_changed = settings.hotkey != old.hotkey
         || settings.ask_hotkey != old.ask_hotkey
@@ -249,7 +260,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
             return Err(e);
         }
     }
-    if let Err(e) = settings.save(&state.app_dir) {
+    if let Err(e) = settings.save(&state.config_dir) {
         log::error!("Failed to save settings: {}", e);
         return Err(e);
     }
@@ -258,7 +269,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
         logger::set_enabled(settings.developer_mode);
         if settings.developer_mode {
             log::info!("Developer mode enabled, logging started");
-            log_environment(&state.app_dir, &settings);
+            log_environment(&state.config_dir, &settings);
         }
     }
 
@@ -298,7 +309,7 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
 
 /// Engine chosen in the tray menu. The window follows through `engine-changed`.
 fn set_engine_from_tray(app: &tauri::AppHandle, engine: Engine) {
-    let mut settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    let mut settings = app.state::<AppState>().settings();
     if settings.engine != engine {
         log::info!("Engine switched to {} from the tray", engine.label());
         settings.engine = engine;
@@ -318,7 +329,7 @@ fn set_engine_from_tray(app: &tauri::AppHandle, engine: Engine) {
 /// window is gone, the text is put on the clipboard instead.
 fn paste_last_dictation(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
-    if state.recorder.get_state() != RecordingState::Ready {
+    if state.recorder.state() != RecordingState::Ready {
         log::info!("Paste last dictation ignored: a dictation is running");
         return;
     }
@@ -373,11 +384,14 @@ fn start_update_checks(app: &tauri::AppHandle) {
     });
 }
 
+// ── Commands of the main window ─────────────────────
+
 #[tauri::command]
 fn get_settings(state: State<AppState>) -> Settings {
-    state.settings.lock().unwrap().clone()
+    state.settings()
 }
 
+/// Every control in the window saves the whole settings object.
 #[tauri::command]
 fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
     apply_settings(&app, settings)
@@ -385,29 +399,21 @@ fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String
 
 #[tauri::command]
 fn list_microphones() -> Vec<audio::MicDevice> {
-    let mics = audio::list_microphones();
-    log::debug!(
-        "Input devices ({}): {}",
-        mics.len(),
-        mics.iter()
-            .map(|m| m.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    mics
+    let devices = audio::list_microphones();
+    let names: Vec<&str> = devices.iter().map(|device| device.name.as_str()).collect();
+    log::debug!("Input devices ({}): {}", names.len(), names.join(", "));
+    devices
 }
 
 #[tauri::command]
 fn get_recording_state(state: State<AppState>) -> RecordingState {
-    state.recorder.get_state()
+    state.recorder.state()
 }
 
+/// The window's own start/stop, the same as a press of the toggle hotkey.
 #[tauri::command]
-async fn toggle_recording(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
-    do_toggle_recording(&app, &state).await
+async fn toggle_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    toggle(&app, &state).await
 }
 
 #[tauri::command]
@@ -437,8 +443,7 @@ fn resume_hotkeys(app: &tauri::AppHandle) {
     if !state.hotkey_enabled.load(Ordering::SeqCst) {
         return;
     }
-    let settings = state.settings.lock().unwrap().clone();
-    if let Err(e) = register_hotkeys(app, &settings) {
+    if let Err(e) = register_hotkeys(app, &state.settings()) {
         log::error!("Failed to listen to the hotkeys again: {}", e);
     }
 }
@@ -548,15 +553,12 @@ fn frontend_log(level: String, message: String) {
 }
 
 fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
-    let settings = state.settings.lock().unwrap().clone();
-    state
-        .recorder
-        .start_recording(app, &settings.microphone)
-        .map_err(|e| {
-            log::error!("Failed to start recording: {}", e);
-            recorder::notify_error(app, &e);
-            e
-        })?;
+    let settings = state.settings();
+    if let Err(e) = state.recorder.start(app, &settings.microphone) {
+        log::error!("Failed to start recording: {}", e);
+        recorder::notify_error(app, &e);
+        return Err(e);
+    }
     // While the user speaks: the local model loads, or the connections to
     // the cloud open
     if settings.engine == Engine::Local {
@@ -570,7 +572,7 @@ fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), Strin
 }
 
 async fn finish_recording(app: &tauri::AppHandle, state: &AppState) -> Result<String, String> {
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings();
     match state.recorder.stop_and_transcribe(app, &settings).await? {
         Outcome::Pasted(text) => {
             if !text.is_empty() {
@@ -587,17 +589,11 @@ async fn finish_recording(app: &tauri::AppHandle, state: &AppState) -> Result<St
     }
 }
 
-/// Shared logic for toggle recording, used by both the Tauri command and hotkey handler.
-async fn do_toggle_recording(
-    app: &tauri::AppHandle,
-    state: &AppState,
-) -> Result<String, String> {
-    let current_state = state.recorder.get_state();
-    match current_state {
-        RecordingState::Ready => {
-            begin_recording(app, state)?;
-            Ok("recording".to_string())
-        }
+/// Toggle mode (and the window's button): a press starts a dictation, the
+/// next one stops it. Answers "recording" or what was pasted.
+async fn toggle(app: &tauri::AppHandle, state: &AppState) -> Result<String, String> {
+    match state.recorder.state() {
+        RecordingState::Ready => begin_recording(app, state).map(|()| "recording".to_string()),
         RecordingState::Recording => finish_recording(app, state).await,
         RecordingState::Transcribing => {
             log::warn!("Hotkey ignored: still transcribing the previous recording");
@@ -607,7 +603,7 @@ async fn do_toggle_recording(
 }
 
 async fn push_to_talk_pressed(app: &tauri::AppHandle, state: &AppState) {
-    let current = state.recorder.get_state();
+    let current = state.recorder.state();
     if current != RecordingState::Ready {
         log::debug!("Push-to-talk press ignored, recorder is {:?}", current);
         return;
@@ -626,57 +622,12 @@ async fn push_to_talk_pressed(app: &tauri::AppHandle, state: &AppState) {
 }
 
 async fn push_to_talk_released(app: &tauri::AppHandle, state: &AppState) {
-    if state.recorder.get_state() != RecordingState::Recording {
+    if state.recorder.state() != RecordingState::Recording {
         return;
     }
     if let Err(e) = finish_recording(app, state).await {
         log::debug!("Push-to-talk stop: {}", e);
     }
-}
-
-fn normalize_hotkey(hotkey: &str) -> String {
-    let parts: Vec<&str> = hotkey.split('+').collect();
-    let mut normalized_parts = Vec::new();
-
-    for part in parts {
-        let trimmed = part.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        // Single letter A..Z or a..z -> KeyA..KeyZ
-        if trimmed.len() == 1 {
-            let ch = trimmed.chars().next().unwrap();
-            if ch.is_ascii_alphabetic() {
-                normalized_parts.push(format!("Key{}", ch.to_ascii_uppercase()));
-                continue;
-            } else if ch.is_ascii_digit() {
-                normalized_parts.push(format!("Digit{}", ch));
-                continue;
-            }
-        }
-
-        if trimmed.eq_ignore_ascii_case("ctrl") || trimmed.eq_ignore_ascii_case("control") {
-            normalized_parts.push("Ctrl".to_string());
-        } else if trimmed.eq_ignore_ascii_case("shift") {
-            normalized_parts.push("Shift".to_string());
-        } else if trimmed.eq_ignore_ascii_case("alt") {
-            normalized_parts.push("Alt".to_string());
-        } else if trimmed.eq_ignore_ascii_case("super")
-            || trimmed.eq_ignore_ascii_case("meta")
-            || trimmed.eq_ignore_ascii_case("cmd")
-        {
-            normalized_parts.push("Super".to_string());
-        } else if trimmed.eq_ignore_ascii_case("cmdorctrl") {
-            normalized_parts.push("CmdOrCtrl".to_string());
-        } else if trimmed.eq_ignore_ascii_case("space") {
-            normalized_parts.push("Space".to_string());
-        } else {
-            normalized_parts.push(trimmed.to_string());
-        }
-    }
-
-    normalized_parts.join("+")
 }
 
 /// The hotkey (keys or a mouse button) went down (`pressed`) or up.
@@ -691,7 +642,7 @@ fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, na
         // A dictation starts only when nothing but the hotkey is held,
         // so pressing it by accident along with other keys (e.g. W
         // while gaming) does nothing. Stopping is never blocked.
-        if state.recorder.get_state() == RecordingState::Ready {
+        if state.recorder.state() == RecordingState::Ready {
             let extra = hotkey_keys.extra_keys_held();
             if !extra.is_empty() {
                 log::info!("Hotkey ignored: other keys are held too ({})", extra.join(", "));
@@ -704,9 +655,9 @@ fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, na
         tauri::async_runtime::spawn(async move {
             let state = handle.state::<AppState>();
             if push_to_talk {
-                push_to_talk_pressed(&handle, state.inner()).await;
+                push_to_talk_pressed(&handle, &state).await;
             } else {
-                match do_toggle_recording(&handle, state.inner()).await {
+                match toggle(&handle, &state).await {
                     Ok(result) => log::debug!("Toggle result: {}", result),
                     Err(e) => log::debug!("Toggle: {}", e),
                 }
@@ -717,8 +668,7 @@ fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, na
         if push_to_talk {
             state.ptt_held.store(false, Ordering::SeqCst);
             tauri::async_runtime::spawn(async move {
-                let state = handle.state::<AppState>();
-                push_to_talk_released(&handle, state.inner()).await;
+                push_to_talk_released(&handle, &handle.state::<AppState>()).await;
             });
         }
     }
@@ -735,7 +685,7 @@ fn on_ask_hotkey(app: &tauri::AppHandle, keys: Option<&HotkeyKeys>, name: &str) 
             return;
         }
     }
-    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    let settings = app.state::<AppState>().settings();
     if !settings.quick_ask.enabled {
         return;
     }
@@ -771,7 +721,7 @@ fn register_hotkeys(app: &tauri::AppHandle, settings: &Settings) -> Result<(), S
 /// global shortcut plugin, or a single mouse button (MouseMiddle, MouseBack,
 /// MouseForward) through a mouse hook.
 fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey_str: &str) -> Result<(), String> {
-    let normalized = normalize_hotkey(hotkey_str);
+    let normalized = keyboard::canonical(hotkey_str);
     let hotkey_keys = HotkeyKeys::parse(&normalized);
 
     if let Some(button) = mouse::MouseButton::parse(&normalized) {
@@ -802,11 +752,11 @@ fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey_str: &str) -> Result
 /// or a key combination through the global shortcut plugin. It must differ
 /// from the dictation hotkey.
 fn register_ask_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &str) -> Result<(), String> {
-    let normalized = normalize_hotkey(hotkey_str);
+    let normalized = keyboard::canonical(hotkey_str);
     if normalized.is_empty() {
         return Err("The quick ask hotkey isn't set".to_string());
     }
-    if normalized.eq_ignore_ascii_case(&normalize_hotkey(dictation)) {
+    if normalized.eq_ignore_ascii_case(&keyboard::canonical(dictation)) {
         return Err(format!("{} is already the dictation hotkey", normalized));
     }
     let keys = HotkeyKeys::parse(&normalized);
@@ -889,13 +839,13 @@ fn build_tray(app: &tauri::App, settings: &Settings) -> tauri::Result<()> {
         ],
     )?;
 
-    let tray_icon = match app.default_window_icon() {
-        Some(i) => i.clone(),
-        None => tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect("tray icon"),
-    };
+    // The app's icon; the 32 px file should a build come without one
+    let icon = app.default_window_icon().cloned().unwrap_or_else(|| {
+        tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect("tray icon")
+    });
 
     TrayIconBuilder::new()
-        .icon(tray_icon)
+        .icon(icon)
         .tooltip("Typr")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -971,11 +921,11 @@ fn main() {
 
     logger::init();
 
-    let app_dir = get_app_dir();
-    let settings = Settings::load(&app_dir);
+    let config_dir = config_dir();
+    let settings = Settings::load(&config_dir);
     logger::set_enabled(settings.developer_mode);
     let startup_settings = settings.clone();
-    let startup_dir = app_dir.clone();
+    let startup_dir = config_dir.clone();
     let autostarted = std::env::args().any(|arg| arg == autostart::ARG);
 
     let app = tauri::Builder::default()
@@ -985,40 +935,20 @@ fn main() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(AppState {
-            recorder: Recorder::new(),
-            settings: Mutex::new(settings),
-            app_dir,
-            ptt_held: AtomicBool::new(false),
-            hotkey_enabled: AtomicBool::new(true),
-            hotkeys_paused: AtomicBool::new(false),
-            last_dictation: Mutex::new(None),
-            update: Mutex::new(None),
-        })
+        .manage(AppState::new(settings, config_dir))
         .manage(LocalEngine::new(LocalPaths::new(LocalPaths::default_root())))
         .invoke_handler(tauri::generate_handler![
-            get_settings,
-            save_settings,
-            list_microphones,
-            get_recording_state,
-            toggle_recording,
-            get_hotkey_enabled,
-            pause_hotkeys,
-            get_system_language,
+            // Settings and the dictation
+            get_settings, save_settings, get_system_language, list_microphones,
+            get_recording_state, toggle_recording, get_hotkey_enabled, pause_hotkeys,
             list_postprocess_models,
-            get_autostart,
-            set_autostart,
-            get_update,
-            check_for_updates,
-            open_link,
-            local_status,
-            local_download_model,
-            local_download_runtime,
-            local_cancel_download,
+            // General, updates and links
+            get_autostart, set_autostart, get_update, check_for_updates, open_link,
+            // Local recognition
+            local_status, local_download_model, local_download_runtime, local_cancel_download,
             local_delete_model,
-            get_logs,
-            clear_logs,
-            frontend_log,
+            // Developer
+            get_logs, clear_logs, frontend_log,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
@@ -1039,7 +969,7 @@ fn main() {
             log_environment(&startup_dir, &startup_settings);
             autostart::refresh();
             // A question typed into the quick ask window's field reads them when sent
-            ask::read_settings_with(|app| app.state::<AppState>().settings.lock().unwrap().clone());
+            ask::read_settings_with(|app| app.state::<AppState>().settings());
 
             build_tray(app, &startup_settings)?;
 
@@ -1070,7 +1000,7 @@ fn main() {
                 let app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(4)).await;
-                    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+                    let settings = app.state::<AppState>().settings();
                     ask::preview(&app, &settings, &question).await;
                 });
             }

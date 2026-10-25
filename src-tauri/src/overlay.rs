@@ -804,17 +804,20 @@ mod webview {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Mutex;
     use std::time::Duration;
-    use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder};
+    use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+    const LABEL: &str = "overlay";
     const ERROR_MS: u64 = 2500;
-    const ERROR_JS: &str = "(function(){var m=document.getElementById('mic');if(!m)return;\
-                            m.className='mic error';clearTimeout(window.__typrError);\
+    /// The disc turns to its error look and back to idle after `ERROR_MS`,
+    /// unless a dictation has changed it meanwhile
+    const ERROR_JS: &str = "(function(){var d=document.getElementById('disc');if(!d)return;\
+                            d.dataset.state='error';clearTimeout(window.__typrError);\
                             window.__typrError=setTimeout(function(){\
-                            if(m.className==='mic error')m.className='mic';},2500);})();";
-    /// Replays the slide-in animation from behind the edge
-    const SLIDE_IN_JS: &str = "(function(){var s=document.getElementById('slot');if(!s)return;\
-                               s.classList.remove('enter');void s.offsetWidth;\
-                               s.classList.add('enter');})();";
+                            if(d.dataset.state==='error')d.dataset.state='idle';},2500);})();";
+    /// Replays the slide in from behind the edge
+    const SLIDE_IN_JS: &str = "(function(){var r=document.getElementById('rail');if(!r)return;\
+                               r.classList.remove('sliding');void r.offsetWidth;\
+                               r.classList.add('sliding');})();";
 
     static ENABLED: AtomicBool = AtomicBool::new(true);
     static SUPPRESSED: AtomicBool = AtomicBool::new(false);
@@ -840,46 +843,44 @@ mod webview {
         }
     }
 
-    /// At the bottom the page puts the mic at the top of the window and slides it up
+    /// Which edge the page slides the disc in from
     fn edge_js(position: IndicatorPosition) -> String {
-        format!(
-            "document.body.classList.toggle('bottom',{});",
-            position == IndicatorPosition::BottomCenter
-        )
+        let edge = if position == IndicatorPosition::BottomCenter { "bottom" } else { "top" };
+        format!("document.documentElement.dataset.edge='{}';", edge)
     }
 
+    /// The indicator's window, hidden while idle: a small transparent one
+    /// without a frame, always on top, that never takes the focus.
     pub fn create(app: &AppHandle, position: IndicatorPosition) {
         *POSITION.lock().unwrap() = position;
         let placement = place(app, position);
-        let built = WebviewWindowBuilder::new(
-            app,
-            "overlay",
-            WebviewUrl::App("src/overlay.html".into()),
-        )
-        .title("")
-        .inner_size(INDICATOR_SIZE, OFFSET_FROM_EDGE + INDICATOR_SIZE)
-        .position(placement.logical_x, placement.logical_y)
-        .resizable(false)
-        .decorations(false)
-        .transparent(true)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .shadow(false)
-        .visible(false)
-        .build();
-
+        let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("src/overlay.html".into()))
+            .title("")
+            .visible(false)
+            .focused(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .decorations(false)
+            .shadow(false)
+            .transparent(true)
+            .resizable(false)
+            .inner_size(INDICATOR_SIZE, OFFSET_FROM_EDGE + INDICATOR_SIZE)
+            .position(placement.logical_x, placement.logical_y)
+            .build();
         match built {
             Ok(_) => log::info!("Overlay window created, hidden until a dictation starts"),
             Err(e) => log::error!("Failed to create overlay: {}", e),
         }
     }
 
+    fn window(app: &AppHandle) -> Option<WebviewWindow> {
+        app.get_webview_window(LABEL)
+    }
+
     fn eval(app: &AppHandle, js: &str) {
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            if let Err(e) = overlay.eval(js) {
-                log::debug!("Failed to update overlay: {}", e);
-            }
+        let Some(window) = window(app) else { return };
+        if let Err(e) = window.eval(js) {
+            log::debug!("Failed to update overlay: {}", e);
         }
     }
 
@@ -887,41 +888,35 @@ mod webview {
         if !ENABLED.load(Ordering::SeqCst) || SUPPRESSED.load(Ordering::SeqCst) {
             return;
         }
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            if !overlay.is_visible().unwrap_or(false) {
-                let position = *POSITION.lock().unwrap();
-                let _ = overlay.eval(&edge_js(position));
-                let _ = overlay.eval(SLIDE_IN_JS);
-                let _ = overlay.show();
-            }
+        let Some(window) = window(app) else { return };
+        if !window.is_visible().unwrap_or(false) {
+            let position = *POSITION.lock().unwrap();
+            let _ = window.eval(&format!("{}{}", edge_js(position), SLIDE_IN_JS));
+            let _ = window.show();
         }
     }
 
     pub fn set_position(app: &AppHandle, position: IndicatorPosition) {
         *POSITION.lock().unwrap() = position;
         let placement = place(app, position);
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            let _ = overlay.set_position(LogicalPosition::new(placement.logical_x, placement.logical_y));
-            let _ = overlay.eval(&edge_js(position));
-        }
+        let Some(window) = window(app) else { return };
+        let _ = window.set_position(LogicalPosition::new(placement.logical_x, placement.logical_y));
+        let _ = window.eval(&edge_js(position));
     }
 
     fn hide(app: &AppHandle) {
-        if let Some(overlay) = app.get_webview_window("overlay") {
-            let _ = overlay.hide();
+        if let Some(window) = window(app) {
+            let _ = window.hide();
         }
     }
 
     pub fn set_indicator(app: &AppHandle, indicator: Indicator) {
-        let class = match indicator {
-            Indicator::Idle => "mic",
-            Indicator::Recording => "mic recording",
-            Indicator::Transcribing => "mic transcribing",
+        let state = match indicator {
+            Indicator::Idle => "idle",
+            Indicator::Recording => "recording",
+            Indicator::Transcribing => "transcribing",
         };
-        eval(
-            app,
-            &format!("document.getElementById('mic').className = '{}';", class),
-        );
+        eval(app, &format!("document.getElementById('disc').dataset.state='{}';", state));
 
         let active = indicator != Indicator::Idle;
         ACTIVE.store(active, Ordering::SeqCst);

@@ -15,12 +15,7 @@ fn engine(app: &AppHandle) -> Result<LocalEngine, String> {
 }
 
 /// Transcribes with `model` (normally `settings.local_model`).
-pub async fn transcribe_local(
-    app: &AppHandle,
-    settings: &Settings,
-    model: &str,
-    samples: Vec<f32>,
-) -> Result<String, String> {
+pub async fn transcribe(app: &AppHandle, settings: &Settings, model: &str, samples: Vec<f32>) -> Result<String, String> {
     let engine = engine(app)?;
     log::info!(
         "Local: model {}, backend {}, language {}",

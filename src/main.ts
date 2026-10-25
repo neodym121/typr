@@ -65,8 +65,10 @@ interface Settings {
   developerMode: boolean;
 }
 
+/** An input device (audio.rs `MicDevice`) */
 interface MicDevice {
   name: string;
+  /** The system's default input */
   is_default: boolean;
 }
 
@@ -147,9 +149,12 @@ window.addEventListener("unhandledrejection", (event) => {
   uiLog("error", "Unhandled promise rejection:", event.reason);
 });
 
-// DOM elements
-const statusIndicator = document.getElementById("status-indicator")!;
-const statusText = document.getElementById("status-text")!;
+// ── Controls ─────────────────────────────────────────
+// The sidebar's status, then the controls of the pages and of Settings that
+// this file handles itself
+
+const statusBox = document.getElementById("status")!;
+const statusLabel = document.getElementById("status-label")!;
 const statusDetail = document.getElementById("status-detail")!;
 const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
 const indicatorToggle = document.getElementById("indicator-toggle") as HTMLInputElement;
@@ -164,17 +169,11 @@ const updateLink = document.getElementById("update-link")!;
 const recognitionLanguage = document.getElementById("recognition-language") as HTMLSelectElement;
 const fallbackRow = document.getElementById("fallback-row")!;
 const fallbackToggle = document.getElementById("fallback-toggle") as HTMLInputElement;
-const engineLocal = document.getElementById("engine-local")!;
-const engineGroq = document.getElementById("engine-groq")!;
-const engineOpenai = document.getElementById("engine-openai")!;
-const enginePolza = document.getElementById("engine-polza")!;
-const engineAssemblyai = document.getElementById("engine-assemblyai")!;
-const localSettings = document.getElementById("local-settings")!;
-const cloudSettings = document.getElementById("cloud-settings")!;
-const groqSettings = document.getElementById("groq-settings")!;
-const openaiSettings = document.getElementById("openai-settings")!;
-const polzaSettings = document.getElementById("polza-settings")!;
-const assemblyaiSettings = document.getElementById("assemblyai-settings")!;
+// One segment per engine; its settings are the panel with the same id (the
+// local engine's outside the cloud card)
+const engineButtons = document.querySelectorAll<HTMLButtonElement>("#engine-select [data-engine]");
+const enginePanels = document.querySelectorAll<HTMLElement>("[data-engine-panel]");
+const cloudPanel = document.getElementById("cloud-panel")!;
 const groqModel = document.getElementById("groq-model") as HTMLSelectElement;
 const openaiEndpoint = document.getElementById("openai-endpoint") as HTMLInputElement;
 const openaiModel = document.getElementById("openai-model") as HTMLInputElement;
@@ -183,8 +182,7 @@ const polzaModel = document.getElementById("polza-model") as HTMLInputElement;
 const polzaProvider = document.getElementById("polza-provider") as HTMLInputElement;
 const assemblyaiModel = document.getElementById("assemblyai-model") as HTMLSelectElement;
 const languageButtons = document.querySelectorAll<HTMLButtonElement>("#language-select .segment");
-const modeToggle = document.getElementById("mode-toggle")!;
-const modePtt = document.getElementById("mode-ptt")!;
+const modeButtons = document.querySelectorAll<HTMLButtonElement>("#recording-mode [data-mode]");
 const appendSpaceToggle = document.getElementById("append-space-toggle") as HTMLInputElement;
 const devModeToggle = document.getElementById("dev-mode-toggle") as HTMLInputElement;
 const tabDeveloper = document.getElementById("tab-developer")!;
@@ -201,20 +199,27 @@ const logCopy = document.getElementById("log-copy")!;
 const logClear = document.getElementById("log-clear")!;
 const logLevelButtons = document.querySelectorAll<HTMLButtonElement>("#log-levels .segment");
 
-// Section navigation
-const navItems = document.querySelectorAll<HTMLElement>("#sidebar-nav .nav-item");
-const sections = document.querySelectorAll<HTMLElement>(".content-section");
+// ── Pages ────────────────────────────────────────────
+// The sidebar's links show one page at a time; some modules refresh theirs
+// when it comes up
+
+const navLinks = document.querySelectorAll<HTMLElement>("#nav .nav-link");
+const pages = document.querySelectorAll<HTMLElement>(".page");
+const pageShown: Record<string, () => void> = {
+  engine: showLocal,
+  postprocess: showPostProcess,
+  ask: showQuickAsk,
+};
 
 function showSection(name: string) {
-  navItems.forEach((n) => n.classList.toggle("active", n.dataset.section === name));
-  sections.forEach((s) => s.classList.toggle("active", s.id === `section-${name}`));
-  if (name === "postprocess") showPostProcess();
-  if (name === "ask") showQuickAsk();
-  if (name === "engine") showLocal();
+  navLinks.forEach((link) => link.classList.toggle("active", link.dataset.section === name));
+  pages.forEach((page) => page.classList.toggle("active", page.id === `section-${name}`));
+  pageShown[name]?.();
 }
 
-navItems.forEach((item) => {
-  item.addEventListener("click", () => showSection(item.dataset.section || "general"));
+document.getElementById("nav")!.addEventListener("click", (e) => {
+  const section = (e.target as HTMLElement).closest<HTMLElement>(".nav-link")?.dataset.section;
+  if (section) showSection(section);
 });
 
 // ── Settings window ──────────────────────────────────
@@ -306,15 +311,17 @@ settingsTabs.forEach((button) => {
   });
 });
 
-// The window has no system title bar. Drag it by the empty space of the
-// sidebar, the strip above the content and the setup's header
+// The window has no system title bar. It is dragged by the empty space of
+// the sidebar, the strip above the page and the setup's header: a press in
+// a drag region that isn't on something to click, type in or copy
 const appWindow = getCurrentWindow();
+const NOT_DRAGGING = "button, select, input, a, label, .nav-link, #status-detail";
 
 document.addEventListener("mousedown", (e) => {
   const target = e.target as HTMLElement;
-  if (e.button !== 0 || !target.closest(".drag-region")) return;
-  if (target.closest("button, select, input, a, label, .nav-item, #status-detail")) return;
-  appWindow.startDragging();
+  if (e.button === 0 && target.closest(".drag-region") && !target.closest(NOT_DRAGGING)) {
+    void appWindow.startDragging();
+  }
 });
 
 document.getElementById("window-minimize")!.addEventListener("click", () => appWindow.minimize());
@@ -425,10 +432,12 @@ function renderMicOptions() {
 }
 
 async function loadSettings() {
-  currentSettings = await invoke<Settings>("get_settings");
-  systemLanguage = await invoke<string>("get_system_language")
-    .then((lang): Lang => (lang === "ru" ? "ru" : "en"))
-    .catch((): Lang => "en");
+  const [settings, system] = await Promise.all([
+    invoke<Settings>("get_settings"),
+    invoke<string>("get_system_language").catch(() => "en"),
+  ]);
+  currentSettings = settings;
+  systemLanguage = system === "ru" ? "ru" : "en";
   applyLanguage(resolveLanguage(currentSettings.language || ""));
   revealInterface();
 
@@ -480,36 +489,29 @@ function fillForm() {
     applyLanguage(resolveLanguage(currentSettings.language || ""));
   }
 
-  // API keys
+  // Settings → API keys
   fillApiKeys();
 
-  // Engine
-  setEngine(currentSettings.engine || "groq");
-  setChoice(groqModel, GROQ_MODELS, currentSettings.groqModel);
+  // Engine: the chosen one and every engine's own settings
+  const s = currentSettings;
+  setEngine(s.engine || "groq");
+  setChoice(groqModel, GROQ_MODELS, s.groqModel);
+  openaiEndpoint.value = s.openaiEndpoint || "https://api.openai.com/v1";
+  openaiModel.value = s.openaiModel || "whisper-1";
+  openaiKey.value = s.apiKeys?.openai || "";
+  polzaModel.value = s.polzaModel || "openai/whisper-large-v3";
+  polzaProvider.value = s.polzaProvider || "";
+  setChoice(assemblyaiModel, ASSEMBLYAI_MODELS, s.assemblyaiModel);
 
-  // OpenAI Compatible settings
-  openaiEndpoint.value = currentSettings.openaiEndpoint || "https://api.openai.com/v1";
-  openaiModel.value = currentSettings.openaiModel || "whisper-1";
-  openaiKey.value = currentSettings.apiKeys?.openai || "";
-
-  // Polza settings
-  polzaModel.value = currentSettings.polzaModel || "openai/whisper-large-v3";
-  polzaProvider.value = currentSettings.polzaProvider || "";
-
-  // AssemblyAI settings
-  setChoice(assemblyaiModel, ASSEMBLYAI_MODELS, currentSettings.assemblyaiModel);
-
-  // Speech
-  recognitionLanguage.value = currentSettings.recognitionLanguage || "";
+  // Engine → Speech
+  recognitionLanguage.value = s.recognitionLanguage || "";
   syncSelect(recognitionLanguage);
-  fallbackToggle.checked = currentSettings.fallbackLocal !== false;
+  fallbackToggle.checked = s.fallbackLocal !== false;
 
-  // Recording mode
-  setRecordingMode(currentSettings.recordingMode || "push-to-talk");
-
-  // Hotkeys
+  // Settings → Hotkeys, and the space after the text (Post-processing)
+  setRecordingMode(s.recordingMode || "push-to-talk");
   fillHotkeys();
-  appendSpaceToggle.checked = Boolean(currentSettings.appendSpace);
+  appendSpaceToggle.checked = Boolean(s.appendSpace);
 
   // Post-processing
   fillPostProcess();
@@ -521,20 +523,15 @@ function fillForm() {
   fillLocal();
 }
 
+/** Marks `engine` chosen and shows its settings */
 function setEngine(engine: string) {
   currentSettings.engine = engine;
-  engineLocal.classList.toggle("active", engine === "local");
-  engineGroq.classList.toggle("active", engine === "groq");
-  engineOpenai.classList.toggle("active", engine === "openai");
-  enginePolza.classList.toggle("active", engine === "polza");
-  engineAssemblyai.classList.toggle("active", engine === "assemblyai");
-  groqSettings.classList.toggle("hidden", engine !== "groq");
-  openaiSettings.classList.toggle("hidden", engine !== "openai");
-  polzaSettings.classList.toggle("hidden", engine !== "polza");
-  assemblyaiSettings.classList.toggle("hidden", engine !== "assemblyai");
-  localSettings.classList.toggle("hidden", engine !== "local");
-  cloudSettings.classList.toggle("hidden", engine === "local");
-  fallbackRow.classList.toggle("hidden", engine === "local");
+  engineButtons.forEach((button) => button.classList.toggle("active", button.dataset.engine === engine));
+  enginePanels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.enginePanel !== engine));
+  // The local engine has no cloud card, and nothing to fall back to
+  const local = engine === "local";
+  cloudPanel.classList.toggle("hidden", local);
+  fallbackRow.classList.toggle("hidden", local);
 }
 
 // Selects a saved model; an unknown one falls back to the first option
@@ -543,10 +540,10 @@ function setChoice(select: HTMLSelectElement, allowed: string[], value: string |
   syncSelect(select);
 }
 
+/** "toggle" or "push-to-talk" */
 function setRecordingMode(mode: string) {
   currentSettings.recordingMode = mode;
-  modeToggle.classList.toggle("active", mode === "toggle");
-  modePtt.classList.toggle("active", mode === "push-to-talk");
+  modeButtons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
 }
 
 function setIndicatorPosition(position: string) {
@@ -562,12 +559,10 @@ function showIndicatorPosition() {
 // The form writes every change into currentSettings (here and in the
 // modules); saving sends that object as it is.
 async function saveSettings() {
-  try {
-    await invoke("save_settings", { settings: currentSettings });
-  } catch (err) {
+  await invoke("save_settings", { settings: currentSettings }).catch((err) => {
     uiLog("error", "Failed to save settings:", err);
     throw err;
-  }
+  });
 }
 
 function saveQuietly() {
@@ -576,31 +571,22 @@ function saveQuietly() {
   });
 }
 
-// Event listeners for settings
-engineLocal.addEventListener("click", () => {
-  setEngine("local");
-  saveQuietly();
-  showLocal();
+// ── Changes from the form ────────────────────────────
+
+engineButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const engine = button.dataset.engine || "groq";
+    setEngine(engine);
+    saveQuietly();
+    if (engine === "local") showLocal();
+  });
 });
 
-engineGroq.addEventListener("click", () => {
-  setEngine("groq");
-  saveQuietly();
-});
-
-engineOpenai.addEventListener("click", () => {
-  setEngine("openai");
-  saveQuietly();
-});
-
-enginePolza.addEventListener("click", () => {
-  setEngine("polza");
-  saveQuietly();
-});
-
-engineAssemblyai.addEventListener("click", () => {
-  setEngine("assemblyai");
-  saveQuietly();
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setRecordingMode(button.dataset.mode || "push-to-talk");
+    saveQuietly();
+  });
 });
 
 /** Saves `apply`'s change to the settings when `control` changes */
@@ -711,16 +697,6 @@ updateLink.addEventListener("click", openUpdate);
 listen<UpdateInfo | null>("update-available", (event) => {
   update = event.payload;
   renderUpdate();
-});
-
-modeToggle.addEventListener("click", () => {
-  setRecordingMode("toggle");
-  saveQuietly();
-});
-
-modePtt.addEventListener("click", () => {
-  setRecordingMode("push-to-talk");
-  saveQuietly();
 });
 
 // ── Developer mode ───────────────────────────────────
@@ -1034,11 +1010,11 @@ function setStatus(view: StatusView) {
 
 function renderStatus() {
   const detail = statusView.detail ? t(statusView.detail) : statusView.rawDetail || "";
-  statusIndicator.dataset.state = statusView.state;
-  statusText.textContent = t(statusView.text);
+  statusBox.dataset.state = statusView.state;
+  statusLabel.textContent = t(statusView.text);
   statusDetail.textContent = detail;
   statusDetail.classList.toggle("hidden", !detail);
-  statusIndicator.title = detail;
+  statusBox.title = detail;
 }
 
 // Idle status: "Ready", or "Hotkey off" while the tray switch is off
@@ -1050,20 +1026,25 @@ function setIdleStatus() {
   }
 }
 
+/** The recorder's state (recorder.rs): "Ready", "Recording" or "Transcribing" */
 function applyRecordingState(state: string) {
-  if (state === "Recording") {
-    window.clearTimeout(statusResetTimer);
-    setStatus({ state: "recording", text: "status.recording" });
-  } else if (state === "Transcribing") {
-    setStatus({ state: "transcribing", text: "status.transcribing" });
-  } else if (statusIndicator.dataset.state !== "error" && statusIndicator.dataset.state !== "notice") {
-    setIdleStatus();
+  switch (state) {
+    case "Recording":
+      window.clearTimeout(statusResetTimer);
+      setStatus({ state: "recording", text: "status.recording" });
+      break;
+    case "Transcribing":
+      setStatus({ state: "transcribing", text: "status.transcribing" });
+      break;
+    default:
+      // An error or a fallback notice stays until its own timer ends it
+      if (!["error", "notice"].includes(statusBox.dataset.state ?? "")) setIdleStatus();
   }
 }
 
 function applyHotkeyEnabled(enabled: boolean) {
   hotkeyEnabled = enabled;
-  const state = statusIndicator.dataset.state;
+  const state = statusBox.dataset.state;
   if (state !== "recording" && state !== "transcribing") {
     window.clearTimeout(statusResetTimer);
     setIdleStatus();
@@ -1100,7 +1081,8 @@ listen<string>("engine-changed", (event) => {
   showLocal();
 });
 
-// Initialize
+// ── Start ────────────────────────────────────────────
+
 getVersion()
   .then((version) => {
     versionText.textContent = `v${version}`;

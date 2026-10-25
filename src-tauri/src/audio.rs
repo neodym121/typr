@@ -1,39 +1,37 @@
+//! Microphone capture with cpal into memory, and packing a recording as WAV
+//! or FLAC for the cloud engines. Nothing is written to disk.
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use hound::{WavSpec, WavWriter};
+use hound::{SampleFormat, WavSpec, WavWriter};
 use std::io::Cursor;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Whisper works on 16 kHz mono audio
 pub const TARGET_SAMPLE_RATE: u32 = 16000;
 
+/// An input device as Basics lists it.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MicDevice {
     pub name: String,
+    /// The system's default input
     pub is_default: bool,
 }
 
+/// The input devices, the system's default one marked.
 pub fn list_microphones() -> Vec<MicDevice> {
     let host = cpal::default_host();
-    let default_name = host
-        .default_input_device()
-        .and_then(|d| d.name().ok())
-        .unwrap_or_default();
-
-    let mut devices = Vec::new();
-    match host.input_devices() {
-        Ok(input_devices) => {
-            for device in input_devices {
-                if let Ok(name) = device.name() {
-                    devices.push(MicDevice {
-                        is_default: name == default_name,
-                        name,
-                    });
-                }
-            }
+    let default = host.default_input_device().and_then(|device| device.name().ok());
+    let devices = match host.input_devices() {
+        Ok(devices) => devices,
+        Err(e) => {
+            log::error!("Failed to list input devices: {}", e);
+            return Vec::new();
         }
-        Err(e) => log::error!("Failed to list input devices: {}", e),
-    }
+    };
     devices
+        .filter_map(|device| device.name().ok())
+        .map(|name| MicDevice { is_default: default.as_ref() == Some(&name), name })
+        .collect()
 }
 
 /// Audio captured by one recording, already mixed to mono and resampled to 16 kHz.
@@ -44,162 +42,133 @@ pub struct CapturedAudio {
     pub peak: f32,
 }
 
-/// Wrapper to make cpal::Stream usable across threads.
-/// SAFETY: cpal::Stream on macOS (CoreAudio) is thread-safe in practice;
-/// we only access it behind a Mutex to start/stop recording.
-struct SendStream(#[allow(dead_code)] cpal::Stream);
-unsafe impl Send for SendStream {}
-unsafe impl Sync for SendStream {}
+/// A running capture and the format its samples come in.
+struct Capture {
+    /// Dropping it ends the capture and lets the device go
+    stream: cpal::Stream,
+    sample_rate: u32,
+    channels: u16,
+}
 
+// cpal's stream isn't `Send` on every platform. The recorder sits behind a
+// mutex shared by the hotkey and command threads, and the stream is only
+// ever created and dropped under it, never used from two threads at once.
+unsafe impl Send for Capture {}
+
+/// Records from one microphone at a time.
+#[derive(Default)]
 pub struct AudioRecorder {
-    samples: Arc<Mutex<Vec<f32>>>,
-    stream: Option<SendStream>,
-    source_sample_rate: u32,
-    source_channels: u16,
+    /// What the device has delivered so far, its channels interleaved
+    buffer: Arc<Mutex<Vec<f32>>>,
+    capture: Option<Capture>,
 }
 
 impl AudioRecorder {
-    pub fn new() -> Self {
-        Self {
-            samples: Arc::new(Mutex::new(Vec::new())),
-            stream: None,
-            source_sample_rate: 48000,
-            source_channels: 1,
-        }
-    }
+    /// Opens `microphone` (a device name; "default" or empty for the system's
+    /// default input) and starts collecting its samples. A device that is
+    /// gone falls back to the default one.
+    pub fn start(&mut self, microphone: &str) -> Result<(), String> {
+        // A capture left running ends here, with whatever it collected
+        self.capture = None;
+        lock(&self.buffer).clear();
 
-    pub fn start(&mut self, mic_name: &str) -> Result<(), String> {
-        // Close any previous stream and drop leftover samples
-        self.stream = None;
-        self.samples
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clear();
-
-        let host = cpal::default_host();
-
-        let device = if mic_name.is_empty() || mic_name == "default" {
-            host.default_input_device()
-                .ok_or("No default input device found")?
-        } else {
-            match find_input_device(&host, mic_name)? {
-                Some(device) => device,
-                None => {
-                    log::warn!(
-                        "Microphone '{}' not found, falling back to the default input device",
-                        mic_name
-                    );
-                    host.default_input_device().ok_or(format!(
-                        "Microphone '{}' not found and no default input device is available",
-                        mic_name
-                    ))?
-                }
-            }
-        };
-        let device_name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
-
-        // Use the device's default config instead of forcing 16kHz
-        let default_config = device.default_input_config().map_err(|e| {
-            format!(
-                "Failed to get default input config for '{}': {}",
-                device_name, e
-            )
-        })?;
-
-        let sample_rate = default_config.sample_rate().0;
-        let channels = default_config.channels();
-
+        let device = pick_device(microphone)?;
+        let name = device.name().unwrap_or_else(|_| "<unknown>".to_string());
+        // The device's own format: many refuse to record at 16 kHz directly,
+        // the samples are converted once the recording ends
+        let format = device
+            .default_input_config()
+            .map_err(|e| format!("Failed to get default input config for '{}': {}", name, e))?;
         log::info!(
             "Microphone '{}': {} Hz, {} channel(s), {:?}",
-            device_name,
-            sample_rate,
-            channels,
-            default_config.sample_format()
+            name,
+            format.sample_rate().0,
+            format.channels(),
+            format.sample_format()
         );
 
-        self.source_sample_rate = sample_rate;
-        self.source_channels = channels;
-
-        let config = cpal::StreamConfig {
-            channels,
-            sample_rate: cpal::SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Default,
-        };
-
-        let samples = self.samples.clone();
+        let sink = Arc::clone(&self.buffer);
         let stream = device
             .build_input_stream(
-                &config,
-                move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                    if let Ok(mut buf) = samples.lock() {
-                        buf.extend_from_slice(data);
-                    }
-                },
-                |err| {
-                    log::error!("Audio stream error: {}", err);
-                },
+                &format.config(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| lock(&sink).extend_from_slice(data),
+                |e| log::error!("Audio stream error: {}", e),
                 None,
             )
-            .map_err(|e| format!("Failed to open audio stream on '{}': {}", device_name, e))?;
+            .map_err(|e| format!("Failed to open audio stream on '{}': {}", name, e))?;
+        stream.play().map_err(|e| format!("Failed to start audio stream: {}", e))?;
 
-        stream
-            .play()
-            .map_err(|e| format!("Failed to start audio stream: {}", e))?;
-        self.stream = Some(SendStream(stream));
+        self.capture = Some(Capture { stream, sample_rate: format.sample_rate().0, channels: format.channels() });
         log::info!("Audio capture started");
         Ok(())
     }
 
     /// Stops capturing and returns what was recorded.
     pub fn stop(&mut self) -> Result<CapturedAudio, String> {
-        // Dropping the stream stops the capture and releases the device
-        self.stream = None;
-
-        let raw: Vec<f32> = {
-            let mut buf = self
-                .samples
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            std::mem::take(&mut *buf)
+        let Some(Capture { stream, sample_rate, channels }) = self.capture.take() else {
+            return Err("The microphone isn't recording".to_string());
         };
-        log::info!("Audio capture stopped, {} raw samples", raw.len());
-
-        if raw.is_empty() {
+        drop(stream);
+        let interleaved = std::mem::take(&mut *lock(&self.buffer));
+        log::info!("Audio capture stopped, {} raw samples", interleaved.len());
+        if interleaved.is_empty() {
             return Err(
                 "No audio captured: the microphone delivered no data. Check the selected input device."
                     .to_string(),
             );
         }
 
-        // Convert to mono if multi-channel
-        let channels = self.source_channels.max(1) as usize;
-        let mono: Vec<f32> = if channels > 1 {
-            raw.chunks(channels)
-                .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
-                .collect()
-        } else {
-            raw
-        };
-
-        let duration_secs = mono.len() as f32 / self.source_sample_rate.max(1) as f32;
-        let peak = mono.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
-
-        // Downsample to 16kHz for Whisper
-        let samples = resample(&mono, self.source_sample_rate, TARGET_SAMPLE_RATE);
-
+        let mono = mix_to_mono(interleaved, channels);
+        let sample_rate = sample_rate.max(1);
+        let duration_secs = mono.len() as f32 / sample_rate as f32;
+        let peak = mono.iter().map(|sample| sample.abs()).fold(0.0, f32::max);
+        let samples = resample(&mono, sample_rate, TARGET_SAMPLE_RATE);
         log::info!(
             "Recorded {:.2} s, peak level {:.1} dBFS, {} samples at 16 kHz",
             duration_secs,
             to_dbfs(peak),
             samples.len()
         );
-
-        Ok(CapturedAudio {
-            samples,
-            duration_secs,
-            peak,
-        })
+        Ok(CapturedAudio { samples, duration_secs, peak })
     }
+}
+
+/// The buffer shared with the audio callback. A panic elsewhere while it was
+/// held leaves the samples usable, so a poisoned lock is taken over.
+fn lock(buffer: &Mutex<Vec<f32>>) -> MutexGuard<'_, Vec<f32>> {
+    buffer.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The device named `microphone`, or the default input for "default", an
+/// empty name, or a device that isn't there any more.
+fn pick_device(microphone: &str) -> Result<cpal::Device, String> {
+    let host = cpal::default_host();
+    let wanted = microphone.trim();
+    if !wanted.is_empty() && wanted != "default" {
+        let mut devices = host
+            .input_devices()
+            .map_err(|e| format!("Failed to list input devices: {}", e))?;
+        if let Some(device) = devices.find(|device| device.name().is_ok_and(|name| name == wanted)) {
+            return Ok(device);
+        }
+        log::warn!("Microphone '{}' not found, falling back to the default input device", wanted);
+        return host.default_input_device().ok_or(format!(
+            "Microphone '{}' not found and no default input device is available",
+            wanted
+        ));
+    }
+    host.default_input_device().ok_or_else(|| "No default input device found".to_string())
+}
+
+/// One sample per frame: the average of its channels.
+fn mix_to_mono(interleaved: Vec<f32>, channels: u16) -> Vec<f32> {
+    if channels <= 1 {
+        return interleaved;
+    }
+    interleaved
+        .chunks(usize::from(channels))
+        .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+        .collect()
 }
 
 /// How a recording is packed for a cloud service.
@@ -267,12 +236,7 @@ fn to_pcm16(sample: f32) -> i16 {
 
 /// 16 kHz mono 16-bit PCM WAV.
 pub fn encode_wav(samples: &[f32]) -> Result<Vec<u8>, String> {
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: TARGET_SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
+    let spec = WavSpec { channels: 1, sample_rate: TARGET_SAMPLE_RATE, bits_per_sample: 16, sample_format: SampleFormat::Int };
     let mut buffer = Cursor::new(Vec::with_capacity(44 + samples.len() * 2));
     let mut writer = WavWriter::new(&mut buffer, spec)
         .map_err(|e| format!("Failed to start the WAV data: {}", e))?;
@@ -306,13 +270,6 @@ pub fn encode_flac(samples: &[f32]) -> Result<Vec<u8>, String> {
     Ok(sink.into_inner())
 }
 
-fn find_input_device(host: &cpal::Host, name: &str) -> Result<Option<cpal::Device>, String> {
-    let mut devices = host
-        .input_devices()
-        .map_err(|e| format!("Failed to list input devices: {}", e))?;
-    Ok(devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)))
-}
-
 fn to_dbfs(amplitude: f32) -> f32 {
     if amplitude <= 0.0 {
         f32::NEG_INFINITY
@@ -321,31 +278,25 @@ fn to_dbfs(amplitude: f32) -> f32 {
     }
 }
 
-/// Simple linear interpolation resampler
-fn resample(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
-    if from_rate == to_rate || samples.is_empty() {
-        return samples.to_vec();
+/// Converts `input` from `from` Hz to `to` Hz, each output sample a straight
+/// line between the two input samples around it. Plain, but enough for
+/// speech going to a recognizer.
+fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to || input.is_empty() {
+        return input.to_vec();
     }
-
-    let ratio = from_rate as f64 / to_rate as f64;
-    let output_len = (samples.len() as f64 / ratio) as usize;
-    let mut output = Vec::with_capacity(output_len);
-
-    for i in 0..output_len {
-        let src_idx = i as f64 * ratio;
-        let idx = src_idx as usize;
-        let frac = src_idx - idx as f64;
-
-        let sample = if idx + 1 < samples.len() {
-            samples[idx] as f64 * (1.0 - frac) + samples[idx + 1] as f64 * frac
-        } else {
-            samples[idx.min(samples.len() - 1)] as f64
-        };
-
-        output.push(sample as f32);
-    }
-
-    output
+    let step = f64::from(from) / f64::from(to);
+    let last = input.len() - 1;
+    let len = (input.len() as f64 / step) as usize;
+    (0..len)
+        .map(|n| {
+            let position = n as f64 * step;
+            let left = (position as usize).min(last);
+            let right = (left + 1).min(last);
+            let (a, b) = (f64::from(input[left]), f64::from(input[right]));
+            (a + (b - a) * (position - left as f64)) as f32
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -353,16 +304,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resample_downsamples_by_ratio() {
-        let input = vec![0.5f32; 48000];
-        let output = resample(&input, 48000, 16000);
-        assert_eq!(output.len(), 16000);
-        assert!(output.iter().all(|&s| (s - 0.5).abs() < 1e-6));
+    fn resampling_keeps_the_level_and_scales_the_length() {
+        let steady = vec![0.25f32; 44100];
+        let converted = resample(&steady, 44100, TARGET_SAMPLE_RATE);
+        assert_eq!(converted.len(), 16000);
+        assert!(converted.iter().all(|&s| (s - 0.25).abs() < 1e-6));
+        assert!(resample(&[], 48000, TARGET_SAMPLE_RATE).is_empty());
     }
 
     #[test]
-    fn test_resample_empty_input() {
-        assert!(resample(&[], 48000, 16000).is_empty());
+    fn resampling_draws_lines_between_samples() {
+        assert_eq!(resample(&[0.0, 1.0], 1, 2), vec![0.0, 0.5, 1.0, 1.0]);
+        assert_eq!(resample(&[0.0, 0.5, 1.0, 0.5], 2, 1), vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn stereo_is_averaged_to_mono() {
+        assert_eq!(mix_to_mono(vec![1.0, 0.0, 0.5, 0.5], 2), vec![0.5, 0.5]);
+        assert_eq!(mix_to_mono(vec![0.3, 0.6], 1), vec![0.3, 0.6]);
     }
 
     /// A second of a 440 Hz tone with a little noise, like speech it is not

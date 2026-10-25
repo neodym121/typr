@@ -1,110 +1,85 @@
 <!doctype html>
-<html lang="en">
+<!-- The recording indicator where Typr has no native one (on Windows
+     overlay.rs draws it itself). overlay.rs sets the disc's data-state and
+     the page's data-edge, and replays the slide with the "sliding" class. -->
+<html lang="en" data-edge="top">
   <head>
     <meta charset="UTF-8" />
     <style>
+      :root {
+        --disc: rgba(31, 30, 29, 0.94);
+        --rim: rgba(248, 248, 246, 0.14);
+        --icon: #9c9a92;
+        --light: #f8f8f6;
+        --clay: #d97757;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html, body {
+      html {
         background: transparent;
         overflow: hidden;
         user-select: none;
         -webkit-user-select: none;
       }
-      /* The window starts at the top edge of the screen; the mic rests 10px below it */
-      body {
-        height: 100vh;
-        padding-top: 10px;
-      }
-      /* At the bottom the window ends at the taskbar; the mic rests 10px above it */
-      body.bottom {
-        padding-top: 0;
-      }
-      #slot {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 50px;
-      }
-      /* Slides down from behind the top edge of the screen */
-      #slot.enter {
-        animation: slide-in 0.22s cubic-bezier(0.33, 1, 0.68, 1);
-      }
-      /* or up from behind the taskbar */
-      body.bottom #slot.enter {
-        animation-name: slide-up;
-      }
-      .mic {
+      /* At the top the window starts at the screen edge and the disc rests
+         10 px below it; at the bottom the window ends at the taskbar and the
+         disc rests 10 px above it */
+      body { height: 100vh; padding-top: 10px; }
+      html[data-edge="bottom"] body { padding-top: 0; }
+
+      #rail { height: 50px; display: grid; place-items: center; }
+      /* In from behind the edge it waits at */
+      #rail.sliding { animation: from-top 0.22s cubic-bezier(0.33, 1, 0.68, 1); }
+      html[data-edge="bottom"] #rail.sliding { animation-name: from-bottom; }
+
+      #disc {
         position: relative;
         width: 40px;
         height: 40px;
         border-radius: 50%;
-        background: rgba(31, 30, 29, 0.94);
-        border: 1px solid rgba(248, 248, 246, 0.14);
+        display: grid;
+        place-items: center;
+        background: var(--disc);
+        border: 1px solid var(--rim);
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
         transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
       }
-      .mic svg {
-        width: 18px;
-        height: 18px;
-        stroke: #9c9a92;
-        transition: stroke 0.2s ease;
-      }
-      /* Recording — the accent, the only chromatic colour */
-      .mic.recording {
-        background: #d97757;
+      #disc svg { width: 18px; height: 18px; stroke: var(--icon); transition: stroke 0.2s ease; }
+
+      /* Listening: the accent, the only chromatic colour, beating gently */
+      #disc[data-state="recording"] {
+        background: var(--clay);
         border-color: rgba(248, 248, 246, 0.22);
-        animation: pulse 1.4s ease-in-out infinite;
+        animation: beat 1.4s ease-in-out infinite;
       }
-      .mic.recording svg {
-        stroke: #f8f8f6;
-      }
-      /* Transcribing — a thin light arc spinning around the mic */
-      .mic.transcribing {
-        border-color: rgba(248, 248, 246, 0.2);
-      }
-      .mic.transcribing svg {
-        stroke: #f8f8f6;
-      }
-      .mic.transcribing::after {
-        content: '';
+      /* Transcribing: a thin light arc going round */
+      #disc[data-state="transcribing"] { border-color: rgba(248, 248, 246, 0.2); }
+      #disc[data-state="transcribing"]::after {
+        content: "";
         position: absolute;
         inset: -1px;
         border-radius: 50%;
         border: 2px solid transparent;
-        border-top-color: #f8f8f6;
-        animation: spin 0.9s linear infinite;
+        border-top-color: var(--light);
+        animation: turn 0.9s linear infinite;
       }
-      /* Error — a brief accent ring */
-      .mic.error {
-        border-color: #d97757;
-        box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.35);
-      }
-      .mic.error svg {
-        stroke: #d97757;
-      }
-      @keyframes pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 87, 0.5); }
+      #disc[data-state="recording"] svg,
+      #disc[data-state="transcribing"] svg { stroke: var(--light); }
+      /* A failed dictation: a short accent ring */
+      #disc[data-state="error"] { border-color: var(--clay); box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.35); }
+      #disc[data-state="error"] svg { stroke: var(--clay); }
+
+      @keyframes beat {
+        from, to { box-shadow: 0 0 0 0 rgba(217, 119, 87, 0.5); }
         50% { box-shadow: 0 0 0 4px rgba(217, 119, 87, 0); }
       }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-      @keyframes slide-in {
-        from { transform: translateY(-60px); }
-        to { transform: none; }
-      }
-      @keyframes slide-up {
-        from { transform: translateY(60px); }
-        to { transform: none; }
-      }
+      @keyframes turn { to { transform: rotate(1turn); } }
+      @keyframes from-top { from { transform: translateY(-60px); } }
+      @keyframes from-bottom { from { transform: translateY(60px); } }
     </style>
   </head>
   <body>
-    <div id="slot">
-      <div class="mic" id="mic">
+    <div id="rail">
+      <div id="disc" data-state="idle">
         <!-- Lucide "mic" (src/icons/mic.svg): this page has no scripts to load it -->
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 19v3" />

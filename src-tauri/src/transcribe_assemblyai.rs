@@ -20,22 +20,16 @@ const POLL_INTERVAL: Duration = Duration::from_millis(400);
 const MAX_WAIT: Duration = Duration::from_secs(180);
 
 /// `language` is an ISO 639-1 code; `None` turns on language detection.
-pub async fn transcribe_assemblyai(
+pub async fn transcribe(
     api_key: &str,
     model: &str,
     language: Option<&str>,
     audio: &EncodedAudio,
 ) -> Result<String, String> {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        return Err(
-            "AssemblyAI API key not set. Add it in the API keys section.".to_string(),
-        );
-    }
-    let model = match model.trim() {
-        "" => DEFAULT_MODEL,
-        other => other,
+    let Some(api_key) = net::non_empty(api_key) else {
+        return Err("AssemblyAI API key not set. Add it in the API keys section.".to_string());
     };
+    let model = net::non_empty(model).unwrap_or(DEFAULT_MODEL);
 
     let client = net::client()?;
     let started = Instant::now();
@@ -139,10 +133,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_empty_api_key() {
-        let audio = EncodedAudio { bytes: Vec::new(), format: FORMAT };
-        let result = transcribe_assemblyai("", "", None, &audio).await;
-        assert!(result.unwrap_err().contains("API key not set"));
+    async fn nothing_is_sent_without_a_key() {
+        let recording = EncodedAudio { bytes: Vec::new(), format: FORMAT };
+        let error = transcribe("", "", None, &recording).await.unwrap_err();
+        assert!(error.contains("API key not set"), "{}", error);
     }
 
     #[test]
