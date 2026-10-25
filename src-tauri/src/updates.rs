@@ -8,8 +8,8 @@ use std::time::Duration;
 use crate::net;
 
 /// The repository releases come from
-pub const RELEASES_PAGE: &str = "https://github.com/neodym121/typr-updated/releases";
-const LATEST_RELEASE_API: &str = "https://api.github.com/repos/neodym121/typr-updated/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/neodym121/typr/releases";
+const LATEST_RELEASE_API: &str = "https://api.github.com/repos/neodym121/typr/releases/latest";
 const CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// A release newer than this build.

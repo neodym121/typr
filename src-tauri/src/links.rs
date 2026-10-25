@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_only_known_sites_open() {
         assert!(is_allowed("https://console.groq.com/keys"));
-        assert!(is_allowed("https://github.com/neodym121/typr-updated/releases/tag/v2.0.0"));
+        assert!(is_allowed("https://github.com/neodym121/typr/releases/tag/v2.0.0"));
         assert!(!is_allowed("https://github.com/someone/else"));
         assert!(!is_allowed("file:///C:/Windows/System32/calc.exe"));
         assert!(!is_allowed("https://console.groq.com/keys\" & calc"));

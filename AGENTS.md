@@ -203,7 +203,7 @@ Collapses whitespace, capitalizes the first letter of every sentence and adds a 
 ### Tray menu, autostart, updates
 - Tray: Open settings, Paste last dictation (the last text goes back into the window it was pasted into; if that window is gone, it is put on the clipboard), Engine submenu (switches `engine`, the window follows through `engine-changed`), Hotkey On/Off, Exit, and a "Version X is available" item added on top once an update is found.
 - The main window is `"create": false` in tauri.conf.json and built in `setup`; started with `--autostart` (the Run value from `autostart.rs`), Typr stays in the tray unless the setup isn't done. `autostart::refresh` repoints the Run value at the current executable (release builds only).
-- `updates::check` reads `releases/latest` of `neodym121/typr-updated`; the result is kept in `AppState.update`, sent as `update-available` and shown in the sidebar and Basics. `links::open` opens only the release page and the providers' key pages.
+- `updates::check` reads `releases/latest` of `neodym121/typr`; the result is kept in `AppState.update`, sent as `update-available` and shown in the sidebar and Basics. `links::open` opens only the release page and the providers' key pages.
 
 ### `setup.ts` — first-run wizard
 Shown while `setupDone` is false (and from Settings → General → Advanced): interface language, engine (Local recommended when Vulkan is available, else Groq), the engine's model download or API key (saved in `apiKeys`) plus the speech language, then hotkey, recording mode (push to talk for a new config), start with Windows and update checks. A click on the hotkey records new keys right there (`bindDictationHotkey` in hotkeys.ts, the same recorder as Settings → Hotkeys). Finish or Skip sets `setupDone`.

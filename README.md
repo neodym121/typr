@@ -5,11 +5,11 @@
 <h1 align="center">Typr</h1>
 
 <p align="center">
-  <a href="https://github.com/neodym121/typr-updated/releases/latest"><img src="https://img.shields.io/github/v/release/neodym121/typr-updated?logo=github" alt="release" /></a>
-  <a href="https://github.com/neodym121/typr-updated/releases/latest"><img src="https://img.shields.io/badge/platform-windows-blue" alt="platform" /></a>
+  <a href="https://github.com/neodym121/typr/releases/latest"><img src="https://img.shields.io/github/v/release/neodym121/typr?logo=github" alt="release" /></a>
+  <a href="https://github.com/neodym121/typr/releases/latest"><img src="https://img.shields.io/badge/platform-windows-blue" alt="platform" /></a>
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/tauri-2-blue?logo=tauri" alt="tauri" /></a>
-  <a href="https://github.com/neodym121/typr-updated/stargazers"><img src="https://img.shields.io/github/stars/neodym121/typr-updated" alt="stars" /></a>
-  <a href="https://github.com/neodym121/typr-updated/blob/main/LICENSE"><img src="https://img.shields.io/github/license/neodym121/typr-updated" alt="license" /></a>
+  <a href="https://github.com/neodym121/typr/stargazers"><img src="https://img.shields.io/github/stars/neodym121/typr" alt="stars" /></a>
+  <a href="https://github.com/neodym121/typr/blob/main/LICENSE"><img src="https://img.shields.io/github/license/neodym121/typr" alt="license" /></a>
 </p>
 
 <p align="center">
