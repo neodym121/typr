@@ -7,9 +7,7 @@ const ALLOWED: &[&str] = &[
     "https://console.groq.com/",
     "https://polza.ai/",
     "https://www.assemblyai.com/",
-    "https://platform.openai.com/",
     "https://aistudio.google.com/",
-    "https://openrouter.ai/",
 ];
 
 pub fn is_allowed(url: &str) -> bool {

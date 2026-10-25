@@ -17,17 +17,17 @@ export interface ProviderSettings {
 }
 
 export interface ProviderConfig {
-  /** "gemini" | "openrouter" | "groq" | "polza" */
+  /** "gemini" | "mistral" | "groq" | "polza" */
   provider: string;
   gemini: ProviderSettings;
-  openrouter: ProviderSettings;
+  mistral: ProviderSettings;
   groq: ProviderSettings;
   polza: ProviderSettings;
 }
 
-export type Provider = "gemini" | "openrouter" | "groq" | "polza";
+export type Provider = "gemini" | "mistral" | "groq" | "polza";
 
-const PROVIDERS: Provider[] = ["gemini", "openrouter", "groq", "polza"];
+const PROVIDERS: Provider[] = ["gemini", "mistral", "groq", "polza"];
 
 interface ModelInfo {
   id: string;

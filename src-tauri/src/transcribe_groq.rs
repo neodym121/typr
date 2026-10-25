@@ -22,7 +22,7 @@ pub async fn transcribe(
         return Err("Groq API key not set. Add it in the API keys section.".to_string());
     };
     let model = net::non_empty(model).unwrap_or(DEFAULT_MODEL);
-    net::post_transcription("Groq", TRANSCRIPTIONS_URL, Some(api_key), model, language, audio).await
+    net::post_transcription("Groq", TRANSCRIPTIONS_URL, api_key, model, language, audio).await
 }
 
 #[cfg(test)]

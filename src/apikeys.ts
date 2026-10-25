@@ -4,7 +4,7 @@
 
 import { t, type MessageKey } from "./i18n";
 
-export type KeyId = "groq" | "gemini" | "openrouter" | "polza" | "assemblyai" | "openai" | "exa";
+export type KeyId = "groq" | "gemini" | "mistral" | "polza" | "assemblyai" | "exa";
 
 export type ApiKeys = Record<KeyId, string>;
 
@@ -19,13 +19,11 @@ interface Service {
 const SERVICES: Service[] = [
   { id: "groq", name: "Groq", use: "keys.useSpeechModels", placeholder: "gsk_…" },
   { id: "gemini", name: "Gemini", use: "keys.useModels", placeholder: "AIza…" },
-  { id: "openrouter", name: "OpenRouter", use: "keys.useModels", placeholder: "sk-or-…" },
+  { id: "mistral", name: "Mistral", use: "keys.useModels", placeholder: "" },
   { id: "polza", name: "Polza", use: "keys.useSpeechModels", placeholder: "" },
   { id: "assemblyai", name: "AssemblyAI", use: "keys.useSpeech", placeholder: "" },
   { id: "exa", name: "Exa", use: "keys.useSearch", placeholder: "" },
 ];
-// The OpenAI-compatible server's key (apiKeys.openai) is set in Engine,
-// next to the server's address (main.ts)
 
 export interface KeysHost {
   settings: () => { apiKeys: ApiKeys };

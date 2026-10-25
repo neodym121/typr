@@ -85,7 +85,6 @@ pub fn tray_engine(language: &str) -> &'static str {
 pub fn engine_label(language: &str, engine: Engine) -> &'static str {
     match (language, engine) {
         ("ru", Engine::Local) => "Локально",
-        ("ru", Engine::OpenAi) => "Совместимый с OpenAI",
         (_, engine) => engine.label(),
     }
 }

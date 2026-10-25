@@ -3,7 +3,6 @@ pub mod logger;
 pub mod net;
 pub mod audio;
 pub mod transcribe_groq;
-pub mod transcribe_openai;
 pub mod transcribe_polza;
 pub mod transcribe_assemblyai;
 pub mod transcribe_local;

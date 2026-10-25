@@ -101,10 +101,13 @@ button {
 /* ── Window layout ──────────────────────────────────── */
 
 /* One row: the sidebar beside the page column. Settings, the setup and the
-   window buttons are fixed on top of it */
+   window buttons are fixed on top of it. The column keeps to the window's
+   width: as an auto track it grew to the widest line that can't wrap (a long
+   model name), and the page ran off the right edge */
 #app {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
 }
 

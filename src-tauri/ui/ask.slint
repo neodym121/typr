@@ -898,7 +898,9 @@ export component AskWindow inherits Window {
 
             // The text field, in the strip between the dot and the
             // cross. It starts as a bar the pencil's size where the pencil
-            // was, grows to the left, then away from the screen edge
+            // was, grows to the left, then away from the screen edge. In the
+            // middle of the strip (8 px from the card's edge), so it lines up
+            // with the pencil and keeps equal room above and below once tall
             field := Box {
                 property <length> left: root.typing ? root.field-left : root.field-right - 20px;
                 animate left {
@@ -907,7 +909,7 @@ export component AskWindow inherits Window {
                     easing: cubic-bezier(0.22, 1, 0.36, 1);
                 }
                 x: self.left;
-                y: root.bottom ? parent.height - 7px - self.height : 7px;
+                y: root.bottom ? parent.height - 8px - self.height : 8px;
                 width: root.field-right - self.left;
                 height: root.field-h;
                 animate height {
@@ -1075,8 +1077,9 @@ export component AskWindow inherits Window {
             }
         }
 
-        // The pencil opens the text field. It fades and the field grows out
-        // of its place; it comes back once the field has folded into it
+        // The pencil opens the text field. It comes in with the cross; it
+        // fades as the field grows out of its place and comes back once the
+        // field has folded into it
         Rectangle {
             x: root.pencil-cx - 12px;
             y: root.orb-y - 12px;
@@ -1084,16 +1087,18 @@ export component AskWindow inherits Window {
             height: 24px;
             border-radius: 6px;
             background: edit-ta.has-hover && !root.typing ? #f8f8f614 : transparent;
-            opacity: root.content-in && !root.typing ? 1 : 0;
-            animate opacity {
-                delay: root.typing || !root.content-in ? 0ms : 300ms;
-                duration: root.typing ? 140ms : 180ms;
-            }
+            opacity: root.content-in ? 1 : 0;
+            animate opacity { duration: 160ms; }
             animate background { duration: 120ms; }
             Icon {
                 size: 14px;
                 x: 5px;
                 y: 5px;
+                opacity: root.typing ? 0 : 1;
+                animate opacity {
+                    delay: root.typing ? 0ms : 300ms;
+                    duration: root.typing ? 140ms : 180ms;
+                }
                 stroke: edit-ta.has-hover ? Theme.text-strong : Theme.text-muted;
                 commands: "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z M15 5l4 4";
             }

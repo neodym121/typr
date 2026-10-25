@@ -66,14 +66,14 @@ macro_rules! string_enum {
 }
 
 string_enum! {
-    /// What turns the speech into text.
+    /// What turns the speech into text. In the order of the tray menu and
+    /// the Engine section. A config with the OpenAI-compatible engine, which
+    /// is gone ("openai"), reads as the default.
     Engine (default Groq) {
         Local = "local",
         Groq = "groq",
-        Polza = "polza",
         AssemblyAi = "assemblyai",
-        /// OpenAI or any OpenAI-compatible endpoint
-        OpenAi = "openai" | "openai-compatible",
+        Polza = "polza",
     }
 }
 
@@ -83,9 +83,8 @@ impl Engine {
         match self {
             Engine::Local => "Local",
             Engine::Groq => "Groq",
-            Engine::Polza => "Polza",
             Engine::AssemblyAi => "AssemblyAI",
-            Engine::OpenAi => "OpenAI Compatible",
+            Engine::Polza => "Polza",
         }
     }
 
@@ -114,10 +113,12 @@ string_enum! {
 }
 
 string_enum! {
-    /// Service that runs the post-processing model.
+    /// Service that runs a language model (post-processing, quick ask). A
+    /// config with OpenRouter, which Mistral replaced ("openrouter"), reads
+    /// as the default.
     PostProvider (default Gemini) {
         Gemini = "gemini",
-        OpenRouter = "openrouter",
+        Mistral = "mistral",
         Groq = "groq",
         Polza = "polza",
     }
@@ -164,26 +165,23 @@ fn default_true() -> bool {
 #[serde(default)]
 pub struct ApiKeys {
     pub groq: String,
-    /// OpenAI, or the OpenAI-compatible server set in Engine
-    pub openai: String,
     pub polza: String,
     pub assemblyai: String,
     pub gemini: String,
-    pub openrouter: String,
+    pub mistral: String,
     /// Web search for quick ask
     pub exa: String,
 }
 
 impl ApiKeys {
     /// Every key with its name in config.json
-    pub fn all(&self) -> [(&'static str, &str); 7] {
+    pub fn all(&self) -> [(&'static str, &str); 6] {
         [
             ("groq", &self.groq),
-            ("openai", &self.openai),
             ("polza", &self.polza),
             ("assemblyai", &self.assemblyai),
             ("gemini", &self.gemini),
-            ("openrouter", &self.openrouter),
+            ("mistral", &self.mistral),
             ("exa", &self.exa),
         ]
     }
@@ -192,7 +190,7 @@ impl ApiKeys {
     pub fn model(&self, provider: PostProvider) -> &str {
         match provider {
             PostProvider::Gemini => self.gemini.trim(),
-            PostProvider::OpenRouter => self.openrouter.trim(),
+            PostProvider::Mistral => self.mistral.trim(),
             PostProvider::Groq => self.groq.trim(),
             PostProvider::Polza => self.polza.trim(),
         }
@@ -202,9 +200,8 @@ impl ApiKeys {
     pub fn engine(&self, engine: Engine) -> &str {
         match engine {
             Engine::Groq => self.groq.trim(),
-            Engine::OpenAi => self.openai.trim(),
-            Engine::Polza => self.polza.trim(),
             Engine::AssemblyAi => self.assemblyai.trim(),
+            Engine::Polza => self.polza.trim(),
             Engine::Local => "",
         }
     }
@@ -218,11 +215,9 @@ impl ApiKeys {
 /// The first one set becomes the shared key.
 const OLD_KEY_PLACES: &[(&str, &[&[&str]])] = &[
     ("groq", &[&["groqApiKey"], &["postProcess", "groq", "apiKey"], &["quickAsk", "groq", "apiKey"]]),
-    ("openai", &[&["openaiApiKey"]]),
     ("polza", &[&["polzaApiKey"], &["postProcess", "polza", "apiKey"], &["quickAsk", "polza", "apiKey"]]),
     ("assemblyai", &[&["assemblyaiApiKey"]]),
     ("gemini", &[&["postProcess", "gemini", "apiKey"], &["quickAsk", "gemini", "apiKey"]]),
-    ("openrouter", &[&["postProcess", "openrouter", "apiKey"], &["quickAsk", "openrouter", "apiKey"]]),
     ("exa", &[&["quickAsk", "exaApiKey"]]),
 ];
 
@@ -329,7 +324,7 @@ pub struct PostProcess {
     #[serde(rename = "translateTo")]
     pub translate_to: TranslationLanguage,
     pub gemini: ProviderModel,
-    pub openrouter: ProviderModel,
+    pub mistral: ProviderModel,
     pub groq: ProviderModel,
     pub polza: ProviderModel,
 }
@@ -343,7 +338,7 @@ impl PostProcess {
     pub fn provider_settings(&self, provider: PostProvider) -> &ProviderModel {
         match provider {
             PostProvider::Gemini => &self.gemini,
-            PostProvider::OpenRouter => &self.openrouter,
+            PostProvider::Mistral => &self.mistral,
             PostProvider::Groq => &self.groq,
             PostProvider::Polza => &self.polza,
         }
@@ -367,7 +362,7 @@ pub struct QuickAsk {
     pub enabled: bool,
     pub provider: PostProvider,
     pub gemini: ProviderModel,
-    pub openrouter: ProviderModel,
+    pub mistral: ProviderModel,
     pub groq: ProviderModel,
     pub polza: ProviderModel,
     /// The model may search the web (Exa) when a question needs it
@@ -379,7 +374,7 @@ impl QuickAsk {
     pub fn provider_settings(&self, provider: PostProvider) -> &ProviderModel {
         match provider {
             PostProvider::Gemini => &self.gemini,
-            PostProvider::OpenRouter => &self.openrouter,
+            PostProvider::Mistral => &self.mistral,
             PostProvider::Groq => &self.groq,
             PostProvider::Polza => &self.polza,
         }
@@ -404,10 +399,6 @@ pub struct Settings {
     /// "whisper-large-v3-turbo" or "whisper-large-v3"
     #[serde(rename = "groqModel")]
     pub groq_model: String,
-    #[serde(rename = "openaiEndpoint")]
-    pub openai_endpoint: String,
-    #[serde(rename = "openaiModel")]
-    pub openai_model: String,
     #[serde(rename = "polzaModel")]
     pub polza_model: String,
     #[serde(rename = "polzaProvider")]
@@ -472,8 +463,6 @@ impl Default for Settings {
             engine: Engine::default(),
             api_keys: ApiKeys::default(),
             groq_model: "whisper-large-v3-turbo".to_string(),
-            openai_endpoint: "https://api.openai.com/v1".to_string(),
-            openai_model: "whisper-1".to_string(),
             polza_model: "openai/whisper-large-v3".to_string(),
             polza_provider: String::new(),
             assemblyai_model: "universal-3-5-pro".to_string(),
@@ -559,7 +548,7 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, askHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, openaiEndpoint={}, openaiModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, askHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
@@ -570,8 +559,6 @@ impl Settings {
             self.fallback_local,
             self.keys_summary(),
             self.groq_model,
-            self.openai_endpoint,
-            self.openai_model,
             self.polza_model,
             or_auto(&self.polza_provider),
             self.assemblyai_model,
@@ -650,8 +637,6 @@ impl Settings {
         changed("recognitionLanguage", &old.recognition_language, &self.recognition_language);
         changed("fallbackLocal", &old.fallback_local, &self.fallback_local);
         changed("groqModel", &old.groq_model, &self.groq_model);
-        changed("openaiEndpoint", &old.openai_endpoint, &self.openai_endpoint);
-        changed("openaiModel", &old.openai_model, &self.openai_model);
         changed("polzaModel", &old.polza_model, &self.polza_model);
         changed("polzaProvider", &old.polza_provider, &self.polza_provider);
         changed("assemblyaiModel", &old.assemblyai_model, &self.assemblyai_model);
@@ -757,8 +742,6 @@ mod tests {
         assert!(!settings.post_process.enabled);
         assert_eq!(settings.post_process.provider, PostProvider::Gemini);
         assert_eq!(settings.post_process.preset, Preset::Proper);
-        assert_eq!(settings.openai_endpoint, "https://api.openai.com/v1");
-        assert_eq!(settings.openai_model, "whisper-1");
         assert_eq!(settings.polza_model, "openai/whisper-large-v3");
         assert_eq!(settings.assemblyai_model, "universal-3-5-pro");
         assert_eq!(settings.recognition_language, "");
@@ -812,8 +795,10 @@ mod tests {
         for &engine in Engine::ALL {
             assert_eq!(Engine::parse(engine.id()), Some(engine));
         }
-        assert_eq!(Engine::from("openai-compatible".to_string()), Engine::OpenAi);
         assert_eq!(Engine::from("whatever".to_string()), Engine::Groq);
+        for &provider in PostProvider::ALL {
+            assert_eq!(PostProvider::parse(provider.id()), Some(provider));
+        }
         assert_eq!(Preset::from("official".to_string()), Preset::Proper);
         assert_eq!(RecordingMode::from("toggle".to_string()), RecordingMode::Toggle);
         for &position in IndicatorPosition::ALL {
@@ -825,18 +810,52 @@ mod tests {
         assert_eq!(TranslationLanguage::from("xx".to_string()), TranslationLanguage::English);
 
         let settings: Settings = serde_json::from_str(
-            r#"{"engine":"nonsense","indicatorPosition":"bottom-center","postProcess":{"provider":"openrouter"}}"#,
+            r#"{"engine":"nonsense","indicatorPosition":"bottom-center","postProcess":{"provider":"mistral"}}"#,
         )
         .unwrap();
         assert_eq!(settings.engine, Engine::Groq);
         assert_eq!(settings.indicator_position, IndicatorPosition::BottomCenter);
-        assert_eq!(settings.post_process.provider, PostProvider::OpenRouter);
+        assert_eq!(settings.post_process.provider, PostProvider::Mistral);
 
         let json = serde_json::to_string(&Settings::default()).unwrap();
         assert!(json.contains(r#""engine":"groq""#));
         assert!(json.contains(r#""recordingMode":"push-to-talk""#));
         assert!(json.contains(r#""indicatorPosition":"top-right""#));
         assert!(json.contains(r#""translate":false,"translateTo":"en""#));
+    }
+
+    #[test]
+    fn test_the_openai_compatible_engine_is_gone() {
+        let settings = Settings::from_json(
+            r#"{"engine":"openai","openaiEndpoint":"http://localhost:8080/v1","openaiModel":"large-v3","apiKeys":{"openai":"sk-local","groq":"gsk"}}"#,
+        );
+        assert_eq!(settings.engine, Engine::Groq);
+        assert_eq!(settings.api_keys.groq, "gsk");
+        let saved = serde_json::to_string(&settings).unwrap();
+        for old_field in ["openaiEndpoint", "openaiModel", "sk-local"] {
+            assert!(!saved.contains(old_field), "{} is still saved", old_field);
+        }
+        assert_eq!(Engine::ALL, &[Engine::Local, Engine::Groq, Engine::AssemblyAi, Engine::Polza]);
+    }
+
+    #[test]
+    fn test_openrouter_is_gone() {
+        // Mistral took its place
+        let settings = Settings::from_json(
+            r#"{"apiKeys":{"openrouter":"sk-or-key","gemini":"AIza"},"postProcess":{"provider":"openrouter","openrouter":{"model":"m"}},"quickAsk":{"enabled":true,"provider":"openrouter","openrouter":{"apiKey":"sk-or-old"}}}"#,
+        );
+        assert_eq!(settings.post_process.provider, PostProvider::Gemini);
+        assert_eq!(settings.quick_ask.provider, PostProvider::Gemini);
+        assert!(settings.quick_ask.enabled);
+        assert_eq!(settings.api_keys.gemini, "AIza");
+        let saved = serde_json::to_string(&settings).unwrap();
+        for old in ["openrouter", "sk-or-key", "sk-or-old"] {
+            assert!(!saved.contains(old), "{} is still saved", old);
+        }
+        assert_eq!(
+            PostProvider::ALL,
+            &[PostProvider::Gemini, PostProvider::Mistral, PostProvider::Groq, PostProvider::Polza]
+        );
     }
 
     #[test]
@@ -903,10 +922,16 @@ mod tests {
 
     #[test]
     fn test_one_key_per_service() {
-        let keys = ApiKeys { groq: " gsk_key ".to_string(), gemini: "AIza_key".to_string(), ..Default::default() };
+        let keys = ApiKeys {
+            groq: " gsk_key ".to_string(),
+            gemini: "AIza_key".to_string(),
+            mistral: "mistral_key".to_string(),
+            ..Default::default()
+        };
         assert_eq!(keys.engine(Engine::Groq), "gsk_key");
         assert_eq!(keys.model(PostProvider::Groq), "gsk_key");
         assert_eq!(keys.model(PostProvider::Gemini), "AIza_key");
+        assert_eq!(keys.model(PostProvider::Mistral), "mistral_key");
         assert_eq!(keys.model(PostProvider::Polza), "");
         assert_eq!(keys.engine(Engine::Local), "");
     }
@@ -916,21 +941,19 @@ mod tests {
         let old = r#"{
             "engine": "groq",
             "groqApiKey": "gsk_engine",
-            "openaiApiKey": "sk-openai",
             "postProcess": {"provider": "gemini", "gemini": {"apiKey": "AIza_post", "model": "gemini-2.5-flash"}, "groq": {"apiKey": "gsk_post"}},
-            "quickAsk": {"enabled": true, "openrouter": {"apiKey": "or_ask", "model": "m"}, "polza": {"apiKey": "pk_ask"}, "exaApiKey": "exa_key"}
+            "quickAsk": {"enabled": true, "mistral": {"model": "m"}, "polza": {"apiKey": "pk_ask", "model": "p"}, "exaApiKey": "exa_key"}
         }"#;
         let settings = Settings::from_json(old);
         assert_eq!(settings.api_keys.groq, "gsk_engine");
-        assert_eq!(settings.api_keys.openai, "sk-openai");
         assert_eq!(settings.api_keys.gemini, "AIza_post");
-        assert_eq!(settings.api_keys.openrouter, "or_ask");
         assert_eq!(settings.api_keys.polza, "pk_ask");
         assert_eq!(settings.api_keys.exa, "exa_key");
         assert_eq!(settings.api_keys.assemblyai, "");
         // The models stay where they were
         assert_eq!(settings.post_process.gemini.model, "gemini-2.5-flash");
-        assert_eq!(settings.quick_ask.openrouter.model, "m");
+        assert_eq!(settings.quick_ask.polza.model, "p");
+        assert_eq!(settings.quick_ask.mistral.model, "m");
         assert!(settings.quick_ask.enabled);
 
         let saved = serde_json::to_string(&settings).unwrap();
@@ -953,12 +976,12 @@ mod tests {
         assert_eq!(defaults.provider, PostProvider::Gemini);
 
         let settings: Settings = serde_json::from_str(
-            r#"{"quickAsk":{"enabled":true,"provider":"openrouter","openrouter":{"model":"m"}}}"#,
+            r#"{"quickAsk":{"enabled":true,"provider":"groq","groq":{"model":"m"}}}"#,
         )
         .unwrap();
         assert!(settings.quick_ask.enabled);
-        assert_eq!(settings.quick_ask.provider, PostProvider::OpenRouter);
-        assert_eq!(settings.quick_ask.openrouter.model, "m");
+        assert_eq!(settings.quick_ask.provider, PostProvider::Groq);
+        assert_eq!(settings.quick_ask.groq.model, "m");
         assert!(serde_json::to_string(&settings).unwrap().contains(r#""quickAsk":{"enabled":true"#));
     }
 
@@ -1031,14 +1054,15 @@ mod tests {
     #[test]
     fn saved_settings_read_back_the_same() {
         let scratch = Scratch::new("round-trip");
-        let settings = Settings {
-            engine: Engine::OpenAi,
-            openai_endpoint: "http://localhost:8080/v1".to_string(),
-            openai_model: "large-v3".to_string(),
+        let mut settings = Settings {
+            engine: Engine::AssemblyAi,
+            assemblyai_model: "universal-2".to_string(),
             recognition_language: "en".to_string(),
-            api_keys: ApiKeys { openai: "sk-local".to_string(), ..Default::default() },
+            api_keys: ApiKeys { mistral: "mistral_key".to_string(), ..Default::default() },
             ..Default::default()
         };
+        settings.quick_ask.provider = PostProvider::Mistral;
+        settings.quick_ask.mistral.model = "mistral-small-latest".to_string();
         // The folder doesn't exist yet: saving makes it
         settings.save(&scratch.0).unwrap();
         assert_eq!(Settings::load(&scratch.0), settings);

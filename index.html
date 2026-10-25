@@ -17,7 +17,7 @@
             <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="brand-title">
               <span class="brand-name">Typr</span>
-              <span class="brand-version" id="version-text">v3.4.0</span>
+              <span class="brand-version" id="version-text">v3.4.1</span>
             </span>
           </div>
           <div id="status" data-state="ready" role="status" aria-live="polite">
@@ -135,17 +135,14 @@
           </header>
           <div class="segmented full engine-tabs" id="engine-select">
             <button type="button" class="segment" data-engine="local" data-i18n="engine.local">Local</button>
-            <button type="button" class="segment active" data-engine="groq">Groq Cloud</button>
-            <button type="button" class="segment" data-engine="polza">Polza</button>
+            <button type="button" class="segment active" data-engine="groq">Groq</button>
             <button type="button" class="segment" data-engine="assemblyai">AssemblyAI</button>
-            <button type="button" class="segment" data-engine="openai" data-i18n="engine.openai">OpenAI Compatible</button>
+            <button type="button" class="segment" data-engine="polza">Polza</button>
           </div>
 
           <!-- Local recognition (src/local.ts) -->
           <div id="local-panel" class="hidden" data-engine-panel="local">
             <p id="local-unsupported" class="local-note hidden" data-i18n="local.unsupported">Local recognition works on 64-bit Windows only</p>
-            <h2 class="group-title" data-i18n="local.models">Models</h2>
-            <p class="group-hint" data-i18n="local.modelsHint">Downloaded once and run on this computer. The audio never leaves it</p>
             <!-- The engine components come with the first model; shown only when they failed -->
             <div id="local-runtime-problem" class="local-problem hidden">
               <span class="local-error" id="local-runtime-problem-text"></span>
@@ -153,7 +150,6 @@
             </div>
             <div id="local-model-list" class="card"></div>
 
-            <h2 class="group-title" data-i18n="local.performance">Performance</h2>
             <div class="card">
               <div class="pref">
                 <div class="pref-text">
@@ -203,33 +199,17 @@
               </div>
             </div>
 
-            <div class="hidden" data-engine-panel="openai">
+            <div class="hidden" data-engine-panel="assemblyai">
               <div class="pref">
                 <div class="pref-text">
-                  <span class="pref-name" data-i18n="engine.endpoint">API Endpoint</span>
-                  <span class="pref-hint" data-i18n="engine.endpointHint">Base URL or /audio/transcriptions</span>
+                  <span class="pref-name" data-i18n="engine.model">Model</span>
+                  <span class="pref-hint" data-i18n="engine.modelHint">Speech recognition model</span>
                 </div>
                 <div class="pref-control">
-                  <input type="text" id="openai-endpoint" placeholder="https://api.openai.com/v1" />
-                </div>
-              </div>
-              <div class="pref">
-                <div class="pref-text">
-                  <span class="pref-name" data-i18n="engine.modelId">Model ID</span>
-                  <span class="pref-hint" data-i18n="engine.openaiModelHint">Model identifier (e.g. whisper-1)</span>
-                </div>
-                <div class="pref-control">
-                  <input type="text" id="openai-model" placeholder="whisper-1" />
-                </div>
-              </div>
-              <!-- apiKeys.openai: this server's key stays with its address, not in Settings → API keys -->
-              <div class="pref">
-                <div class="pref-text">
-                  <label class="pref-name" for="openai-key" data-i18n="engine.apiKey">API key</label>
-                  <span class="pref-hint" data-i18n="engine.openaiKeyHint">Leave empty if the server needs no key</span>
-                </div>
-                <div class="pref-control">
-                  <input type="password" id="openai-key" placeholder="sk-…" spellcheck="false" autocomplete="off" />
+                  <select id="assemblyai-model">
+                    <option value="universal-3-5-pro">Universal-3.5 Pro</option>
+                    <option value="universal-2">Universal-2</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -254,24 +234,8 @@
                 </div>
               </div>
             </div>
-
-            <div class="hidden" data-engine-panel="assemblyai">
-              <div class="pref">
-                <div class="pref-text">
-                  <span class="pref-name" data-i18n="engine.model">Model</span>
-                  <span class="pref-hint" data-i18n="engine.modelHint">Speech recognition model</span>
-                </div>
-                <div class="pref-control">
-                  <select id="assemblyai-model">
-                    <option value="universal-3-5-pro">Universal-3.5 Pro</option>
-                    <option value="universal-2">Universal-2</option>
-                  </select>
-                </div>
-              </div>
-            </div>
           </div>
 
-          <h2 class="group-title" data-i18n="engine.speech">Speech</h2>
           <div class="card">
             <div class="pref">
               <div class="pref-text">
@@ -337,7 +301,7 @@
               <div class="pref-control">
                 <select id="post-provider">
                   <option value="gemini">Gemini</option>
-                  <option value="openrouter">OpenRouter</option>
+                  <option value="mistral">Mistral</option>
                   <option value="groq">Groq</option>
                   <option value="polza">Polza</option>
                 </select>
@@ -432,7 +396,7 @@
               <div class="pref-control">
                 <select id="ask-provider">
                   <option value="gemini">Gemini</option>
-                  <option value="openrouter">OpenRouter</option>
+                  <option value="mistral">Mistral</option>
                   <option value="groq">Groq</option>
                   <option value="polza">Polza</option>
                 </select>

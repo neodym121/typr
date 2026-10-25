@@ -17,9 +17,9 @@ use crate::net;
 use crate::settings::{PostProcess, PostProvider, Preset, Settings, TranslationLanguage};
 
 pub(crate) const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1";
 const GROQ_URL: &str = "https://api.groq.com/openai/v1";
 const POLZA_URL: &str = "https://polza.ai/api/v1";
+const MISTRAL_URL: &str = "https://api.mistral.ai/v1";
 
 /// Low, so the model edits instead of rewriting creatively
 const TEMPERATURE: f64 = 0.2;
@@ -34,18 +34,18 @@ pub struct ModelInfo {
 pub(crate) fn provider_label(provider: PostProvider) -> &'static str {
     match provider {
         PostProvider::Gemini => "Gemini",
-        PostProvider::OpenRouter => "OpenRouter",
         PostProvider::Groq => "Groq",
         PostProvider::Polza => "Polza",
+        PostProvider::Mistral => "Mistral",
     }
 }
 
 /// Base URL of the providers with an OpenAI-compatible API.
 pub(crate) fn openai_base(provider: PostProvider) -> Option<&'static str> {
     match provider {
-        PostProvider::OpenRouter => Some(OPENROUTER_URL),
         PostProvider::Groq => Some(GROQ_URL),
         PostProvider::Polza => Some(POLZA_URL),
+        PostProvider::Mistral => Some(MISTRAL_URL),
         PostProvider::Gemini => None,
     }
 }
@@ -54,9 +54,9 @@ pub(crate) fn openai_base(provider: PostProvider) -> Option<&'static str> {
 pub fn host(provider: PostProvider) -> &'static str {
     match provider {
         PostProvider::Gemini => "https://generativelanguage.googleapis.com",
-        PostProvider::OpenRouter => "https://openrouter.ai",
         PostProvider::Groq => "https://api.groq.com",
         PostProvider::Polza => "https://polza.ai",
+        PostProvider::Mistral => "https://api.mistral.ai",
     }
 }
 
@@ -133,9 +133,12 @@ fn parse_openai_models(provider: PostProvider, json: &Value) -> Vec<ModelInfo> {
             if !is_text_model(provider, &id, model) {
                 return None;
             }
+            // Mistral lists every alias of a model (mistral-small-latest,
+            // mistral-small-2506) as a model of its own with the same name:
+            // the ids tell them apart
             let name = model["name"]
                 .as_str()
-                .filter(|name| !name.trim().is_empty())
+                .filter(|name| !name.trim().is_empty() && provider != PostProvider::Mistral)
                 .unwrap_or(&id)
                 .to_string();
             Some(ModelInfo { id, name })
@@ -144,13 +147,18 @@ fn parse_openai_models(provider: PostProvider, json: &Value) -> Vec<ModelInfo> {
 }
 
 fn is_text_model(provider: PostProvider, id: &str, model: &Value) -> bool {
+    // Mistral lists what a model can do (its type is "base" or "fine-tuned"):
+    // no embeddings, moderation or OCR
+    if provider == PostProvider::Mistral {
+        return model["capabilities"]["completion_chat"].as_bool() == Some(true);
+    }
     // Polza marks every model with a type: chat, image, stt, tts, …
     if let Some(kind) = model["type"].as_str() {
         if kind != "chat" {
             return false;
         }
     }
-    // OpenRouter and Polza list what a model outputs
+    // Polza lists what a model outputs
     if let Some(outputs) = model["architecture"]["output_modalities"].as_array() {
         if !outputs.iter().any(|o| o.as_str() == Some("text")) {
             return false;
@@ -348,7 +356,6 @@ async fn send_chat(
     let response = client
         .post(format!("{}/chat/completions", base))
         .bearer_auth(api_key)
-        .header("X-Title", "Typr")
         .json(body)
         .send()
         .await
@@ -421,10 +428,13 @@ The transcript arrives in the user message between <dictation> and </dictation>.
 }
 
 const CHILL_STYLE: &str = "\
-Style: a casual chat message.
-- Use only lowercase letters, also at the start of sentences and in names. Only acronyms that are always written in capitals (like API or USA) stay as they are.
-- Use a little less punctuation than strict rules require: leave out commas that aren't needed to understand the text. Keep question marks.
-- No period at the end of the text.
+Style: a casual chat message, the way people text each other.
+- Sentence starts are lowercase. Proper nouns keep their capital letter in any language: people, cities, countries, companies, brands, products (Ivan, Ohio, Samsung). Acronyms written in capitals (API, USA) stay as they are. Other words are lowercase.
+- Punctuation is minimal but not missing. For every comma ask: would a reader misread or stumble without it? If yes, keep it; if no, leave it out.
+  - Keep commas that separate items in a list, separate two different thoughts in a long sentence, or set off a direct address when it matters.
+  - Leave out commas that only follow formal rules: before most conjunctions, around short introductory words, around short clauses whose meaning is clear without them.
+- Never end up with no commas in a long sentence that needs them, and never put a comma everywhere a rule allows one.
+- Keep question marks. Use a period only between sentences when needed for clarity; no period at the end of the text.
 - Still fix every mistake, and keep the words and the relaxed tone.";
 
 const PROPER_STYLE: &str = "\
@@ -556,6 +566,24 @@ mod tests {
         ]});
         let models = parse_openai_models(PostProvider::Groq, &groq);
         assert_eq!(models, vec![ModelInfo { id: "llama-3.3-70b-versatile".into(), name: "llama-3.3-70b-versatile".into() }]);
+
+        let mistral = json!({ "object": "list", "data": [
+            { "id": "mistral-small-latest", "name": "mistral-small-2506", "type": "base",
+              "capabilities": { "completion_chat": true, "function_calling": true } },
+            { "id": "mistral-small-2506", "name": "mistral-small-2506", "type": "base",
+              "capabilities": { "completion_chat": true, "function_calling": true } },
+            { "id": "mistral-embed", "name": "mistral-embed", "type": "base",
+              "capabilities": { "completion_chat": false } }
+        ]});
+        let ids: Vec<(String, String)> = parse_openai_models(PostProvider::Mistral, &mistral)
+            .into_iter()
+            .map(|model| (model.id, model.name))
+            .collect();
+        assert_eq!(
+            ids,
+            [("mistral-small-latest", "mistral-small-latest"), ("mistral-small-2506", "mistral-small-2506")]
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+        );
     }
 
     #[tokio::test]

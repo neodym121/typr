@@ -1,6 +1,6 @@
 //! The quick ask's answer, streamed from the language model as it is
 //! written: server-sent events from Gemini (`streamGenerateContent`) or an
-//! OpenAI-compatible `/chat/completions` (OpenRouter, Groq, Polza).
+//! OpenAI-compatible `/chat/completions` (Groq, Polza, Mistral).
 //!
 //! With web search on, the request offers the model one tool, `web_search`.
 //! A round then ends either with the answer or with the searches the model
@@ -115,7 +115,6 @@ pub async fn stream(request: &Request<'_>, sink: &mut impl Sink) -> Result<Round
         Some(base) => client
             .post(format!("{}/chat/completions", base))
             .bearer_auth(request.api_key.trim())
-            .header("X-Title", "Typr")
             .json(&openai_body(request)),
         None => client
             .post(format!(
@@ -386,7 +385,7 @@ impl EventParser {
             let line: Vec<u8> = self.buffer.drain(..=newline).collect();
             let line = String::from_utf8_lossy(&line);
             let line = line.trim_end_matches(['\n', '\r']);
-            // Other fields (event:, id:) and comments (": OPENROUTER PROCESSING")
+            // Other fields (event:, id:) and comments (": keep-alive")
             let Some(data) = line.strip_prefix("data:") else {
                 continue;
             };
@@ -574,7 +573,7 @@ mod tests {
     #[test]
     fn test_openai_events_split_anywhere() {
         let mut parser = EventParser::new(false);
-        let stream = "data: {\"choices\":[{\"delta\":{\"content\":\"При\"}}]}\n\n: OPENROUTER PROCESSING\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"вет\"},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\n\n";
+        let stream = "data: {\"choices\":[{\"delta\":{\"content\":\"При\"}}]}\n\n: keep-alive\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"вет\"},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\n\n";
         let bytes = stream.as_bytes();
         // Split inside a line, in the middle of a two-byte Cyrillic letter
         let (a, b) = bytes.split_at(stream.find("При").unwrap() + 1);

@@ -32,8 +32,6 @@ interface Settings {
   /** One key per service (src/apikeys.ts) */
   apiKeys: ApiKeys;
   groqModel: string;
-  openaiEndpoint: string;
-  openaiModel: string;
   polzaModel: string;
   polzaProvider: string;
   assemblyaiModel: string;
@@ -175,9 +173,6 @@ const engineButtons = document.querySelectorAll<HTMLButtonElement>("#engine-sele
 const enginePanels = document.querySelectorAll<HTMLElement>("[data-engine-panel]");
 const cloudPanel = document.getElementById("cloud-panel")!;
 const groqModel = document.getElementById("groq-model") as HTMLSelectElement;
-const openaiEndpoint = document.getElementById("openai-endpoint") as HTMLInputElement;
-const openaiModel = document.getElementById("openai-model") as HTMLInputElement;
-const openaiKey = document.getElementById("openai-key") as HTMLInputElement;
 const polzaModel = document.getElementById("polza-model") as HTMLInputElement;
 const polzaProvider = document.getElementById("polza-provider") as HTMLInputElement;
 const assemblyaiModel = document.getElementById("assemblyai-model") as HTMLSelectElement;
@@ -496,14 +491,11 @@ function fillForm() {
   const s = currentSettings;
   setEngine(s.engine || "groq");
   setChoice(groqModel, GROQ_MODELS, s.groqModel);
-  openaiEndpoint.value = s.openaiEndpoint || "https://api.openai.com/v1";
-  openaiModel.value = s.openaiModel || "whisper-1";
-  openaiKey.value = s.apiKeys?.openai || "";
+  setChoice(assemblyaiModel, ASSEMBLYAI_MODELS, s.assemblyaiModel);
   polzaModel.value = s.polzaModel || "openai/whisper-large-v3";
   polzaProvider.value = s.polzaProvider || "";
-  setChoice(assemblyaiModel, ASSEMBLYAI_MODELS, s.assemblyaiModel);
 
-  // Engine → Speech
+  // Engine: the speech's language and the local fallback
   recognitionLanguage.value = s.recognitionLanguage || "";
   syncSelect(recognitionLanguage);
   fallbackToggle.checked = s.fallbackLocal !== false;
@@ -604,11 +596,6 @@ bind(indicatorToggle, () => {
 });
 bind(groqModel, () => (currentSettings.groqModel = groqModel.value));
 bind(appendSpaceToggle, () => (currentSettings.appendSpace = appendSpaceToggle.checked));
-bind(openaiEndpoint, () => (currentSettings.openaiEndpoint = openaiEndpoint.value.trim()));
-bind(openaiModel, () => (currentSettings.openaiModel = openaiModel.value.trim()));
-// The OpenAI-compatible server's key is set here, next to its address, not in
-// Settings → API keys
-bind(openaiKey, () => (currentSettings.apiKeys.openai = openaiKey.value.trim()));
 bind(polzaModel, () => (currentSettings.polzaModel = polzaModel.value.trim()));
 bind(polzaProvider, () => (currentSettings.polzaProvider = polzaProvider.value.trim()));
 bind(assemblyaiModel, () => (currentSettings.assemblyaiModel = assemblyaiModel.value));

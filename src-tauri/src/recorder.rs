@@ -10,8 +10,8 @@ use crate::cleanup::cleanup_text;
 use crate::overlay::{self, Indicator};
 use crate::settings::{Engine, Settings};
 use crate::{
-    ask, net, paste, postprocess, transcribe_assemblyai, transcribe_groq, transcribe_local, transcribe_openai,
-    transcribe_polza, translate,
+    ask, net, paste, postprocess, transcribe_assemblyai, transcribe_groq, transcribe_local, transcribe_polza,
+    translate,
 };
 
 /// Shorter recordings are almost always accidental taps; Whisper tends to
@@ -76,9 +76,8 @@ pub fn warm_up_connections(settings: &Settings) {
     let engine_url = match settings.engine {
         Engine::Local => None,
         Engine::Groq => Some(transcribe_groq::HOST.to_string()),
-        Engine::Polza => Some(transcribe_polza::HOST.to_string()),
         Engine::AssemblyAi => Some(transcribe_assemblyai::HOST.to_string()),
-        Engine::OpenAi => Some(transcribe_openai::transcriptions_url(&settings.openai_endpoint)),
+        Engine::Polza => Some(transcribe_polza::HOST.to_string()),
     };
     let post_url = settings
         .post_process
@@ -109,7 +108,8 @@ fn upload_format(settings: &Settings) -> AudioFormat {
         Engine::Groq => transcribe_groq::FORMAT,
         Engine::AssemblyAi => transcribe_assemblyai::FORMAT,
         Engine::Polza => transcribe_polza::FORMAT,
-        Engine::OpenAi | Engine::Local => transcribe_openai::format_for(&settings.openai_endpoint),
+        // Never packed: the local engine takes the samples
+        Engine::Local => AudioFormat::Wav,
     }
 }
 
@@ -343,16 +343,12 @@ async fn transcribe(settings: &Settings, audio: &EncodedAudio) -> Result<String,
     let keys = &settings.api_keys;
     match settings.engine {
         Engine::Groq => transcribe_groq::transcribe(&keys.groq, &settings.groq_model, language, audio).await,
-        Engine::OpenAi => {
-            transcribe_openai::transcribe(&settings.openai_endpoint, &settings.openai_model, &keys.openai, language, audio)
-                .await
+        Engine::AssemblyAi => {
+            transcribe_assemblyai::transcribe(&keys.assemblyai, &settings.assemblyai_model, language, audio).await
         }
         Engine::Polza => {
             transcribe_polza::transcribe(&keys.polza, &settings.polza_model, &settings.polza_provider, language, audio)
                 .await
-        }
-        Engine::AssemblyAi => {
-            transcribe_assemblyai::transcribe(&keys.assemblyai, &settings.assemblyai_model, language, audio).await
         }
         Engine::Local => Err("The local engine takes the samples, not a file".to_string()),
     }

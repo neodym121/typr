@@ -79,14 +79,12 @@ pub fn non_empty(value: &str) -> Option<&str> {
 }
 
 /// Sends a recording to a Whisper-style `/audio/transcriptions` endpoint
-/// (Groq, OpenAI and the servers compatible with it) and returns the text.
-/// `language` is an ISO 639-1 code, `None` lets the model detect it.
-/// Without `api_key` the request goes without an Authorization header, as a
-/// local server may want it.
+/// (Groq's) and returns the text. `language` is an ISO 639-1 code, `None`
+/// lets the model detect it.
 pub async fn post_transcription(
     provider: &str,
     url: &str,
-    api_key: Option<&str>,
+    api_key: &str,
     model: &str,
     language: Option<&str>,
     audio: &EncodedAudio,
@@ -102,19 +100,15 @@ pub async fn post_transcription(
         .fold(Form::new(), |form, (name, value)| form.text(name, value))
         .part("file", recording);
 
-    let mut request = client()?.post(url).multipart(form);
-    if let Some(key) = api_key {
-        request = request.bearer_auth(key);
-    }
+    let request = client()?.post(url).bearer_auth(api_key).multipart(form);
     log::info!(
-        "{}: POST {} (model {}, language {}, {} KB {:?}, API key {})",
+        "{}: POST {} (model {}, language {}, {} KB {:?})",
         provider,
         url,
         model,
         language.unwrap_or("auto"),
         audio.size_kb(),
-        audio.format,
-        if api_key.is_some() { "set" } else { "not set" }
+        audio.format
     );
     let started = Instant::now();
     let response = request.send().await.map_err(|e| format!("{} API request failed: {}", provider, describe_error(&e)))?;

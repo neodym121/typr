@@ -30,8 +30,6 @@ export interface SetupSettings {
   apiKeys: ApiKeys;
   groqModel: string;
   assemblyaiModel: string;
-  openaiEndpoint: string;
-  openaiModel: string;
   localModel: string;
   recordingMode: string;
   checkUpdates: boolean;
@@ -48,30 +46,27 @@ export interface SetupHost {
 }
 
 type Step = "language" | "engine" | "configure" | "done";
-type EngineId = "local" | "groq" | "polza" | "assemblyai" | "openai";
+type EngineId = "local" | "groq" | "assemblyai" | "polza";
 
 const STEPS: Step[] = ["language", "engine", "configure", "done"];
-const ENGINES: EngineId[] = ["local", "groq", "polza", "assemblyai", "openai"];
+const ENGINES: EngineId[] = ["local", "groq", "assemblyai", "polza"];
 const ENGINE_NAMES: Record<EngineId, string> = {
   local: "",
   groq: "Groq",
-  polza: "Polza",
   assemblyai: "AssemblyAI",
-  openai: "OpenAI",
+  polza: "Polza",
 };
 const ENGINE_ABOUT: Record<EngineId, MessageKey> = {
   local: "setup.engine.localAbout",
   groq: "setup.engine.groqAbout",
-  polza: "setup.engine.polzaAbout",
   assemblyai: "setup.engine.assemblyaiAbout",
-  openai: "setup.engine.openaiAbout",
+  polza: "setup.engine.polzaAbout",
 };
 /** Where each service hands out API keys (links.rs allows these sites) */
 const KEY_PAGES: Partial<Record<EngineId, string>> = {
   groq: "https://console.groq.com/keys",
-  polza: "https://polza.ai/dashboard",
   assemblyai: "https://www.assemblyai.com/dashboard",
-  openai: "https://platform.openai.com/api-keys",
+  polza: "https://polza.ai/dashboard",
 };
 
 const root = document.getElementById("setup")!;
@@ -207,7 +202,6 @@ function recommendedEngine(): EngineId {
 
 function engineTitle(engine: EngineId): string {
   if (engine === "local") return t("setup.engine.local");
-  if (engine === "openai") return t("engine.openai");
   return ENGINE_NAMES[engine];
 }
 
@@ -338,21 +332,12 @@ function renderConfigure(): HTMLElement[] {
     parts.push(models);
   } else {
     const name = ENGINE_NAMES[engine];
-    if (engine === "openai") parts.push(...heading(t("setup.openaiTitle"), t("setup.openaiText")));
-    else parts.push(...heading(t("setup.keyTitle", { engine: name }), t("setup.keyText", { engine: name })));
+    parts.push(...heading(t("setup.keyTitle", { engine: name }), t("setup.keyText", { engine: name })));
 
     const card = el("div", "card setup-card");
-    if (engine === "openai") {
-      card.append(
-        field(t("engine.endpoint"), t("engine.endpointHint"),
-          textInput(s.openaiEndpoint, "https://api.openai.com/v1", false, (v) => (s.openaiEndpoint = v))),
-        field(t("engine.modelId"), t("engine.openaiModelHint"),
-          textInput(s.openaiModel, "whisper-1", false, (v) => (s.openaiModel = v))),
-      );
-    }
     const keyHolder = el("div", "setup-key");
     keyHolder.append(
-      textInput(s.apiKeys[engine] || "", engine === "groq" ? "gsk_..." : engine === "openai" ? "sk-..." : t("engine.apiKey"), true, (v) => {
+      textInput(s.apiKeys[engine] || "", engine === "groq" ? "gsk_..." : t("engine.apiKey"), true, (v) => {
         s.apiKeys[engine] = v;
       }),
     );
@@ -365,7 +350,7 @@ function renderConfigure(): HTMLElement[] {
       });
       keyHolder.append(link);
     }
-    card.append(field(t("engine.apiKey"), engine === "openai" ? t("engine.openaiKeyHint") : "", keyHolder));
+    card.append(field(t("engine.apiKey"), "", keyHolder));
 
     if (engine === "groq") {
       card.append(
