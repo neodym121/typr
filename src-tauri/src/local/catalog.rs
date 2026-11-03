@@ -117,12 +117,12 @@ pub const MODELS: &[ModelSpec] = &[
         sha256: "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183",
     },
     ModelSpec {
-        id: "whisper-medium",
-        name: "Whisper Medium",
-        repo: "handy-computer/whisper-medium-gguf",
-        file: "whisper-medium-Q8_0.gguf",
-        size: 831_538_144,
-        sha256: "09e6a65e7de377aa5b10bae24608bc6f8ca2ed04b3993ef10d4a02bcd9a82adf",
+        id: "qwen3-asr-0.6b",
+        name: "Qwen3 ASR 0.6B",
+        repo: "handy-computer/Qwen3-ASR-0.6B-gguf",
+        file: "Qwen3-ASR-0.6B-Q8_0.gguf",
+        size: 850_423_456,
+        sha256: "f081b2d5e23bd669d92cc331d722a8a0681943b8e6f34b48996fd5c319b5acd8",
     },
 ];
 
@@ -142,8 +142,8 @@ mod tests {
     #[test]
     fn test_model_url() {
         assert_eq!(
-            model("whisper-medium").unwrap().url(),
-            "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q8_0.gguf"
+            model("qwen3-asr-0.6b").unwrap().url(),
+            "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf"
         );
     }
 

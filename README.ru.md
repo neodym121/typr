@@ -27,7 +27,7 @@ Typr — лёгкое приложение для голосового ввод�
 ### Диктовка & Текст
 
 - **Глобальный хоткей:** сочетание клавиш или одна кнопка мыши (средняя или боковая).
-- **Локальное распознавание** через [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet TDT 0.6B v3, Whisper Large v3, Large v3 Turbo и Medium работают прямо на компьютере, звук никуда не уходит. Работают на видеокарте через Vulkan или на процессоре.
+- **Локальное распознавание** через [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet TDT 0.6B v3, Whisper Large v3, Large v3 Turbo и Qwen3 ASR 0.6B работают прямо на компьютере, звук никуда не уходит. Работают на видеокарте через Vulkan или на процессоре.
 - **Облачные провайдеры распознавания:** Groq, [AssemblyAI](https://www.assemblyai.com/) и [Polza.AI](https://polza.ai/). Запись уходит в FLAC, где сервис его принимает, по соединению, открытому, пока вы говорите.
 - **Постобработка:** нейросеть дорабатывает текст перед вставкой в разных стилях. Также перевод продиктованного текста на многие языки.
 
@@ -47,8 +47,8 @@ Typr — лёгкое приложение для голосового ввод�
 GitHub Actions (`.github/workflows/build.yml`) собирает один zip с установщиком `.msi` и портативным `.exe` при пуше тега вида `v*` или при ручном запуске workflow:
 
 ```bash
-git tag v3.4.1
-git push origin v3.4.1
+git tag v3.4.2
+git push origin v3.4.2
 ```
 
 Для локальной разработки нужны [Rust](https://rustup.rs/) и [Node.js](https://nodejs.org/) 20+:

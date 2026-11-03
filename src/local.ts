@@ -136,11 +136,27 @@ export function progressText(progress: DownloadProgress): string {
   if (!progress.total) {
     return progress.downloaded > 0 ? formatSize(progress.downloaded) : t("local.starting");
   }
-  const percent = Math.min(100, Math.floor((progress.downloaded / progress.total) * 100));
-  return t("local.progress", {
-    percent,
-    done: formatSize(progress.downloaded),
+  return t("local.progressSize", {
+    done: downloadedPart(progress.downloaded, progress.total),
     total: formatSize(progress.total),
+  });
+}
+
+/** The arrived part in the total's unit, the unit written once after the total */
+function downloadedPart(done: number, total: number): string {
+  const locale = getLanguage() === "ru" ? "ru-RU" : "en-US";
+  if (total / 1e6 >= 1000) {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(done / 1e9);
+  }
+  return String(Math.round(done / 1e6));
+}
+
+/** The size part of a model's meta line while its download runs: "80 / 850 MB" */
+function metaSize(progress: DownloadProgress, modelSize: number): string {
+  const total = progress.total || modelSize;
+  return t("local.progressSize", {
+    done: downloadedPart(progress.downloaded, total),
+    total: formatSize(total),
   });
 }
 
@@ -162,24 +178,18 @@ function progressBar(progress: DownloadProgress): HTMLElement {
   return bar;
 }
 
-function progressLabel(progress: DownloadProgress): HTMLElement {
-  const text = document.createElement("span");
-  text.className = "progress-text";
-  text.dataset.key = progress.key;
-  text.textContent = progressText(progress);
-  return text;
-}
-
 /** Updates a running download without rebuilding its row (and its buttons) */
 function updateInPlace(progress: DownloadProgress): boolean {
   const previous = downloads.get(progress.key);
   if (!previous || previous.state !== progress.state) return false;
   const bars = panel.querySelectorAll<HTMLElement>(`.progress[data-key="${progress.key}"]`);
-  const labels = panel.querySelectorAll<HTMLElement>(`.progress-text[data-key="${progress.key}"]`);
-  if (bars.length === 0 && labels.length === 0) return false;
+  const metas = panel.querySelectorAll<HTMLElement>(`.local-model-meta[data-key="${progress.key}"]`);
+  if (bars.length === 0 && metas.length === 0) return false;
   downloads.set(progress.key, progress);
   bars.forEach((bar) => fillBar(bar, progress));
-  labels.forEach((label) => (label.textContent = progressText(progress)));
+  metas.forEach((meta) => {
+    meta.textContent = `${meta.dataset.prefix ?? ""}${metaSize(progress, Number(meta.dataset.size))}`;
+  });
   return true;
 }
 
@@ -264,9 +274,16 @@ function renderModels() {
       const desc = document.createElement("span");
       desc.className = "pref-hint";
       desc.textContent = t(`local.about.${model.id}` as MessageKey);
+      // While the model downloads, its size shows what has arrived: "80 / 850 MB"
+      const prefix = `${t(`local.languages.${model.id}` as MessageKey)} · `;
       const meta = document.createElement("span");
       meta.className = "pref-hint local-model-meta";
-      meta.textContent = `${t(`local.languages.${model.id}` as MessageKey)} · ${formatSize(model.size)}`;
+      meta.dataset.key = key;
+      meta.dataset.prefix = prefix;
+      meta.dataset.size = String(model.size);
+      meta.textContent = progress
+        ? `${prefix}${metaSize(progress, model.size)}`
+        : `${prefix}${formatSize(model.size)}`;
       info.append(title, desc, meta);
 
       const actions = document.createElement("div");
@@ -274,7 +291,6 @@ function renderModels() {
 
       if (progress) {
         info.append(progressBar(progress));
-        actions.append(progressLabel(progress));
         if (progress.state === "downloading") {
           actions.append(button(t("local.cancel"), () => cancelDownload(key)));
         }
