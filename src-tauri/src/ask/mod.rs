@@ -35,7 +35,7 @@ use crate::overlay;
 use crate::postprocess::{self, provider_label};
 use crate::recorder::RecordingState;
 use crate::selection;
-use crate::settings::{PostProvider, Settings};
+use crate::settings::{NoThinkMode, PostProvider, Settings};
 use serde_json::Value;
 use stream::{ChatMessage, Role, Tools};
 use window::{Command, Recording};
@@ -461,6 +461,7 @@ fn start_answer(
         PostProvider::Polza => config.polza.provider_id.trim().to_string(),
         _ => String::new(),
     };
+    let no_think = config.no_think.then_some(config.no_think_mode);
     let search_key = settings.api_keys.exa().to_string();
     let search = config.web_search && !search_key.is_empty();
     if config.web_search && !search {
@@ -500,6 +501,7 @@ fn start_answer(
             api_key: &api_key,
             model: &model,
             sub_provider: &sub_provider,
+            no_think,
             system: &system,
             messages: &messages,
             search_key: search.then_some(search_key.as_str()),
@@ -532,6 +534,7 @@ struct Answer<'a> {
     api_key: &'a str,
     model: &'a str,
     sub_provider: &'a str,
+    no_think: Option<NoThinkMode>,
     system: &'a str,
     messages: &'a [ChatMessage],
     /// The Exa key while web search is on
@@ -553,6 +556,7 @@ impl Answer<'_> {
                 system: self.system,
                 messages: self.messages,
                 tools,
+                no_think: self.no_think,
                 exchange: &exchange,
             };
             let round = match stream::stream(&request, outbox).await {

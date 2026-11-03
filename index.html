@@ -17,7 +17,7 @@
             <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="brand-title">
               <span class="brand-name">Typr</span>
-              <span class="brand-version" id="version-text">v3.4.2</span>
+              <span class="brand-version" id="version-text">v3.5.0</span>
             </span>
           </div>
           <div id="status" data-state="ready" role="status" aria-live="polite">
@@ -430,7 +430,45 @@
             </div>
           </div>
 
-          <h2 class="group-title" data-i18n="ask.searchTitle">Web search</h2>
+          <div class="card">
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="ask-nothink" data-i18n="ask.noThink">NoThink</label>
+                <span class="pref-hint" data-i18n="ask.noThinkHint">Ask the model not to reason, or to reason as little as it can</span>
+              </div>
+              <div class="pref-control">
+                <label class="switch">
+                  <input type="checkbox" id="ask-nothink" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <div class="pref" id="ask-nothink-mode-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="ask.noThinkMode">Parameter</span>
+                <span class="pref-hint" data-i18n="ask.noThinkModeHint">How to ask the model to limit reasoning</span>
+              </div>
+              <div class="pref-control">
+                <select id="ask-nothink-mode">
+                  <option value="none">none</option>
+                  <option value="low">low</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </div>
+            </div>
+            <div class="pref" id="ask-nothink-test-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="ask.noThinkTest">Model test</span>
+                <span class="pref-hint" id="ask-nothink-test-target"></span>
+              </div>
+              <div class="pref-control">
+                <button type="button" class="btn btn-secondary" id="ask-nothink-test" data-i18n="ask.noThinkTestButton">Test</button>
+              </div>
+            </div>
+            <p class="ask-nothink-test-result" id="ask-nothink-test-result" role="status" aria-live="polite"></p>
+            <p class="ask-nothink-note" data-i18n="ask.noThinkNote">Try different parameters with the provider and model you are going to use: not every provider, and not every model on it, takes the same parameter for switching reasoning off — somewhere it cannot be turned off at all, and somewhere the parameter is called differently. Keep in mind: without reasoning, the model may answer hard questions — code, math, multi-step tasks — worse.</p>
+          </div>
+
           <div class="card">
             <div class="pref">
               <div class="pref-text">
@@ -446,7 +484,6 @@
             </div>
           </div>
 
-          <h2 class="group-title" data-i18n="ask.howTitle">How it works</h2>
           <div class="card ask-steps">
             <ol>
               <li data-i18n="ask.step1">Select text in any app, or press the Quick Ask hotkey to ask about anything</li>

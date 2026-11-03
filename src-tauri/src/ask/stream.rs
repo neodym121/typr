@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::net;
 use crate::postprocess::{openai_base, provider_label, GEMINI_URL};
-use crate::settings::PostProvider;
+use crate::settings::{NoThinkMode, PostProvider};
 
 /// A long answer may take a while; the shared client's 2 minutes are for
 /// whole requests, not streams.
@@ -59,6 +59,8 @@ pub struct Request<'a> {
     pub system: &'a str,
     pub messages: &'a [ChatMessage],
     pub tools: Tools,
+    /// The selected NoThink parameter; `None` leaves reasoning at the model's default
+    pub no_think: Option<NoThinkMode>,
     /// This answer's earlier searches and their results, in the provider's
     /// format (`tool_exchange`), after the messages
     pub exchange: &'a [Value],
@@ -211,6 +213,100 @@ pub async fn stream(request: &Request<'_>, sink: &mut impl Sink) -> Result<Round
     Ok(round)
 }
 
+/// Sends one non-streaming request with the same NoThink settings as a real
+/// answer and reports whether the response exposes reasoning. The test uses a
+/// complete response so hidden reasoning can also be seen in token usage.
+pub async fn test_no_think(request: &Request<'_>) -> Result<bool, String> {
+    let label = provider_label(request.provider);
+    if request.api_key.trim().is_empty() {
+        return Err(format!("The {} API key isn't set (API keys section)", label));
+    }
+    if request.model.trim().is_empty() {
+        return Err(format!("No {} model is chosen for quick ask", label));
+    }
+
+    let client = net::client()?;
+    let gemini = openai_base(request.provider).is_none();
+    let builder = match openai_base(request.provider) {
+        Some(base) => {
+            let mut body = openai_body(request);
+            body["stream"] = json!(false);
+            client
+                .post(format!("{}/chat/completions", base))
+                .bearer_auth(request.api_key.trim())
+                .json(&body)
+        }
+        None => client
+            .post(format!(
+                "{}/models/{}:generateContent",
+                GEMINI_URL,
+                request.model.trim().trim_start_matches("models/")
+            ))
+            .header("x-goog-api-key", request.api_key.trim())
+            .json(&gemini_body(request)),
+    };
+    let response = builder
+        .send()
+        .await
+        .map_err(|e| format!("{} request failed: {}", label, net::describe_error(&e)))?;
+    let json = net::read_json(label, response).await?;
+    Ok(response_has_reasoning(gemini, &json))
+}
+
+/// Whether a complete model response contains reasoning, a reasoning block,
+/// or billed reasoning tokens. A provider may hide the reasoning text while
+/// still reporting its tokens, so all three signals count.
+fn response_has_reasoning(gemini: bool, json: &Value) -> bool {
+    if gemini {
+        let thoughts = json["candidates"][0]["content"]["parts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|part| {
+                part["thought"].as_bool() == Some(true)
+                    || part["text"].as_str().is_some_and(contains_think_block)
+            });
+        return thoughts || positive_number(&json["usageMetadata"]["thoughtsTokenCount"]);
+    }
+
+    let message = &json["choices"][0]["message"];
+    let reasoning = ["reasoning", "reasoning_content", "reasoning_details", "thinking"]
+        .iter()
+        .any(|field| has_value(&message[*field]));
+    let content = match message["content"].as_str() {
+        Some(text) => text.to_string(),
+        None => message["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|part| part["text"].as_str())
+            .collect(),
+    };
+    reasoning
+        || contains_think_block(&content)
+        || positive_number(&json["usage"]["completion_tokens_details"]["reasoning_tokens"])
+        || positive_number(&json["usage"]["reasoning_tokens"])
+}
+
+fn has_value(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(value) => *value,
+        Value::Number(value) => value.as_f64() != Some(0.0),
+        Value::String(value) => !value.trim().is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::Object(value) => !value.is_empty(),
+    }
+}
+
+fn positive_number(value: &Value) -> bool {
+    value.as_f64().is_some_and(|number| number > 0.0)
+}
+
+fn contains_think_block(text: &str) -> bool {
+    text.contains(THINK_OPEN) || text.contains("<thinking>")
+}
+
 /// Whether a failed request was refused because of the tool (the model or
 /// the provider doesn't support tools): then the question goes again
 /// without search.
@@ -258,6 +354,17 @@ fn openai_body(request: &Request) -> Value {
         }]);
         body["tool_choice"] = json!(if request.tools == Tools::Search { "auto" } else { "none" });
     }
+    if let Some(mode) = request.no_think {
+        match request.provider {
+            PostProvider::Polza => {
+                body["reasoning"] = match mode {
+                    NoThinkMode::Disabled => json!({ "enabled": false }),
+                    NoThinkMode::None | NoThinkMode::Low => json!({ "effort": mode.id() }),
+                };
+            }
+            _ => body["reasoning_effort"] = json!(mode.id()),
+        }
+    }
     if !request.sub_provider.trim().is_empty() {
         body["provider"] = json!({ "only": [request.sub_provider.trim()] });
     }
@@ -294,6 +401,12 @@ fn gemini_body(request: &Request) -> Value {
         body["toolConfig"] = json!({
             "functionCallingConfig": { "mode": if request.tools == Tools::Search { "AUTO" } else { "NONE" } },
         });
+    }
+    if let Some(mode) = request.no_think {
+        body["generationConfig"]["thinkingConfig"] = match mode {
+            NoThinkMode::Low => json!({ "thinkingLevel": "low" }),
+            NoThinkMode::None | NoThinkMode::Disabled => json!({ "thinkingBudget": 0 }),
+        };
     }
     body
 }
@@ -627,7 +740,7 @@ mod tests {
             ChatMessage { role: Role::Assistant, content: "a1".into() },
             ChatMessage { role: Role::User, content: "q2".into() },
         ];
-        let request = Request {
+        let mut request = Request {
             provider: PostProvider::Polza,
             api_key: "k",
             model: "openai/gpt-5-mini",
@@ -635,6 +748,7 @@ mod tests {
             system: "sys",
             messages: &messages,
             tools: Tools::Off,
+            no_think: None,
             exchange: &[],
         };
         let body = openai_body(&request);
@@ -643,11 +757,57 @@ mod tests {
         assert_eq!(body["messages"][2]["role"], "assistant");
         assert_eq!(body["provider"]["only"][0], "openai");
         assert!(body.get("tools").is_none());
+        assert!(body.get("reasoning").is_none());
+        assert!(body.get("reasoning_effort").is_none());
 
         let body = gemini_body(&request);
         assert_eq!(body["contents"][1]["role"], "model");
         assert_eq!(body["systemInstruction"]["parts"][0]["text"], "sys");
         assert!(body.get("tools").is_none());
+
+        request.no_think = Some(NoThinkMode::None);
+        assert_eq!(openai_body(&request)["reasoning"]["effort"], "none");
+        request.no_think = Some(NoThinkMode::Low);
+        assert_eq!(openai_body(&request)["reasoning"]["effort"], "low");
+        request.no_think = Some(NoThinkMode::Disabled);
+        assert_eq!(openai_body(&request)["reasoning"]["enabled"], false);
+
+        request.provider = PostProvider::Groq;
+        request.no_think = Some(NoThinkMode::Low);
+        assert_eq!(openai_body(&request)["reasoning_effort"], "low");
+        request.no_think = Some(NoThinkMode::Disabled);
+        assert_eq!(openai_body(&request)["reasoning_effort"], "disabled");
+        request.provider = PostProvider::Gemini;
+        request.no_think = Some(NoThinkMode::Low);
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low");
+        request.no_think = Some(NoThinkMode::None);
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+        request.no_think = Some(NoThinkMode::Disabled);
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+    }
+
+    #[test]
+    fn test_reasoning_is_seen_in_text_fields_and_token_usage() {
+        let reasoning = json!({"choices":[{"message":{"content":"42","reasoning":"6 * 7"}}]});
+        assert!(response_has_reasoning(false, &reasoning));
+        let details = json!({"choices":[{"message":{"content":"42","reasoning_details":[{"text":"6 * 7"}]}}]});
+        assert!(response_has_reasoning(false, &details));
+        let tokens = json!({
+            "choices":[{"message":{"content":"42"}}],
+            "usage":{"completion_tokens_details":{"reasoning_tokens":3}}
+        });
+        assert!(response_has_reasoning(false, &tokens));
+        let block = json!({"choices":[{"message":{"content":"<think>6 * 7</think>42"}}]});
+        assert!(response_has_reasoning(false, &block));
+        let plain = json!({"choices":[{"message":{"content":"42"}}]});
+        assert!(!response_has_reasoning(false, &plain));
+
+        let thought = json!({"candidates":[{"content":{"parts":[{"text":"6 * 7","thought":true}]}}]});
+        assert!(response_has_reasoning(true, &thought));
+        let thought_tokens = json!({"usageMetadata":{"thoughtsTokenCount":4}});
+        assert!(response_has_reasoning(true, &thought_tokens));
+        let answer = json!({"candidates":[{"content":{"parts":[{"text":"42"}]}}]});
+        assert!(!response_has_reasoning(true, &answer));
     }
 
     fn call(id: &str, query: &str, raw: Value) -> ToolCall {
@@ -671,6 +831,7 @@ mod tests {
             system: "sys",
             messages: &messages,
             tools: Tools::Search,
+            no_think: None,
             exchange: &exchange,
         };
         let body = openai_body(&request);

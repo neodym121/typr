@@ -152,6 +152,21 @@ string_enum! {
     }
 }
 
+string_enum! {
+    /// How hard Quick Ask asks the model not to reason (NoThink): which
+    /// request field carries the value depends on the provider.
+    NoThinkMode (default None) {
+        /// No reasoning at all: `reasoning_effort: "none"` (Groq, Mistral),
+        /// Polza `reasoning: {effort: "none"}`, Gemini `thinkingBudget: 0`
+        None = "none",
+        /// The least reasoning the model allows: `reasoning_effort: "low"`
+        Low = "low",
+        /// The explicit disable flag: Polza `reasoning: {enabled: false}`;
+        /// `reasoning_effort: "disabled"` where an OpenAI-compatible API takes it
+        Disabled = "disabled",
+    }
+}
+
 /// Languages offered for recognition; empty means detect automatically.
 pub const RECOGNITION_LANGUAGES: &[&str] = &["ru", "en", "uk", "de", "fr", "es", "it", "pt", "pl"];
 
@@ -368,6 +383,12 @@ pub struct QuickAsk {
     /// The model may search the web (Exa) when a question needs it
     #[serde(rename = "webSearch")]
     pub web_search: bool,
+    /// Ask the model not to reason, or to reason minimally (NoThink)
+    #[serde(rename = "noThink")]
+    pub no_think: bool,
+    /// How the NoThink request is passed
+    #[serde(rename = "noThinkMode")]
+    pub no_think_mode: NoThinkMode,
 }
 
 impl QuickAsk {
@@ -609,12 +630,14 @@ impl Settings {
         let qa = &self.quick_ask;
         let model = qa.provider_settings(qa.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, key {}, web search {}, Exa key {})",
+            "{} (provider {}, model {}, key {}, web search {}, nothink {}/{}, Exa key {})",
             if qa.enabled { "on" } else { "off" },
             qa.provider,
             if model.is_empty() { "none" } else { model },
             key_state(self.api_keys.model(qa.provider)),
             if qa.web_search { "on" } else { "off" },
+            if qa.no_think { "on" } else { "off" },
+            qa.no_think_mode,
             key_state(self.api_keys.exa())
         )
     }
@@ -672,6 +695,8 @@ impl Settings {
         changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
         changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
         changed("quickAsk.webSearch", &qa_old.web_search, &qa_new.web_search);
+        changed("quickAsk.noThink", &qa_old.no_think, &qa_new.no_think);
+        changed("quickAsk.noThinkMode", &qa_old.no_think_mode, &qa_new.no_think_mode);
         for ((provider, before), (_, after)) in qa_old.providers().zip(qa_new.providers()) {
             changed(&format!("quickAsk.{}.model", provider), &before.model, &after.model);
             changed(
@@ -808,6 +833,10 @@ mod tests {
             assert_eq!(TranslationLanguage::parse(language.id()), Some(language));
         }
         assert_eq!(TranslationLanguage::from("xx".to_string()), TranslationLanguage::English);
+        for &mode in NoThinkMode::ALL {
+            assert_eq!(NoThinkMode::parse(mode.id()), Some(mode));
+        }
+        assert_eq!(NoThinkMode::from("whatever".to_string()), NoThinkMode::None);
 
         let settings: Settings = serde_json::from_str(
             r#"{"engine":"nonsense","indicatorPosition":"bottom-center","postProcess":{"provider":"mistral"}}"#,
@@ -1013,6 +1042,8 @@ mod tests {
         new.api_keys.polza = "pk_secret".to_string();
         new.quick_ask.web_search = true;
         new.api_keys.exa = "exa_secret".to_string();
+        new.quick_ask.no_think = true;
+        new.quick_ask.no_think_mode = NoThinkMode::Disabled;
 
         let changes = new.describe_changes(&old).join("; ");
         assert!(changes.contains("quickAsk.enabled: 'false' → 'true'"));
@@ -1022,9 +1053,11 @@ mod tests {
         assert!(changes.contains("apiKeys.polza updated (set)"));
         assert!(changes.contains("quickAsk.webSearch: 'false' → 'true'"));
         assert!(changes.contains("apiKeys.exa updated (set)"));
+        assert!(changes.contains("quickAsk.noThink: 'false' → 'true'"));
+        assert!(changes.contains("quickAsk.noThinkMode: 'none' → 'disabled'"));
         let summary = new.summary();
         assert!(summary.contains(
-            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, Exa key set)"
+            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, nothink on/disabled, Exa key set)"
         ));
         for secret in ["pk_secret", "exa_secret"] {
             assert!(!changes.contains(secret));

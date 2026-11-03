@@ -39,6 +39,8 @@ export interface PickerOptions {
   prefix: string;
   config: () => ProviderConfig;
   save: () => void;
+  /** The provider, model or Polza sub-provider changed */
+  changed?: () => void;
 }
 
 export interface ModelPicker {
@@ -189,6 +191,7 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
       item.setAttribute("aria-selected", String(item.dataset.id === id));
     });
     renderCurrentModel();
+    options.changed?.();
   }
 
   enhanceSelect(providerSelect);
@@ -197,12 +200,14 @@ export function createModelPicker(options: PickerOptions): ModelPicker {
     config().provider = providerSelect.value;
     options.save();
     renderProvider();
+    options.changed?.();
     void loadModels();
   });
 
   polzaProviderInput.addEventListener("change", () => {
     config().polza.providerId = polzaProviderInput.value.trim();
     options.save();
+    options.changed?.();
   });
 
   refreshButton.addEventListener("click", () => void loadModels(true));

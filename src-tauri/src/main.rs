@@ -14,7 +14,7 @@ use typr_lib::local::{runtime::Paths as LocalPaths, LocalEngine, LocalStatus};
 use typr_lib::logger::{self, LogEntry};
 use typr_lib::postprocess::{self, ModelInfo};
 use typr_lib::recorder::{self, Outcome, Recorder, RecordingState};
-use typr_lib::settings::{Engine, PostProvider, RecordingMode, Settings};
+use typr_lib::settings::{Engine, NoThinkMode, PostProvider, RecordingMode, Settings};
 use typr_lib::updates::{self, UpdateInfo};
 use typr_lib::{ask, audio, autostart, i18n, links, modifier_hotkey, mouse, overlay, paste};
 
@@ -475,6 +475,53 @@ async fn list_postprocess_models(
             log::warn!("Could not load post-processing models: {}", e);
             e
         })
+}
+
+/// Checks the NoThink parameter with the provider, model and Polza
+/// sub-provider currently chosen in the Quick Ask section.
+#[tauri::command]
+async fn test_no_think(
+    state: State<'_, AppState>,
+    provider: String,
+    model: String,
+    sub_provider: Option<String>,
+    mode: String,
+    api_key: Option<String>,
+) -> Result<bool, String> {
+    let provider = PostProvider::parse(&provider)
+        .ok_or_else(|| format!("Unknown quick ask provider: {}", provider))?;
+    let mode = NoThinkMode::parse(&mode)
+        .ok_or_else(|| format!("Unknown NoThink parameter: {}", mode))?;
+    let api_key = api_key
+        .filter(|key| !key.trim().is_empty())
+        .unwrap_or_else(|| state.settings.lock().unwrap().api_keys.model(provider).to_string());
+    let messages = [ask::stream::ChatMessage {
+        role: ask::stream::Role::User,
+        content: "What is 237 × 481? Reply with only the number.".to_string(),
+    }];
+    let request = ask::stream::Request {
+        provider,
+        api_key: &api_key,
+        model: &model,
+        sub_provider: sub_provider.as_deref().unwrap_or(""),
+        system: "Answer the arithmetic question.",
+        messages: &messages,
+        tools: ask::stream::Tools::Off,
+        no_think: Some(mode),
+        exchange: &[],
+    };
+    let reasoning = ask::stream::test_no_think(&request).await.map_err(|e| {
+        log::warn!("NoThink test failed: {}", e);
+        e
+    })?;
+    log::info!(
+        "NoThink test with {} (model {}, parameter {}): reasoning {}",
+        provider,
+        model.trim(),
+        mode,
+        if reasoning { "detected" } else { "not detected" }
+    );
+    Ok(reasoning)
 }
 
 #[tauri::command]
@@ -941,7 +988,7 @@ fn main() {
             // Settings and the dictation
             get_settings, save_settings, get_system_language, list_microphones,
             get_recording_state, toggle_recording, get_hotkey_enabled, pause_hotkeys,
-            list_postprocess_models,
+            list_postprocess_models, test_no_think,
             // General, updates and links
             get_autostart, set_autostart, get_update, check_for_updates, open_link,
             // Local recognition

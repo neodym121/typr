@@ -13,6 +13,7 @@
   --color-gray:      #9c9a92;
   --color-gray-dark: #7b7974;
   --color-accent:    #d97757;
+  --color-success:   #a9c295;
 
   /* Surfaces */
   --surface-sidebar: #1f1e1d;
@@ -41,6 +42,7 @@
   --accent:       var(--color-accent);
   --accent-soft:  rgba(217, 119, 87, 0.16);
   --accent-light: #e8a88f;
+  --success:      var(--color-success);
 
   /* Typography */
   --font-serif: 'Source Serif 4', Charter, 'Bitstream Charter', Georgia, serif;
@@ -508,6 +510,65 @@ button {
 /* Cards stacked without a group title between them */
 .card + .card {
   margin-top: 12px;
+}
+
+/* Quick ask: the NoThink parameter and its tester flow into the grey note
+   without the lines that separate setting rows */
+#ask-nothink-mode-row,
+#ask-nothink-test-row {
+  border-bottom: none;
+}
+
+#ask-nothink-test-row {
+  padding-top: 0;
+}
+
+#ask-nothink-test-row .pref-control {
+  flex: 0 0 auto;
+}
+
+#ask-nothink-test-target {
+  overflow-wrap: anywhere;
+}
+
+#ask-nothink-test:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* A compact version of the Developer's obsidian-black console */
+.ask-nothink-test-result {
+  min-height: 76px;
+  max-height: 120px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  background: #000000;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ask-nothink-test-result.reasoning {
+  color: var(--accent-light);
+}
+
+.ask-nothink-test-result.no-reasoning {
+  color: var(--success);
+}
+
+/* Quick ask: the grey note at the bottom of the NoThink box */
+.ask-nothink-note {
+  margin: 0 0 14px;
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 /* Quick ask: how it works */
