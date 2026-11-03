@@ -64,7 +64,7 @@ Built with [Tauri 2](https://tauri.app/) (Rust) and vanilla TypeScript; the Quic
 ## Credits
 
 - Original project by [albertshiney](https://github.com/albertshiney/typr)
-- Fork maintained by [neodym121](https://github.com/neodym121), improved together with [Claude](https://claude.com/claude-code) (Anthropic)
+- Fork maintained by [neodym121](https://github.com/neodym121), improved together with [Claude](https://claude.com/claude-code) (Anthropic) and [Kimi](https://www.kimi.ai/) (Moonshot AI)
 - Quick Ask window: [Slint](https://slint.dev/) (Royalty-free license 2.0)
 - Icons: [Lucide](https://lucide.dev/) (ISC); flags: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
 

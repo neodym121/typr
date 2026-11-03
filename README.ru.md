@@ -64,7 +64,7 @@ npm run tauri dev
 ## Авторы
 
 - Оригинальный проект — [albertshiney](https://github.com/albertshiney/typr)
-- Форк ведёт [neodym121](https://github.com/neodym121), доработан вместе с [Claude](https://claude.com/claude-code) (Anthropic)
+- Форк ведёт [neodym121](https://github.com/neodym121), доработан вместе с [Claude](https://claude.com/claude-code) (Anthropic) и [Kimi](https://www.kimi.ai/) (Moonshot AI)
 - Окно Quick Ask: [Slint](https://slint.dev/) (лицензия Royalty-free 2.0)
 - Иконки: [Lucide](https://lucide.dev/) (ISC); флаги: [Twemoji](https://github.com/jdecked/twemoji) (CC-BY 4.0)
 
