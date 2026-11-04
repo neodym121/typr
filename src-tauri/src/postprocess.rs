@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use std::time::Instant;
 
 use crate::net;
-use crate::settings::{PostProcess, PostProvider, Preset, Settings, TranslationLanguage};
+use crate::settings::{NoThinkMode, PostProcess, PostProvider, Preset, Settings, TranslationLanguage};
 
 pub(crate) const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 const GROQ_URL: &str = "https://api.groq.com/openai/v1";
@@ -227,6 +227,7 @@ pub async fn process(
         PostProvider::Polza => config.polza.provider_id.trim(),
         _ => "",
     };
+    let no_think = config.no_think.then_some(config.no_think_mode);
 
     let reply = match openai_base(provider) {
         Some(base) => {
@@ -234,12 +235,14 @@ pub async fn process(
                 base,
                 api_key,
                 model,
+                provider,
                 sub_provider,
                 label,
+                no_think,
             };
             chat_completion(client, &request, &system, &user).await?
         }
-        None => gemini_generate(client, api_key, model, &system, &user).await?,
+        None => gemini_generate(client, api_key, model, &system, &user, no_think).await?,
     };
 
     let edited = clean_reply(&reply);
@@ -261,17 +264,24 @@ async fn gemini_generate(
     model: &str,
     system: &str,
     user: &str,
+    no_think: Option<NoThinkMode>,
 ) -> Result<String, String> {
     let url = format!(
         "{}/models/{}:generateContent",
         GEMINI_URL,
         model.trim_start_matches("models/")
     );
-    let body = json!({
+    let mut body = json!({
         "systemInstruction": { "parts": [{ "text": system }] },
         "contents": [{ "role": "user", "parts": [{ "text": user }] }],
         "generationConfig": { "temperature": TEMPERATURE }
     });
+    if let Some(mode) = no_think {
+        body["generationConfig"]["thinkingConfig"] = match mode {
+            NoThinkMode::Low => json!({ "thinkingLevel": "low" }),
+            NoThinkMode::None | NoThinkMode::Disabled => json!({ "thinkingBudget": 0 }),
+        };
+    }
     let response = client
         .post(url)
         .header("x-goog-api-key", api_key)
@@ -306,9 +316,12 @@ struct ChatRequest<'a> {
     base: &'a str,
     api_key: &'a str,
     model: &'a str,
+    provider: PostProvider,
     /// Polza's sub-provider; empty lets the service choose
     sub_provider: &'a str,
     label: &'a str,
+    /// The selected NoThink parameter; `None` leaves reasoning at the model's default
+    no_think: Option<NoThinkMode>,
 }
 
 async fn chat_completion(
@@ -326,6 +339,17 @@ async fn chat_completion(
         ],
         "temperature": TEMPERATURE
     });
+    if let Some(mode) = request.no_think {
+        match request.provider {
+            PostProvider::Polza => {
+                body["reasoning"] = match mode {
+                    NoThinkMode::Disabled => json!({ "enabled": false }),
+                    NoThinkMode::None | NoThinkMode::Low => json!({ "effort": mode.id() }),
+                };
+            }
+            _ => body["reasoning_effort"] = json!(mode.id()),
+        }
+    }
     if !request.sub_provider.is_empty() {
         body["provider"] = json!({ "only": [request.sub_provider] });
     }

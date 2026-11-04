@@ -153,8 +153,9 @@ string_enum! {
 }
 
 string_enum! {
-    /// How hard Quick Ask asks the model not to reason (NoThink): which
-    /// request field carries the value depends on the provider.
+    /// How hard a section asks the model not to reason (NoThink; quick ask
+    /// and post-processing): which request field carries the value depends
+    /// on the provider.
     NoThinkMode (default None) {
         /// No reasoning at all: `reasoning_effort: "none"` (Groq, Mistral),
         /// Polza `reasoning: {effort: "none"}`, Gemini `thinkingBudget: 0`
@@ -338,6 +339,12 @@ pub struct PostProcess {
     pub translate: bool,
     #[serde(rename = "translateTo")]
     pub translate_to: TranslationLanguage,
+    /// Ask the model not to reason, or to reason minimally (NoThink)
+    #[serde(rename = "noThink")]
+    pub no_think: bool,
+    /// How the NoThink request is passed
+    #[serde(rename = "noThinkMode")]
+    pub no_think_mode: NoThinkMode,
     pub gemini: ProviderModel,
     pub mistral: ProviderModel,
     pub groq: ProviderModel,
@@ -616,12 +623,14 @@ impl Settings {
         let pp = &self.post_process;
         let model = pp.provider_settings(pp.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, preset {}, translate {}, key {})",
+            "{} (provider {}, model {}, preset {}, translate {}, nothink {}/{}, key {})",
             if pp.enabled { "on" } else { "off" },
             pp.provider,
             if model.is_empty() { "none" } else { model },
             pp.preset,
             if pp.translate { format!("to {}", pp.translate_to) } else { "off".to_string() },
+            if pp.no_think { "on" } else { "off" },
+            pp.no_think_mode,
             key_state(self.api_keys.model(pp.provider))
         )
     }
@@ -681,6 +690,8 @@ impl Settings {
         changed("postProcess.preset", &pp_old.preset, &pp_new.preset);
         changed("postProcess.translate", &pp_old.translate, &pp_new.translate);
         changed("postProcess.translateTo", &pp_old.translate_to, &pp_new.translate_to);
+        changed("postProcess.noThink", &pp_old.no_think, &pp_new.no_think);
+        changed("postProcess.noThinkMode", &pp_old.no_think_mode, &pp_new.no_think_mode);
         for ((provider, before), (_, after)) in pp_old.providers().zip(pp_new.providers()) {
             changed(&format!("postProcess.{}.model", provider), &before.model, &after.model);
             changed(
@@ -1063,6 +1074,19 @@ mod tests {
             assert!(!changes.contains(secret));
             assert!(!summary.contains(secret));
         }
+    }
+
+    #[test]
+    fn test_post_process_nothink_is_logged() {
+        let old = Settings::default();
+        let mut new = Settings::default();
+        new.post_process.no_think = true;
+        new.post_process.no_think_mode = NoThinkMode::Low;
+
+        let changes = new.describe_changes(&old).join("; ");
+        assert!(changes.contains("postProcess.noThink: 'false' → 'true'"));
+        assert!(changes.contains("postProcess.noThinkMode: 'none' → 'low'"));
+        assert!(new.summary().contains("nothink on/low"));
     }
 
     #[test]

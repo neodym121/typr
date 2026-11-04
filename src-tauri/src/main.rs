@@ -478,7 +478,7 @@ async fn list_postprocess_models(
 }
 
 /// Checks the NoThink parameter with the provider, model and Polza
-/// sub-provider currently chosen in the Quick Ask section.
+/// sub-provider passed from the Quick Ask or Post-processing section.
 #[tauri::command]
 async fn test_no_think(
     state: State<'_, AppState>,

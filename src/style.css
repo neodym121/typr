@@ -512,32 +512,39 @@ button {
   margin-top: 12px;
 }
 
-/* Quick ask: the NoThink parameter and its tester flow into the grey note
-   without the lines that separate setting rows */
+/* Quick ask and post-processing: the NoThink parameter and its tester flow
+   into the grey note without the lines that separate setting rows */
 #ask-nothink-mode-row,
-#ask-nothink-test-row {
+#ask-nothink-test-row,
+#post-nothink-mode-row,
+#post-nothink-test-row {
   border-bottom: none;
 }
 
-#ask-nothink-test-row {
+#ask-nothink-test-row,
+#post-nothink-test-row {
   padding-top: 0;
 }
 
-#ask-nothink-test-row .pref-control {
+#ask-nothink-test-row .pref-control,
+#post-nothink-test-row .pref-control {
   flex: 0 0 auto;
 }
 
-#ask-nothink-test-target {
+#ask-nothink-test-target,
+#post-nothink-test-target {
   overflow-wrap: anywhere;
 }
 
-#ask-nothink-test:disabled {
+#ask-nothink-test:disabled,
+#post-nothink-test:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
 /* A compact version of the Developer's obsidian-black console */
-.ask-nothink-test-result {
+.ask-nothink-test-result,
+.post-nothink-test-result {
   min-height: 76px;
   max-height: 120px;
   margin: 0 0 12px;
@@ -555,16 +562,19 @@ button {
   -webkit-user-select: text;
 }
 
-.ask-nothink-test-result.reasoning {
+.ask-nothink-test-result.reasoning,
+.post-nothink-test-result.reasoning {
   color: var(--accent-light);
 }
 
-.ask-nothink-test-result.no-reasoning {
+.ask-nothink-test-result.no-reasoning,
+.post-nothink-test-result.no-reasoning {
   color: var(--success);
 }
 
-/* Quick ask: the grey note at the bottom of the NoThink box */
-.ask-nothink-note {
+/* Quick ask and post-processing: the grey note at the bottom of the NoThink box */
+.ask-nothink-note,
+.post-nothink-note {
   margin: 0 0 14px;
   font-size: var(--text-small);
   line-height: 1.4;

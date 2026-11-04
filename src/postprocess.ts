@@ -1,10 +1,16 @@
 // Post-processing section: the switch, translation and its language, the
-// provider and model (modelpicker.ts) and the style presets. The settings live
-// in the app's settings object; this module edits them in place and asks the
-// host to save. The key comes from Settings → API keys.
+// provider and model (modelpicker.ts), the style presets and NoThink (asking
+// the model not to reason; the request itself is built by the backend,
+// postprocess.rs). Its tester sends the same parameter and reports whether
+// the response contained reasoning. The settings live in the app's settings
+// object; this module edits them in place and asks the host to save. The key
+// comes from Settings → API keys.
 
+import { invoke } from "@tauri-apps/api/core";
+import { keyOf } from "./apikeys";
+import { enhanceSelect, syncSelect } from "./dropdown";
 import { t, type MessageKey } from "./i18n";
-import { createModelPicker, type ModelPicker, type ProviderConfig, type ProviderSettings } from "./modelpicker";
+import { createModelPicker, type ModelPicker, type Provider, type ProviderConfig, type ProviderSettings } from "./modelpicker";
 
 export type PostProviderSettings = ProviderSettings;
 
@@ -17,6 +23,10 @@ export interface PostProcessSettings extends ProviderConfig {
    *  post-processing off too (translate.rs, postprocess.rs) */
   translate: boolean;
   translateTo: string;
+  /** Ask the model not to reason (NoThink) */
+  noThink: boolean;
+  /** How the NoThink request is passed (settings.rs `NoThinkMode`) */
+  noThinkMode: string;
 }
 
 type Preset = "chill" | "proper" | "custom";
@@ -54,10 +64,32 @@ const presetButtons = document.querySelectorAll<HTMLButtonElement>("#post-preset
 const presetHint = document.getElementById("post-preset-hint")!;
 const customRow = document.getElementById("post-custom-row")!;
 const customPrompt = document.getElementById("post-custom-prompt") as HTMLTextAreaElement;
+const noThinkToggle = document.getElementById("post-nothink") as HTMLInputElement;
+const noThinkMode = document.getElementById("post-nothink-mode") as HTMLSelectElement;
+const noThinkTest = document.getElementById("post-nothink-test") as HTMLButtonElement;
+const noThinkTestTarget = document.getElementById("post-nothink-test-target")!;
+const noThinkTestResult = document.getElementById("post-nothink-test-result")!;
+
+/** The value ids of the NoThink dropdown (settings.rs `NoThinkMode`) */
+const NOTHINK_MODES = ["none", "low", "disabled"];
+const PROVIDER_NAMES: Record<Provider, string> = {
+  gemini: "Gemini",
+  mistral: "Mistral",
+  groq: "Groq",
+  polza: "Polza",
+};
+
+type TestResult =
+  | { kind: "none" }
+  | { kind: "reasoning" | "noReasoning" }
+  | { kind: "error"; error: string };
 
 let host: PostProcessHost | undefined;
 let picker: ModelPicker | undefined;
 let promptTimer: number | undefined;
+let testingNoThink = false;
+let testRevision = 0;
+let testResult: TestResult = { kind: "none" };
 
 function settings(): PostProcessSettings {
   return host!.settings().postProcess;
@@ -71,6 +103,74 @@ function currentPreset(): Preset {
 function currentLanguage(): string {
   const code = settings().translateTo;
   return LANGUAGES.some(([id]) => id === code) ? code : "en";
+}
+
+function currentProvider(): Provider {
+  const provider = settings().provider as Provider;
+  return PROVIDER_NAMES[provider] ? provider : "gemini";
+}
+
+/** The exact combination the next test will use, and its latest result. */
+function renderNoThinkTester() {
+  if (!host) return;
+  const config = settings();
+  const provider = currentProvider();
+  const model = config[provider].model.trim() || t("post.modelNone");
+  const subProvider = provider === "polza" ? config.polza.providerId?.trim() || t("ask.noThinkAutoProvider") : "";
+  const target = [PROVIDER_NAMES[provider], model, subProvider].filter(Boolean).join(" · ");
+  noThinkTestTarget.textContent = target;
+  noThinkTestTarget.title = target;
+
+  noThinkTest.disabled = testingNoThink;
+  noThinkTest.textContent = t(testingNoThink ? "ask.noThinkTesting" : "ask.noThinkTestButton");
+  noThinkTestResult.classList.toggle("reasoning", testResult.kind === "reasoning" || testResult.kind === "error");
+  noThinkTestResult.classList.toggle("no-reasoning", testResult.kind === "noReasoning");
+  switch (testResult.kind) {
+    case "none":
+      noThinkTestResult.textContent = "";
+      break;
+    case "reasoning":
+      noThinkTestResult.textContent = t("ask.noThinkReasoning");
+      break;
+    case "noReasoning":
+      noThinkTestResult.textContent = t("ask.noThinkNoReasoning");
+      break;
+    case "error":
+      noThinkTestResult.textContent = t("ask.noThinkTestFailed", { error: testResult.error });
+      break;
+  }
+}
+
+/** A result belongs only to the combination that produced it. */
+function resetNoThinkTest() {
+  testRevision += 1;
+  testResult = { kind: "none" };
+  renderNoThinkTester();
+}
+
+async function runNoThinkTest() {
+  if (testingNoThink) return;
+  const config = settings();
+  const provider = currentProvider();
+  const revision = ++testRevision;
+  testingNoThink = true;
+  testResult = { kind: "none" };
+  renderNoThinkTester();
+  try {
+    const reasoning = await invoke<boolean>("test_no_think", {
+      provider,
+      apiKey: keyOf(provider),
+      model: config[provider].model,
+      subProvider: provider === "polza" ? config.polza.providerId || "" : "",
+      mode: NOTHINK_MODES.includes(config.noThinkMode) ? config.noThinkMode : "none",
+    });
+    if (revision === testRevision) testResult = { kind: reasoning ? "reasoning" : "noReasoning" };
+  } catch (error) {
+    if (revision === testRevision) testResult = { kind: "error", error: String(error) };
+  } finally {
+    testingNoThink = false;
+    renderNoThinkTester();
+  }
 }
 
 function flag(file: string): HTMLElement {
@@ -126,6 +226,7 @@ export function initPostProcess(appHost: PostProcessHost) {
     prefix: "post",
     config: settings,
     save: () => host!.save(),
+    changed: resetNoThinkTest,
   });
 
   enabledToggle.addEventListener("change", () => {
@@ -158,6 +259,21 @@ export function initPostProcess(appHost: PostProcessHost) {
     settings().customPrompt = customPrompt.value;
     host!.save();
   });
+
+  enhanceSelect(noThinkMode);
+
+  noThinkToggle.addEventListener("change", () => {
+    settings().noThink = noThinkToggle.checked;
+    host!.save();
+  });
+
+  noThinkMode.addEventListener("change", () => {
+    settings().noThinkMode = noThinkMode.value;
+    host!.save();
+    resetNoThinkTest();
+  });
+
+  noThinkTest.addEventListener("click", () => void runNoThinkTest());
 }
 
 /** Puts the saved settings into the form (after they are loaded). */
@@ -166,8 +282,12 @@ export function fillPostProcess() {
   translateToggle.checked = Boolean(settings().translate);
   renderLanguages();
   customPrompt.value = settings().customPrompt || "";
+  noThinkToggle.checked = Boolean(settings().noThink);
+  noThinkMode.value = NOTHINK_MODES.includes(settings().noThinkMode) ? settings().noThinkMode : "none";
+  syncSelect(noThinkMode);
   picker?.fill();
   renderPreset();
+  resetNoThinkTest();
 }
 
 /** The section was opened: load the model list if it isn't there yet. */
@@ -181,4 +301,5 @@ export function translatePostProcess() {
   picker?.translate();
   renderPreset();
   renderLanguages();
+  renderNoThinkTester();
 }
