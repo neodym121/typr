@@ -48,8 +48,8 @@ Typr — лёгкое приложение для голосового ввод�
 GitHub Actions (`.github/workflows/build.yml`) собирает один zip с установщиком `.msi` и портативным `.exe` при пуше тега вида `v*` или при ручном запуске workflow:
 
 ```bash
-git tag v3.5.1
-git push origin v3.5.1
+git tag v3.5.2
+git push origin v3.5.2
 ```
 
 Для локальной разработки нужны [Rust](https://rustup.rs/) и [Node.js](https://nodejs.org/) 20+:

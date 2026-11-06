@@ -48,8 +48,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.5.1
-git push origin v3.5.1
+git tag v3.5.2
+git push origin v3.5.2
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

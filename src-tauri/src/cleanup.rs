@@ -35,6 +35,8 @@ fn period_ends_sentence(word: &str) -> bool {
 /// The transcript as it gets pasted. Words are kept as they are, one space
 /// apart; only sentence starts gain a capital and the end gains a mark.
 pub fn cleanup_text(text: &str) -> String {
+    let restored = restore_unknown_tokens(text);
+    let text = restored.as_str();
     let mut out = String::with_capacity(text.len() + 1);
     let mut starts_sentence = true;
     for word in text.split_whitespace() {
@@ -100,6 +102,41 @@ fn close_last_sentence(out: &mut String) {
     }
 }
 
+/// A local model's tokenizer answers a character it has no token for —
+/// Russian «» are the common case — with the literal `<unk>`. A pair of
+/// them around some words is that in quotes: restore the quotes («…» in
+/// Cyrillic text, straight "…" otherwise). A lone one is dropped; if an
+/// opening quote is left unmatched just before it, it is closed instead.
+fn restore_unknown_tokens(text: &str) -> String {
+    let cyrillic = text.chars().any(|c| matches!(c, '\u{0400}'..='\u{04FF}'));
+    let (open, close) = if cyrillic { ('«', '»') } else { ('"', '"') };
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("<unk>") {
+        out.push_str(&rest[..start]);
+        rest = &rest[start + "<unk>".len()..];
+        match rest.find("<unk>") {
+            Some(end) => {
+                out.push(open);
+                out.push_str(rest[..end].trim());
+                out.push(close);
+                rest = &rest[end + "<unk>".len()..];
+            }
+            None => {
+                let unmatched = [('«', '»'), ('"', '"'), ('“', '”')].into_iter().find(|&(open, close)| {
+                    out.rfind(open).is_some_and(|o| out.rfind(close).is_none_or(|c| c < o))
+                });
+                if let Some((_, close)) = unmatched {
+                    out.truncate(out.trim_end().len());
+                    out.push(close);
+                }
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::cleanup_text;
@@ -154,6 +191,21 @@ mod tests {
         check(&[
             ("5 apples. «ok» then", "5 apples. «Ok» then."),
             ("iPhone is here", "iPhone is here."),
+        ]);
+    }
+
+    #[test]
+    fn unknown_tokens_turn_back_into_quotes() {
+        check(&[
+            // a pair around a word is a quotation, the local tokenizer
+            // answers characters it has no token for (Russian «») with <unk>
+            ("слово <unk>почему<unk>", "Слово «почему»."),
+            ("сказал <unk> стоп <unk> и ушёл", "Сказал «стоп» и ушёл."),
+            ("say <unk>hi<unk> now", "Say \"hi\" now."),
+            // an odd one is dropped; an opening quote left alone is closed
+            ("это <unk> снова", "Это снова."),
+            ("a <unk> b <unk> c <unk> d", "A \"b\" c d."),
+            ("он сказал «стоп <unk>", "Он сказал «стоп»."),
         ]);
     }
 
