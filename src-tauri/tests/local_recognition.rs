@@ -1,5 +1,5 @@
 //! Transcribes the 16 kHz mono WAV in TYPR_TEST_WAV with the runtime and
-//! Parakeet already downloaded to the app folder, on the GPU and the CPU,
+//! Parakeet Ultra already downloaded to the app folder, on the GPU and the CPU,
 //! in the recognition process (this build's typr.exe), and checks that
 //! Typr's own memory stays small and the process ends on unload:
 //! `cargo test --test local_recognition -- --ignored --nocapture`
@@ -55,7 +55,7 @@ async fn transcribes_in_the_recognition_process() {
     assert!(status.runtime.installed, "download the components in Engine → Local first");
     assert!(
         status.models.iter().any(|m| m.id == catalog::DEFAULT_MODEL && m.installed),
-        "download Parakeet in Engine → Local first"
+        "download Parakeet Ultra in Engine → Local first"
     );
 
     let before = memory(std::process::id());

@@ -87,18 +87,22 @@ impl ModelSpec {
     }
 }
 
-pub const DEFAULT_MODEL: &str = "parakeet-tdt-0.6b-v3";
+pub const DEFAULT_MODEL: &str = "parakeet-ultra";
+
+/// Downloaded file of the model Parakeet Ultra replaced. It is removed at
+/// start, with the new model downloading in its place.
+pub const RETIRED_MODEL_FILE: &str = "parakeet-tdt-0.6b-v3-Q8_0.gguf";
 
 /// Q8_0 quantization everywhere: practically the accuracy of the full
 /// model (transcribe.cpp's recommended preset) at about half the size.
 pub const MODELS: &[ModelSpec] = &[
     ModelSpec {
-        id: "parakeet-tdt-0.6b-v3",
-        name: "Parakeet TDT 0.6B v3",
-        repo: "handy-computer/parakeet-tdt-0.6b-v3-gguf",
-        file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
-        size: 739_508_576,
-        sha256: "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7",
+        id: "parakeet-ultra",
+        name: "Parakeet Ultra",
+        repo: "handy-computer/parakeet-ultra-gguf",
+        file: "parakeet-ultra-Q8_0.gguf",
+        size: 740_363_168,
+        sha256: "007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59",
     },
     ModelSpec {
         id: "whisper-large-v3",

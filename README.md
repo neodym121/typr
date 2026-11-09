@@ -27,7 +27,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 ### Dictation & Text
 
 - **Global hotkey:** a key combination or a single mouse button (middle or side).
-- **Local recognition** with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet TDT 0.6B v3, Whisper Large v3, Large v3 Turbo and Qwen3 ASR 0.6B run on your computer, the audio never leaves it. They run on the GPU through Vulkan or on the CPU.
+- **Local recognition** with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet Ultra, Whisper Large v3, Large v3 Turbo and Qwen3 ASR 0.6B run on your computer, the audio never leaves it. They run on the GPU through Vulkan or on the CPU.
 - **Cloud speech-to-text providers:** Groq, [AssemblyAI](https://www.assemblyai.com/) and [Polza.AI](https://polza.ai/). Recordings are sent as FLAC where the service takes it, over a connection opened while you speak.
 - **Post-processing:** an AI model polishes the text before it is pasted, in different styles. Also, translation of dictated text into many languages.
 
@@ -48,8 +48,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.5.2
-git push origin v3.5.2
+git tag v3.5.3
+git push origin v3.5.3
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

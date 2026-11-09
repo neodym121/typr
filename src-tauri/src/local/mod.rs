@@ -651,6 +651,24 @@ impl LocalEngine {
         Ok(())
     }
 
+    /// Parakeet TDT 0.6B v3 is Parakeet Ultra now: removes the old model's
+    /// download if it's there, silently. The caller then downloads the new
+    /// model. Returns whether the old model was there.
+    pub fn remove_retired_model(&self) -> bool {
+        let path = self.paths().models().join(catalog::RETIRED_MODEL_FILE);
+        if !path.exists() {
+            return false;
+        }
+        if let Err(e) = std::fs::remove_file(&path) {
+            log::warn!("The old model {} couldn't be removed: {}", path.display(), e);
+            return false;
+        }
+        let _ = std::fs::remove_file(runtime::part_path(&path));
+        log::info!("The old Parakeet model was removed; downloading Parakeet Ultra instead");
+        self.notify_changed();
+        true
+    }
+
     /// At start: a downloaded model never stays without the components
     /// (they can't be deleted; a failed or cancelled download is retried).
     pub fn restore_runtime(&self) {
@@ -751,6 +769,23 @@ mod tests {
         assert_eq!(unload_delay("10m"), Some(Duration::from_secs(600)));
         assert_eq!(unload_delay("never"), None);
         assert_eq!(unload_delay("unknown"), Some(Duration::from_secs(300)));
+    }
+
+    #[test]
+    fn test_retired_model_is_removed_once() {
+        let root = std::env::temp_dir().join("typr_test_retired_model");
+        let _ = std::fs::remove_dir_all(&root);
+        let paths = Paths::new(root.clone());
+        std::fs::create_dir_all(paths.models()).unwrap();
+        let old = paths.models().join(catalog::RETIRED_MODEL_FILE);
+        std::fs::write(&old, b"old model").unwrap();
+        std::fs::write(runtime::part_path(&old), b"partial").unwrap();
+        let engine = LocalEngine::new(Paths::new(root.clone()));
+        assert!(engine.remove_retired_model());
+        assert!(!old.exists());
+        assert!(!runtime::part_path(&old).exists());
+        assert!(!engine.remove_retired_model());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -73,7 +73,7 @@ export interface LocalHost {
 }
 
 export const BADGES: Record<string, MessageKey> = {
-  "parakeet-tdt-0.6b-v3": "local.recommended",
+  "parakeet-ultra": "local.recommended",
   "whisper-large-v3": "local.accurate",
 };
 

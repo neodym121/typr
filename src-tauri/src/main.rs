@@ -1012,6 +1012,13 @@ fn main() {
         .setup(move |app| {
             logger::attach_app(app.handle().clone());
             app.state::<LocalEngine>().attach(app.handle().clone());
+            // Parakeet TDT 0.6B v3 became Parakeet Ultra: an old download is
+            // removed silently and the new model downloads in its place
+            if app.state::<LocalEngine>().remove_retired_model() {
+                if let Err(e) = app.state::<LocalEngine>().download_model(typr_lib::local::catalog::DEFAULT_MODEL) {
+                    log::warn!("Parakeet Ultra didn't start downloading: {}", e);
+                }
+            }
             app.state::<LocalEngine>().restore_runtime();
             log_environment(&startup_dir, &startup_settings);
             autostart::refresh();

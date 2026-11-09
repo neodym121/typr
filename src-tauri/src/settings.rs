@@ -271,6 +271,17 @@ fn migrate_quick_chat(config: &mut Value) {
     }
 }
 
+/// Parakeet TDT 0.6B v3 is Parakeet Ultra now: an old config points at the
+/// new model.
+fn migrate_local_model(config: &mut Value) {
+    let Some(root) = config.as_object_mut() else {
+        return;
+    };
+    if root.get("localModel").and_then(Value::as_str) == Some("parakeet-tdt-0.6b-v3") {
+        root.insert("localModel".to_string(), Value::String("parakeet-ultra".to_string()));
+    }
+}
+
 /// Moves the keys of a config from before the API keys section (each engine
 /// and section had its own) into `apiKeys`. A key already there stays.
 fn migrate_keys(config: &mut Value) {
@@ -551,6 +562,7 @@ impl Settings {
             Ok(mut config) => {
                 migrate_keys(&mut config);
                 migrate_quick_chat(&mut config);
+                migrate_local_model(&mut config);
                 serde_json::from_value(config).unwrap_or_default()
             }
             Err(_) => Self::default(),
@@ -782,7 +794,7 @@ mod tests {
         assert_eq!(settings.assemblyai_model, "universal-3-5-pro");
         assert_eq!(settings.recognition_language, "");
         assert!(settings.fallback_local);
-        assert_eq!(settings.local_model, "parakeet-tdt-0.6b-v3");
+        assert_eq!(settings.local_model, "parakeet-ultra");
         assert_eq!(settings.local_backend, "");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.language, "");
@@ -801,7 +813,7 @@ mod tests {
         let settings: Settings = serde_json::from_str(r#"{"engine":"local"}"#).unwrap();
         assert_eq!(settings.engine, Engine::Local);
         assert_eq!(settings.microphone, Settings::default().microphone);
-        assert_eq!(settings.local_model, "parakeet-tdt-0.6b-v3");
+        assert_eq!(settings.local_model, "parakeet-ultra");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.post_process, PostProcess::default());
         assert_eq!(settings.quick_ask, QuickAsk::default());
@@ -946,6 +958,12 @@ mod tests {
         assert!(summary.contains("apiKeys=groq+assemblyai+gemini"));
         assert!(changes.contains("postProcess.enabled: 'false' → 'true'"));
         assert!(changes.contains("engine: 'groq' → 'polza'"));
+    }
+
+    #[test]
+    fn test_parakeet_v3_reads_as_parakeet_ultra() {
+        let scratch = Scratch::with_config("parakeet-v3", r#"{"localModel":"parakeet-tdt-0.6b-v3"}"#);
+        assert_eq!(Settings::load(&scratch.0).local_model, "parakeet-ultra");
     }
 
     #[test]
