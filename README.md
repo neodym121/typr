@@ -18,7 +18,7 @@
 Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, speak, and the recognized text is pasted into whatever window is active. It can also answer: ask an AI about the text you selected, or chat with it by voice in a small window at the edge of the screen.
 
 <p align="center">
-  <img src="assets/screenshot.png" width="720" alt="Typr settings window" />
+  <img src="assets/screenshot.png?v=2" width="720" alt="Typr settings window" />
 </p>
 
 ## Features
