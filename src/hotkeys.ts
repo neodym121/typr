@@ -11,7 +11,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { formatHotkey, formatKey, t, type MessageKey } from "./i18n";
 
 export interface HotkeysHost {
-  settings: () => { hotkey: string; askHotkey: string; quickAsk: { enabled: boolean } };
+  settings: () => {
+    hotkey: string;
+    askHotkey: string;
+    selectEditHotkey: string;
+    quickAsk: { enabled: boolean };
+    selectEdit: { enabled: boolean };
+  };
   save: () => Promise<void>;
 }
 
@@ -30,8 +36,8 @@ interface Recorder {
   get: () => string;
   set: (hotkey: string) => void;
   modifiersAlone: boolean;
-  /** The other hotkey, which this one can't be */
-  other: () => string;
+  /** The other hotkeys, which this one can't copy */
+  others: () => string[];
   taken: MessageKey;
 }
 
@@ -102,7 +108,7 @@ function record(recorder: Recorder) {
     if (!recorder.modifiersAlone && hotkey.split("+").every((key) => MODIFIERS.includes(key))) {
       return t("hotkeys.needKey");
     }
-    if (hotkey.toLowerCase() === recorder.other().toLowerCase()) return t(recorder.taken);
+    if (recorder.others().some((other) => hotkey.toLowerCase() === other.toLowerCase())) return t(recorder.taken);
     return null;
   };
 
@@ -237,8 +243,21 @@ export function initHotkeys(appHost: HotkeysHost) {
       get: () => settings().askHotkey || "Ctrl+Alt",
       set: (hotkey) => (settings().askHotkey = hotkey),
       modifiersAlone: true,
-      other: () => settings().hotkey,
+      others: () => [settings().hotkey, settings().selectEditHotkey || "Ctrl+Shift+E"],
       taken: "hotkeys.takenDictation",
+    },
+    {
+      button: element("se-hotkey-btn"),
+      text: element("se-hotkey-text"),
+      hint: element("se-hotkey-hint"),
+      idleHint: () => (settings().selectEdit.enabled ? "hotkeys.selectHint" : "hotkeys.selectOffHint"),
+      prompt: "recording.pressKeys",
+      promptHint: "recording.pressKeysHint",
+      get: () => settings().selectEditHotkey || "Ctrl+Shift+E",
+      set: (hotkey) => (settings().selectEditHotkey = hotkey),
+      modifiersAlone: false,
+      others: () => [settings().hotkey, settings().askHotkey || "Ctrl+Alt"],
+      taken: "hotkeys.takenSelect",
     },
   ];
 
@@ -259,7 +278,7 @@ function dictationRecorder(button: HTMLElement, text: HTMLElement, hint: HTMLEle
     get: () => settings().hotkey,
     set: (hotkey) => (settings().hotkey = hotkey),
     modifiersAlone: false,
-    other: () => settings().askHotkey || "Ctrl+Alt",
+    others: () => [settings().askHotkey || "Ctrl+Alt", settings().selectEditHotkey || "Ctrl+Shift+E"],
     taken: "hotkeys.takenAsk",
   };
 }

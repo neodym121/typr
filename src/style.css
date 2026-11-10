@@ -517,34 +517,41 @@ button {
 #ask-nothink-mode-row,
 #ask-nothink-test-row,
 #post-nothink-mode-row,
-#post-nothink-test-row {
+#post-nothink-test-row,
+#se-nothink-mode-row,
+#se-nothink-test-row {
   border-bottom: none;
 }
 
 #ask-nothink-test-row,
-#post-nothink-test-row {
+#post-nothink-test-row,
+#se-nothink-test-row {
   padding-top: 0;
 }
 
 #ask-nothink-test-row .pref-control,
-#post-nothink-test-row .pref-control {
+#post-nothink-test-row .pref-control,
+#se-nothink-test-row .pref-control {
   flex: 0 0 auto;
 }
 
 #ask-nothink-test-target,
-#post-nothink-test-target {
+#post-nothink-test-target,
+#se-nothink-test-target {
   overflow-wrap: anywhere;
 }
 
 #ask-nothink-test:disabled,
-#post-nothink-test:disabled {
+#post-nothink-test:disabled,
+#se-nothink-test:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
 /* A compact version of the Developer's obsidian-black console */
 .ask-nothink-test-result,
-.post-nothink-test-result {
+.post-nothink-test-result,
+.select-nothink-test-result {
   min-height: 76px;
   max-height: 120px;
   margin: 0 0 12px;
@@ -563,30 +570,35 @@ button {
 }
 
 .ask-nothink-test-result.reasoning,
-.post-nothink-test-result.reasoning {
+.post-nothink-test-result.reasoning,
+.select-nothink-test-result.reasoning {
   color: var(--accent-light);
 }
 
 .ask-nothink-test-result.no-reasoning,
-.post-nothink-test-result.no-reasoning {
+.post-nothink-test-result.no-reasoning,
+.select-nothink-test-result.no-reasoning {
   color: var(--success);
 }
 
 /* Quick ask and post-processing: the grey note at the bottom of the NoThink box */
 .ask-nothink-note,
-.post-nothink-note {
+.post-nothink-note,
+.select-nothink-note {
   margin: 0 0 14px;
   font-size: var(--text-small);
   line-height: 1.4;
   color: var(--text-muted);
 }
 
-/* Quick ask: how it works */
-.ask-steps {
+/* Quick ask and Select&Edit: how it works */
+.ask-steps,
+.select-steps {
   padding: 14px 16px;
 }
 
-.ask-steps ol {
+.ask-steps ol,
+.select-steps ol {
   margin: 0;
   padding-left: 20px;
   font-size: var(--text-body);
@@ -594,11 +606,13 @@ button {
   color: var(--text-secondary);
 }
 
-.ask-steps li + li {
+.ask-steps li + li,
+.select-steps li + li {
   margin-top: 6px;
 }
 
-.ask-steps li::marker {
+.ask-steps li::marker,
+.select-steps li::marker {
   color: var(--text-faint);
 }
 

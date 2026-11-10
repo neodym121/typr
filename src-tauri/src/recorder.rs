@@ -2,12 +2,13 @@
 //! (with the local fallback), quick ask or post-processing, pasting.
 
 use std::sync::{Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::audio::{self, AudioFormat, AudioRecorder, CapturedAudio, EncodedAudio};
 use crate::cleanup::cleanup_text;
 use crate::overlay::{self, Indicator};
+use crate::selection;
 use crate::settings::{Engine, Settings};
 use crate::{
     ask, net, paste, postprocess, transcribe_assemblyai, transcribe_groq, transcribe_local, transcribe_polza,
@@ -17,6 +18,8 @@ use crate::{
 /// Shorter recordings are almost always accidental taps; Whisper tends to
 /// hallucinate text for them.
 const MIN_RECORDING_SECS: f32 = 0.3;
+/// How long a Select&Edit recording waits for the selection to be read
+const SELECTION_WAIT: Duration = Duration::from_millis(1500);
 
 /// Where the dictation is; the window shows it as the status, the indicator
 /// follows it.
@@ -50,6 +53,15 @@ pub fn notify_error(app: &AppHandle, message: &str) {
     }
     ask::recording_error(message);
     overlay::flash_error(app);
+}
+
+/// Why a recording runs: a dictation to paste at the cursor, or a
+/// Select&Edit instruction about the text selected in the window in front.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Purpose {
+    #[default]
+    Dictation,
+    SelectEdit,
 }
 
 /// What became of a recording.
@@ -88,12 +100,18 @@ pub fn warm_up_connections(settings: &Settings) {
     let ask_url = asking.then(|| postprocess::host(ask.provider).to_string());
     let search_url = (asking && ask.web_search && !settings.api_keys.exa().is_empty())
         .then(|| ask::search::HOST.to_string());
+    // A Select&Edit recording sends the selection to its own model
+    let select_edit_url = settings
+        .select_edit
+        .enabled
+        .then(|| postprocess::host(settings.select_edit.provider).to_string());
     // The same server for two of them: one connection serves both requests
     let mut urls: Vec<String> = engine_url
         .into_iter()
         .chain(post_url)
         .chain(ask_url)
         .chain(search_url)
+        .chain(select_edit_url)
         .collect();
     urls.sort();
     urls.dedup();
@@ -124,6 +142,11 @@ pub struct Recorder {
 struct Inner {
     state: RecordingState,
     microphone: AudioRecorder,
+    /// Why the current recording runs
+    purpose: Purpose,
+    /// The selection read for a Select&Edit recording
+    /// (selection.rs generation, 0 for a dictation)
+    selection_generation: u64,
 }
 
 impl Recorder {
@@ -135,16 +158,28 @@ impl Recorder {
         self.lock().state
     }
 
-    /// Opens `microphone` and starts recording; only from `Ready`.
-    pub fn start(&self, app: &AppHandle, microphone: &str) -> Result<(), String> {
+    /// Opens `microphone` and starts recording; only from `Ready`. A
+    /// Select&Edit recording also starts reading the selection of the
+    /// window in front, to be collected once the speech is transcribed.
+    pub fn start(&self, app: &AppHandle, microphone: &str, purpose: Purpose) -> Result<(), String> {
         {
             let mut inner = self.lock();
             if inner.state != RecordingState::Ready {
                 return Err(format!("Cannot start recording while {:?}", inner.state));
             }
-            log::info!("Starting recording (microphone: '{}')", microphone);
+            log::info!(
+                "Starting recording (microphone: '{}', purpose: {:?})",
+                microphone,
+                purpose
+            );
             inner.microphone.start(microphone)?;
             inner.state = RecordingState::Recording;
+            inner.purpose = purpose;
+            inner.selection_generation = if purpose == Purpose::SelectEdit {
+                selection::begin_capture()
+            } else {
+                0
+            };
         }
         publish_state(app, RecordingState::Recording);
         log::info!("State: Ready → Recording");
@@ -161,7 +196,12 @@ impl Recorder {
             }
             let _ = inner.microphone.stop();
             inner.state = RecordingState::Ready;
+            inner.purpose = Purpose::Dictation;
+            inner.selection_generation = 0;
         }
+        // A capture still waiting for the keys to come up must not reach a
+        // later recording
+        selection::forget();
         publish_state(app, RecordingState::Ready);
         log::info!("Recording cancelled, audio discarded");
         true
@@ -171,20 +211,24 @@ impl Recorder {
     /// it when it is a quick ask question.
     /// The recorder always returns to `Ready`, whether this succeeds or fails.
     pub async fn stop_and_transcribe(&self, app: &AppHandle, settings: &Settings) -> Result<Outcome, String> {
-        let captured = {
+        let (captured, purpose, selection_generation) = {
             let mut inner = self.lock();
             if inner.state != RecordingState::Recording {
                 return Err("Not currently recording".to_string());
             }
             inner.state = RecordingState::Transcribing;
-            inner.microphone.stop()
+            let purpose = inner.purpose;
+            let selection_generation = inner.selection_generation;
+            inner.purpose = Purpose::Dictation;
+            inner.selection_generation = 0;
+            (inner.microphone.stop(), purpose, selection_generation)
         };
         publish_state(app, RecordingState::Transcribing);
         log::info!("State: Recording → Transcribing");
 
         let started = Instant::now();
         let result = match captured {
-            Ok(captured) => process(app, settings, captured).await,
+            Ok(captured) => process(app, settings, captured, purpose, selection_generation).await,
             Err(e) => Err(e),
         };
 
@@ -210,7 +254,13 @@ impl Recorder {
 
 /// What happens to a finished recording: it is transcribed, then answered
 /// as a question or (post-processed and) pasted.
-async fn process(app: &AppHandle, settings: &Settings, captured: CapturedAudio) -> Result<Outcome, String> {
+async fn process(
+    app: &AppHandle,
+    settings: &Settings,
+    captured: CapturedAudio,
+    purpose: Purpose,
+    selection_generation: u64,
+) -> Result<Outcome, String> {
     if captured.duration_secs < MIN_RECORDING_SECS {
         return Err(format!(
             "Recording is too short ({:.2} s), nothing to transcribe",
@@ -233,6 +283,30 @@ async fn process(app: &AppHandle, settings: &Settings, captured: CapturedAudio) 
     log::debug!("Raw transcription: {:?}", raw_text);
 
     let mut text = cleanup_text(&raw_text);
+
+    // Select&Edit: the speech tells the model what to do with the selected
+    // text; the reply replaces the selection. No quick ask, no
+    // post-processing, and every recording stands alone.
+    if purpose == Purpose::SelectEdit {
+        if text.is_empty() {
+            return Err("Nothing was understood: say what to do with the selected text".to_string());
+        }
+        let Some(selected) = selection::take(selection_generation, SELECTION_WAIT).await else {
+            return Err(
+                "Select&Edit needs selected text, and nothing was selected in the window in front".to_string(),
+            );
+        };
+        log::info!(
+            "Select&Edit: {:?} ({} selected characters)",
+            text,
+            selected.chars().count()
+        );
+        let edited = postprocess::edit_selection(settings, &text, &selected).await?;
+        paste::paste_text(&edited)?;
+        log::info!("Select&Edit pasted the result in place of the selection");
+        return Ok(Outcome::Pasted(edited));
+    }
+
     if text.is_empty() {
         log::warn!("Transcription is empty, nothing to paste");
         return Ok(Outcome::Pasted(text));

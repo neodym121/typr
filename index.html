@@ -17,7 +17,7 @@
             <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="brand-title">
               <span class="brand-name">Typr</span>
-              <span class="brand-version" id="version-text">v3.5.3</span>
+              <span class="brand-version" id="version-text">v3.6.0</span>
             </span>
           </div>
           <div id="status" data-state="ready" role="status" aria-live="polite">
@@ -42,6 +42,10 @@
           <button type="button" class="nav-link" data-section="ask">
             <i class="nav-link-icon" data-icon="message-circle-question-mark"></i>
             <span data-i18n="nav.ask">Quick Ask</span>
+          </button>
+          <button type="button" class="nav-link" data-section="selectedit">
+            <i class="nav-link-icon" data-icon="pen-line"></i>
+            <span data-i18n="nav.selectedit">Select&Edit</span>
           </button>
         </nav>
         <div class="sidebar-bottom">
@@ -537,6 +541,114 @@
             </div>
           </div>
         </section>
+
+        <section id="section-selectedit" class="page">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="select.title">Select&Edit</h1>
+            <p class="page-lead" data-i18n="select.desc">Select text, hold its hotkey and say what to do with it: the model rewrites the text in place, replacing the selection</p>
+          </header>
+          <div class="card">
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="se-enabled" data-i18n="select.enabled">Select&Edit</label>
+                <span class="pref-hint" id="se-enabled-hint"></span>
+              </div>
+              <div class="pref-control">
+                <label class="switch">
+                  <input type="checkbox" id="se-enabled" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <div class="pref">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="post.provider">Provider</span>
+                <span class="pref-hint" data-i18n="post.providerHint">Service that runs the model</span>
+              </div>
+              <div class="pref-control">
+                <select id="se-provider">
+                  <option value="gemini">Gemini</option>
+                  <option value="mistral">Mistral</option>
+                  <option value="groq">Groq</option>
+                  <option value="polza">Polza</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="pref hidden" id="se-polza-provider-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.providerId">Provider ID</span>
+                <span class="pref-hint" data-i18n="engine.providerIdHint">Sub-provider (leave empty for auto)</span>
+              </div>
+              <div class="pref-control">
+                <input type="text" id="se-polza-provider" placeholder="e.g. openai-direct" data-i18n-placeholder="engine.providerIdPlaceholder" spellcheck="false" />
+              </div>
+            </div>
+            <div class="pref model-head">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="engine.model">Model</span>
+                <span class="pref-hint" id="se-model-current"></span>
+              </div>
+              <div class="pref-control">
+                <button type="button" class="btn btn-secondary" id="se-model-refresh" data-i18n="post.refresh">Refresh</button>
+              </div>
+            </div>
+            <div class="model-picker">
+              <input type="search" id="se-model-search" placeholder="Search models…" data-i18n-placeholder="post.search" spellcheck="false" />
+              <div id="se-model-list" class="model-list" role="listbox"></div>
+              <div id="se-model-status" class="model-status hidden"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="se-nothink" data-i18n="ask.noThink">NoThink</label>
+                <span class="pref-hint" data-i18n="ask.noThinkHint">Ask the model not to reason, or to reason as little as it can</span>
+              </div>
+              <div class="pref-control">
+                <label class="switch">
+                  <input type="checkbox" id="se-nothink" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+            <div class="pref" id="se-nothink-mode-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="ask.noThinkMode">Parameter</span>
+                <span class="pref-hint" data-i18n="ask.noThinkModeHint">How to ask the model to limit reasoning</span>
+              </div>
+              <div class="pref-control">
+                <select id="se-nothink-mode">
+                  <option value="none">none</option>
+                  <option value="low">low</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </div>
+            </div>
+            <div class="pref" id="se-nothink-test-row">
+              <div class="pref-text">
+                <span class="pref-name" data-i18n="ask.noThinkTest">Model test</span>
+                <span class="pref-hint" id="se-nothink-test-target"></span>
+              </div>
+              <div class="pref-control">
+                <button type="button" class="btn btn-secondary" id="se-nothink-test" data-i18n="ask.noThinkTestButton">Test</button>
+              </div>
+            </div>
+            <p class="select-nothink-test-result" id="se-nothink-test-result" role="status" aria-live="polite"></p>
+            <p class="select-nothink-note" data-i18n="ask.noThinkNote">Try different parameters with the provider and model you are going to use: not every provider, and not every model on it, takes the same parameter for switching reasoning off — somewhere it cannot be turned off at all, and somewhere the parameter is called differently. Keep in mind: without reasoning, the model may answer hard questions — code, math, multi-step tasks — worse.</p>
+          </div>
+
+          <div class="card select-steps">
+            <ol>
+              <li data-i18n="select.step1">Select the text to edit in any app</li>
+              <li data-i18n="select.step2">Hold the Select&Edit hotkey and say what to do with the text: "translate this into English", "make it shorter"</li>
+              <li data-i18n="select.step3">The model rewrites the selected text and the result replaces the selection. The text can stay selected and be edited again and again</li>
+            </ol>
+          </div>
+        </section>
       </main>
       </div>
       </div>
@@ -575,10 +687,6 @@
                     </label>
                   </div>
                 </div>
-              </div>
-
-              <h2 class="group-title" data-i18n="general.advanced">Advanced</h2>
-              <div class="card">
                 <div class="pref">
                   <div class="pref-text">
                     <span class="pref-name" data-i18n="general.setup">Setup wizard</span>
@@ -604,7 +712,7 @@
             </div>
 
             <div class="settings-panel" id="settings-keys" role="tabpanel">
-              <p class="settings-intro" data-i18n="keys.desc">One key per service for the whole app. The other sections only pick the service and the model</p>
+              <p class="settings-intro" data-i18n="keys.desc">AI providers</p>
               <!-- Rows built by src/apikeys.ts -->
               <div class="card" id="keys-services"></div>
               <h2 class="group-title" data-i18n="keys.searchTitle">Web search</h2>
@@ -651,6 +759,21 @@
                   <div class="pref-control">
                     <button type="button" id="ask-hotkey-btn" class="hotkey-button" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
                       <kbd id="ask-hotkey-text">Ctrl+Alt</kbd>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <h2 class="group-title" data-i18n="hotkeys.select">Select&Edit</h2>
+              <div class="card">
+                <div class="pref">
+                  <div class="pref-text">
+                    <span class="pref-name" data-i18n="recording.hotkey">Hotkey</span>
+                    <span class="pref-hint" id="se-hotkey-hint"></span>
+                  </div>
+                  <div class="pref-control">
+                    <button type="button" id="se-hotkey-btn" class="hotkey-button" title="Click to change shortcut" data-i18n-title="recording.hotkeyChange">
+                      <kbd id="se-hotkey-text">Ctrl+Shift+E</kbd>
                     </button>
                   </div>
                 </div>

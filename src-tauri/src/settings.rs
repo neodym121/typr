@@ -426,6 +426,44 @@ impl QuickAsk {
     }
 }
 
+/// Select&Edit: with text selected, its hotkey records an instruction,
+/// and a language model rewrites the selected text the way it asks; the
+/// reply replaces the selection. Every request stands alone: the model
+/// sees only the selection and the instruction, never the previous edits.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SelectEdit {
+    pub enabled: bool,
+    pub provider: PostProvider,
+    pub gemini: ProviderModel,
+    pub mistral: ProviderModel,
+    pub groq: ProviderModel,
+    pub polza: ProviderModel,
+    /// Ask the model not to reason, or to reason minimally (NoThink)
+    #[serde(rename = "noThink")]
+    pub no_think: bool,
+    /// How the NoThink request is passed
+    #[serde(rename = "noThinkMode")]
+    pub no_think_mode: NoThinkMode,
+}
+
+impl SelectEdit {
+    pub fn provider_settings(&self, provider: PostProvider) -> &ProviderModel {
+        match provider {
+            PostProvider::Gemini => &self.gemini,
+            PostProvider::Mistral => &self.mistral,
+            PostProvider::Groq => &self.groq,
+            PostProvider::Polza => &self.polza,
+        }
+    }
+
+    fn providers(&self) -> impl Iterator<Item = (PostProvider, &ProviderModel)> {
+        PostProvider::ALL
+            .iter()
+            .map(move |&provider| (provider, self.provider_settings(provider)))
+    }
+}
+
 /// Everything in config.json. A field missing from the file gets its value
 /// from `Default` below.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -469,6 +507,14 @@ pub struct Settings {
     /// modifiers alone (e.g. "Ctrl+Alt") or a mouse button
     #[serde(rename = "askHotkey")]
     pub ask_hotkey: String,
+    /// Records a Select&Edit instruction about the selected text: keys or
+    /// a mouse button
+    #[serde(rename = "selectEditHotkey")]
+    pub select_edit_hotkey: String,
+    /// Select&Edit: rewrites the selected text the way a spoken instruction
+    /// asks
+    #[serde(rename = "selectEdit")]
+    pub select_edit: SelectEdit,
     /// Adds a space after the pasted text, so the next dictation doesn't stick to it
     #[serde(rename = "appendSpace")]
     pub append_space: bool,
@@ -513,12 +559,14 @@ impl Default for Settings {
             recording_mode: RecordingMode::default(),
             hotkey: "Ctrl+Shift+Space".to_string(),
             ask_hotkey: "Ctrl+Alt".to_string(),
+            select_edit_hotkey: "Ctrl+Shift+E".to_string(),
             append_space: false,
             show_indicator: true,
             indicator_position: IndicatorPosition::default(),
             language: String::new(),
             post_process: PostProcess::default(),
             quick_ask: QuickAsk::default(),
+            select_edit: SelectEdit::default(),
             check_updates: true,
             setup_done: false,
             developer_mode: false,
@@ -588,11 +636,12 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, askHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, askHotkey={}, selectEditHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, selectEdit={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
             self.ask_hotkey,
+            self.select_edit_hotkey,
             self.append_space,
             self.microphone,
             or_auto(&self.recognition_language),
@@ -610,6 +659,7 @@ impl Settings {
             if self.language.is_empty() { "system" } else { self.language.as_str() },
             self.post_process_summary(),
             self.quick_ask_summary(),
+            self.select_edit_summary(),
             self.check_updates,
             self.developer_mode
         )
@@ -663,6 +713,20 @@ impl Settings {
         )
     }
 
+    fn select_edit_summary(&self) -> String {
+        let se = &self.select_edit;
+        let model = se.provider_settings(se.provider).model.as_str();
+        format!(
+            "{} (provider {}, model {}, key {}, nothink {}/{})",
+            if se.enabled { "on" } else { "off" },
+            se.provider,
+            if model.is_empty() { "none" } else { model },
+            key_state(self.api_keys.model(se.provider)),
+            if se.no_think { "on" } else { "off" },
+            se.no_think_mode,
+        )
+    }
+
     /// Human-readable list of what differs from `old`, with API keys masked.
     pub fn describe_changes(&self, old: &Settings) -> Vec<String> {
         let mut changes = Vec::new();
@@ -678,6 +742,7 @@ impl Settings {
         changed("recordingMode", &old.recording_mode, &self.recording_mode);
         changed("hotkey", &old.hotkey, &self.hotkey);
         changed("askHotkey", &old.ask_hotkey, &self.ask_hotkey);
+        changed("selectEditHotkey", &old.select_edit_hotkey, &self.select_edit_hotkey);
         changed("recognitionLanguage", &old.recognition_language, &self.recognition_language);
         changed("fallbackLocal", &old.fallback_local, &self.fallback_local);
         changed("groqModel", &old.groq_model, &self.groq_model);
@@ -724,6 +789,21 @@ impl Settings {
             changed(&format!("quickAsk.{}.model", provider), &before.model, &after.model);
             changed(
                 &format!("quickAsk.{}.providerId", provider),
+                &before.provider_id,
+                &after.provider_id,
+            );
+        }
+
+        let se_old = &old.select_edit;
+        let se_new = &self.select_edit;
+        changed("selectEdit.enabled", &se_old.enabled, &se_new.enabled);
+        changed("selectEdit.provider", &se_old.provider, &se_new.provider);
+        changed("selectEdit.noThink", &se_old.no_think, &se_new.no_think);
+        changed("selectEdit.noThinkMode", &se_old.no_think_mode, &se_new.no_think_mode);
+        for ((provider, before), (_, after)) in se_old.providers().zip(se_new.providers()) {
+            changed(&format!("selectEdit.{}.model", provider), &before.model, &after.model);
+            changed(
+                &format!("selectEdit.{}.providerId", provider),
                 &before.provider_id,
                 &after.provider_id,
             );
@@ -780,9 +860,16 @@ mod tests {
     fn the_defaults_of_a_new_config() {
         let settings = Settings::default();
         assert_eq!(
-            (settings.microphone.as_str(), settings.hotkey.as_str(), settings.ask_hotkey.as_str()),
-            ("default", "Ctrl+Shift+Space", "Ctrl+Alt")
+            (
+                settings.microphone.as_str(),
+                settings.hotkey.as_str(),
+                settings.ask_hotkey.as_str(),
+                settings.select_edit_hotkey.as_str(),
+            ),
+            ("default", "Ctrl+Shift+Space", "Ctrl+Alt", "Ctrl+Shift+E")
         );
+        assert!(!settings.select_edit.enabled);
+        assert_eq!(settings.select_edit.provider, PostProvider::Gemini);
         assert_eq!(settings.engine, Engine::Groq);
         assert_eq!(settings.api_keys, ApiKeys::default());
         assert_eq!(settings.groq_model, "whisper-large-v3-turbo");
@@ -817,6 +904,8 @@ mod tests {
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.post_process, PostProcess::default());
         assert_eq!(settings.quick_ask, QuickAsk::default());
+        assert_eq!(settings.select_edit, SelectEdit::default());
+        assert_eq!(settings.select_edit_hotkey, "Ctrl+Shift+E");
         assert!(settings.show_indicator);
         assert_eq!(settings.indicator_position, IndicatorPosition::TopRight);
         assert!(settings.fallback_local);
@@ -1041,6 +1130,46 @@ mod tests {
         assert_eq!(settings.quick_ask.provider, PostProvider::Groq);
         assert_eq!(settings.quick_ask.groq.model, "m");
         assert!(serde_json::to_string(&settings).unwrap().contains(r#""quickAsk":{"enabled":true"#));
+    }
+
+    #[test]
+    fn test_select_edit_is_off_by_default_and_reads_from_the_file() {
+        let defaults = SelectEdit::default();
+        assert!(!defaults.enabled);
+        assert_eq!(defaults.provider, PostProvider::Gemini);
+
+        let settings: Settings = serde_json::from_str(
+            r#"{"selectEdit":{"enabled":true,"provider":"groq","groq":{"model":"m"},"noThink":true,"noThinkMode":"low"}}"#,
+        )
+        .unwrap();
+        assert!(settings.select_edit.enabled);
+        assert_eq!(settings.select_edit.provider, PostProvider::Groq);
+        assert_eq!(settings.select_edit.groq.model, "m");
+        assert!(settings.select_edit.no_think);
+        assert_eq!(settings.select_edit.no_think_mode, NoThinkMode::Low);
+        assert!(serde_json::to_string(&settings).unwrap().contains(r#""selectEdit":{"enabled":true"#));
+    }
+
+    #[test]
+    fn test_select_edit_changes_are_logged_without_keys() {
+        let old = Settings::default();
+        let mut new = Settings::default();
+        new.select_edit.enabled = true;
+        new.select_edit.provider = PostProvider::Mistral;
+        new.select_edit.mistral.model = "mistral-small-latest".to_string();
+        new.select_edit_hotkey = "Ctrl+Shift+KeyQ".to_string();
+        new.api_keys.mistral = "mistral_secret".to_string();
+
+        let changes = new.describe_changes(&old).join("; ");
+        assert!(changes.contains("selectEdit.enabled: 'false' → 'true'"));
+        assert!(changes.contains("selectEdit.provider: 'gemini' → 'mistral'"));
+        assert!(changes.contains("selectEdit.mistral.model: '' → 'mistral-small-latest'"));
+        assert!(changes.contains("selectEditHotkey: 'Ctrl+Shift+E' → 'Ctrl+Shift+KeyQ'"));
+        assert!(changes.contains("apiKeys.mistral updated (set)"));
+        let summary = new.summary();
+        assert!(summary.contains("selectEdit=on (provider mistral, model mistral-small-latest, key set, nothink off/none)"));
+        assert!(!changes.contains("mistral_secret"));
+        assert!(!summary.contains("mistral_secret"));
     }
 
     #[test]

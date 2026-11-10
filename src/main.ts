@@ -25,6 +25,14 @@ import {
   translateQuickAsk,
   type QuickAskSettings,
 } from "./quickask";
+import {
+  fillSelectEdit,
+  initSelectEdit,
+  renderSelectHint,
+  showSelectEdit,
+  translateSelectEdit,
+  type SelectEditSettings,
+} from "./selectedit";
 
 interface Settings {
   microphone: string;
@@ -57,6 +65,11 @@ interface Settings {
   /** Select text and ask about it with the hotkey, or open the window with
    *  its own (src/quickask.ts) */
   quickAsk: QuickAskSettings;
+  /** Records an instruction that rewrites the selected text in place
+   *  (src/selectedit.ts) */
+  selectEdit: SelectEditSettings;
+  /** Records a Select&Edit instruction about the selected text */
+  selectEditHotkey: string;
   checkUpdates: boolean;
   /** The first-run setup was finished or skipped */
   setupDone: boolean;
@@ -204,6 +217,7 @@ const pageShown: Record<string, () => void> = {
   engine: showLocal,
   postprocess: showPostProcess,
   ask: showQuickAsk,
+  selectedit: showSelectEdit,
 };
 
 function showSection(name: string) {
@@ -349,9 +363,21 @@ document.querySelectorAll<HTMLElement>(".segmented").forEach(enhanceSegmented);
 
 initApiKeys({ settings: () => currentSettings, save: saveQuietly });
 // Quick ask names its hotkey too
-initHotkeys({ settings: () => currentSettings, save: () => saveSettings().then(renderAskHint) });
+initHotkeys({
+  settings: () => currentSettings,
+  save: () => saveSettings().then(() => {
+    renderAskHint();
+    renderSelectHint();
+  }),
+});
 initPostProcess({ settings: () => currentSettings, save: saveQuietly });
 initQuickAsk({
+  settings: () => currentSettings,
+  save: saveQuietly,
+  enabledChanged: fillHotkeys,
+  showHotkeys: () => openSettings("hotkeys"),
+});
+initSelectEdit({
   settings: () => currentSettings,
   save: saveQuietly,
   enabledChanged: fillHotkeys,
@@ -391,6 +417,7 @@ function applyLanguage(lang: Lang) {
   translateHotkeys();
   translatePostProcess();
   translateQuickAsk();
+  translateSelectEdit();
   translateLocal();
   fillLanguageOptions(recognitionLanguage);
   syncSelect(recognitionLanguage);
@@ -510,6 +537,9 @@ function fillForm() {
 
   // Quick ask
   fillQuickAsk();
+
+  // Select&Edit
+  fillSelectEdit();
 
   // Local engine
   fillLocal();

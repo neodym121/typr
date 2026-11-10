@@ -57,6 +57,7 @@ impl MouseButton {
 pub enum Slot {
     Dictation,
     Ask,
+    SelectEdit,
 }
 
 impl Slot {
@@ -65,6 +66,7 @@ impl Slot {
         match self {
             Slot::Dictation => 0,
             Slot::Ask => 1,
+            Slot::SelectEdit => 2,
         }
     }
 }
@@ -85,15 +87,15 @@ mod imp {
         XBUTTON2,
     };
 
-    const SLOTS: usize = 2;
+    const SLOTS: usize = 3;
 
     /// `MouseButton::code` of each slot's button, 0 for none
-    static BUTTONS: [AtomicU8; SLOTS] = [AtomicU8::new(0), AtomicU8::new(0)];
+    static BUTTONS: [AtomicU8; SLOTS] = [AtomicU8::new(0), AtomicU8::new(0), AtomicU8::new(0)];
     /// The hook swallowed the press of a slot's button, so it swallows its
     /// release too
-    static HELD: [AtomicBool; SLOTS] = [AtomicBool::new(false), AtomicBool::new(false)];
+    static HELD: [AtomicBool; SLOTS] = [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)];
     /// Presses (true) and releases (false) on their way to each slot's handler
-    static EVENTS: Mutex<[Option<Sender<bool>>; SLOTS]> = Mutex::new([None, None]);
+    static EVENTS: Mutex<[Option<Sender<bool>>; SLOTS]> = Mutex::new([None, None, None]);
     /// The thread that owns the hook and runs its message loop; holding the
     /// lock also keeps two starts or stops from mixing
     static HOOK_THREAD: Mutex<Option<u32>> = Mutex::new(None);
@@ -254,6 +256,7 @@ pub fn stop(slot: Slot) {
 pub fn stop_all() {
     imp::stop(Slot::Dictation);
     imp::stop(Slot::Ask);
+    imp::stop(Slot::SelectEdit);
 }
 
 #[cfg(test)]

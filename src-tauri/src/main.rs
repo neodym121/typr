@@ -13,7 +13,7 @@ use typr_lib::keyboard::{self, HotkeyKeys};
 use typr_lib::local::{runtime::Paths as LocalPaths, LocalEngine, LocalStatus};
 use typr_lib::logger::{self, LogEntry};
 use typr_lib::postprocess::{self, ModelInfo};
-use typr_lib::recorder::{self, Outcome, Recorder, RecordingState};
+use typr_lib::recorder::{self, Outcome, Purpose, Recorder, RecordingState};
 use typr_lib::settings::{Engine, NoThinkMode, PostProvider, RecordingMode, Settings};
 use typr_lib::updates::{self, UpdateInfo};
 use typr_lib::{ask, audio, autostart, i18n, links, modifier_hotkey, mouse, overlay, paste};
@@ -252,7 +252,9 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     // While the hotkeys are off (tray), the new ones are registered when they're turned back on
     let hotkeys_changed = settings.hotkey != old.hotkey
         || settings.ask_hotkey != old.ask_hotkey
-        || settings.quick_ask.enabled != old.quick_ask.enabled;
+        || settings.quick_ask.enabled != old.quick_ask.enabled
+        || settings.select_edit_hotkey != old.select_edit_hotkey
+        || settings.select_edit.enabled != old.select_edit.enabled;
     if hotkeys_changed && state.hotkey_enabled.load(Ordering::SeqCst) {
         if let Err(e) = register_hotkeys(app, &settings) {
             log::error!("Failed to register the new hotkeys: {}", e);
@@ -413,7 +415,7 @@ fn get_recording_state(state: State<AppState>) -> RecordingState {
 /// The window's own start/stop, the same as a press of the toggle hotkey.
 #[tauri::command]
 async fn toggle_recording(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<String, String> {
-    toggle(&app, &state).await
+    toggle(&app, &state, Purpose::Dictation).await
 }
 
 #[tauri::command]
@@ -599,9 +601,9 @@ fn frontend_log(level: String, message: String) {
     logger::record(logger::parse_level(&level), "ui", message);
 }
 
-fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
+fn begin_recording(app: &tauri::AppHandle, state: &AppState, purpose: Purpose) -> Result<(), String> {
     let settings = state.settings();
-    if let Err(e) = state.recorder.start(app, &settings.microphone) {
+    if let Err(e) = state.recorder.start(app, &settings.microphone, purpose) {
         log::error!("Failed to start recording: {}", e);
         recorder::notify_error(app, &e);
         return Err(e);
@@ -613,8 +615,11 @@ fn begin_recording(app: &tauri::AppHandle, state: &AppState) -> Result<(), Strin
             .preload(&settings.local_model, &settings.local_backend);
     }
     recorder::warm_up_connections(&settings);
-    // Quick ask: the selection is read meanwhile, it decides what this is
-    ask::recording_started(&settings);
+    // Quick ask: the selection is read meanwhile, it decides what this is.
+    // Select&Edit: the recorder reads it, it is what the speech is about.
+    if purpose == Purpose::Dictation {
+        ask::recording_started(&settings);
+    }
     Ok(())
 }
 
@@ -636,11 +641,11 @@ async fn finish_recording(app: &tauri::AppHandle, state: &AppState) -> Result<St
     }
 }
 
-/// Toggle mode (and the window's button): a press starts a dictation, the
+/// Toggle mode (and the window's button): a press starts a recording, the
 /// next one stops it. Answers "recording" or what was pasted.
-async fn toggle(app: &tauri::AppHandle, state: &AppState) -> Result<String, String> {
+async fn toggle(app: &tauri::AppHandle, state: &AppState, purpose: Purpose) -> Result<String, String> {
     match state.recorder.state() {
-        RecordingState::Ready => begin_recording(app, state).map(|()| "recording".to_string()),
+        RecordingState::Ready => begin_recording(app, state, purpose).map(|()| "recording".to_string()),
         RecordingState::Recording => finish_recording(app, state).await,
         RecordingState::Transcribing => {
             log::warn!("Hotkey ignored: still transcribing the previous recording");
@@ -649,13 +654,13 @@ async fn toggle(app: &tauri::AppHandle, state: &AppState) -> Result<String, Stri
     }
 }
 
-async fn push_to_talk_pressed(app: &tauri::AppHandle, state: &AppState) {
+async fn push_to_talk_pressed(app: &tauri::AppHandle, state: &AppState, purpose: Purpose) {
     let current = state.recorder.state();
     if current != RecordingState::Ready {
         log::debug!("Push-to-talk press ignored, recorder is {:?}", current);
         return;
     }
-    if begin_recording(app, state).is_err() {
+    if begin_recording(app, state, purpose).is_err() {
         return;
     }
     // The key may have been released while the microphone was opening;
@@ -677,8 +682,10 @@ async fn push_to_talk_released(app: &tauri::AppHandle, state: &AppState) {
     }
 }
 
-/// The hotkey (keys or a mouse button) went down (`pressed`) or up.
-fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, name: &str) {
+/// The hotkey (keys or a mouse button) went down (`pressed`) or up. The
+/// dictation and Select&Edit hotkeys share the recorder; `purpose` says
+/// what the recording is for.
+fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, name: &str, purpose: Purpose) {
     let state = app.state::<AppState>();
     let mode = state.settings.lock().unwrap().recording_mode;
     let push_to_talk = mode == RecordingMode::PushToTalk;
@@ -702,9 +709,9 @@ fn on_hotkey(app: &tauri::AppHandle, pressed: bool, hotkey_keys: &HotkeyKeys, na
         tauri::async_runtime::spawn(async move {
             let state = handle.state::<AppState>();
             if push_to_talk {
-                push_to_talk_pressed(&handle, &state).await;
+                push_to_talk_pressed(&handle, &state, purpose).await;
             } else {
-                match toggle(&handle, &state).await {
+                match toggle(&handle, &state, purpose).await {
                     Ok(result) => log::debug!("Toggle result: {}", result),
                     Err(e) => log::debug!("Toggle: {}", e),
                 }
@@ -761,7 +768,12 @@ fn register_hotkeys(app: &tauri::AppHandle, settings: &Settings) -> Result<(), S
     } else {
         Ok(())
     };
-    dictation.and(ask)
+    let select_edit = if settings.select_edit.enabled {
+        register_select_edit_hotkey(app, &settings.select_edit_hotkey, &settings.hotkey, &settings.ask_hotkey)
+    } else {
+        Ok(())
+    };
+    dictation.and(ask).and(select_edit)
 }
 
 /// Listens to `hotkey_str` for dictation: a key combination through the
@@ -774,7 +786,7 @@ fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey_str: &str) -> Result
     if let Some(button) = mouse::MouseButton::parse(&normalized) {
         let handle = app.clone();
         mouse::start(mouse::Slot::Dictation, button, move |pressed| {
-            on_hotkey(&handle, pressed, &hotkey_keys, button.id())
+            on_hotkey(&handle, pressed, &hotkey_keys, button.id(), Purpose::Dictation)
         })
         .map_err(|e| format!("Failed to use {} as the hotkey: {}", button.id(), e))?;
         log::info!("Mouse button hotkey registered: {}", button.id());
@@ -786,11 +798,50 @@ fn register_dictation_hotkey(app: &tauri::AppHandle, hotkey_str: &str) -> Result
     app.global_shortcut()
         .on_shortcut(normalized.as_str(), move |_app, shortcut, event| {
             let name = format!("{:?}", shortcut);
-            on_hotkey(&handle, event.state == ShortcutState::Pressed, &hotkey_keys, &name);
+            on_hotkey(&handle, event.state == ShortcutState::Pressed, &hotkey_keys, &name, Purpose::Dictation);
         })
         .map_err(|e| format!("Failed to register shortcut '{}': {}", normalized, e))?;
 
     log::info!("Global shortcut registered: {}", normalized);
+    Ok(())
+}
+
+/// Listens to `hotkey_str` for Select&Edit: a key combination through the
+/// global shortcut plugin, or a single mouse button through the mouse hook.
+/// It must differ from both the dictation and the quick ask hotkeys.
+fn register_select_edit_hotkey(app: &tauri::AppHandle, hotkey_str: &str, dictation: &str, ask: &str) -> Result<(), String> {
+    let normalized = keyboard::canonical(hotkey_str);
+    if normalized.is_empty() {
+        return Err("The Select&Edit hotkey isn't set".to_string());
+    }
+    if normalized.eq_ignore_ascii_case(&keyboard::canonical(dictation)) {
+        return Err(format!("{} is already the dictation hotkey", normalized));
+    }
+    if normalized.eq_ignore_ascii_case(&keyboard::canonical(ask)) {
+        return Err(format!("{} is already the Quick Ask hotkey", normalized));
+    }
+    let hotkey_keys = HotkeyKeys::parse(&normalized);
+
+    if let Some(button) = mouse::MouseButton::parse(&normalized) {
+        let handle = app.clone();
+        mouse::start(mouse::Slot::SelectEdit, button, move |pressed| {
+            on_hotkey(&handle, pressed, &hotkey_keys, button.id(), Purpose::SelectEdit)
+        })
+        .map_err(|e| format!("Failed to use {} as the Select&Edit hotkey: {}", button.id(), e))?;
+        log::info!("Mouse button hotkey registered for Select&Edit: {}", button.id());
+        return Ok(());
+    }
+
+    log::info!("Registering the Select&Edit shortcut: {}", normalized);
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(normalized.as_str(), move |_app, shortcut, event| {
+            let name = format!("{:?}", shortcut);
+            on_hotkey(&handle, event.state == ShortcutState::Pressed, &hotkey_keys, &name, Purpose::SelectEdit);
+        })
+        .map_err(|e| format!("Failed to register the Select&Edit shortcut '{}': {}", normalized, e))?;
+
+    log::info!("Select&Edit shortcut registered: {}", normalized);
     Ok(())
 }
 
