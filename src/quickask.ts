@@ -1,24 +1,23 @@
 // Quick ask section: its switch (with a hint naming its own hotkey), the
-// model that answers (modelpicker.ts), web search through Exa and NoThink
-// (asking the model not to reason; the request itself is built by the
-// backend, ask/stream.rs). Its tester sends the same parameter and reports
-// whether the response contained reasoning. The keys come from the API keys
-// section; the window itself is drawn by the backend (src-tauri/src/ask).
+// model that answers (modelpicker.ts), web search through Exa and Reasoning
+// (how much the model thinks; the request itself is built by the backend,
+// ask/stream.rs). The keys come from the API keys section; the window itself
+// is drawn by the backend (src-tauri/src/ask).
 
-import { invoke } from "@tauri-apps/api/core";
-import { keyOf } from "./apikeys";
-import { enhanceSelect, syncSelect } from "./dropdown";
 import { formatHotkey, t } from "./i18n";
-import { createModelPicker, type ModelPicker, type Provider, type ProviderConfig } from "./modelpicker";
+import { enhanceSelect, syncSelect } from "./dropdown";
+import { createModelPicker, type ModelPicker, type ProviderConfig } from "./modelpicker";
 
 export interface QuickAskSettings extends ProviderConfig {
   enabled: boolean;
   /** The model may search the web with Exa */
   webSearch: boolean;
-  /** Ask the model not to reason (NoThink) */
-  noThink: boolean;
-  /** How the NoThink request is passed (settings.rs `NoThinkMode`) */
-  noThinkMode: string;
+  /** Ask the model for a set amount of reasoning (Reasoning) */
+  reasoning: boolean;
+  /** How much reasoning the request asks for (settings.rs `ReasoningMode`) */
+  reasoningMode: string;
+  /** The parameter of the custom reasoning mode */
+  reasoningCustom: string;
 }
 
 export interface QuickAskHost {
@@ -33,98 +32,62 @@ export interface QuickAskHost {
 const enabledToggle = document.getElementById("ask-enabled") as HTMLInputElement;
 const enabledHint = document.getElementById("ask-enabled-hint")!;
 const searchToggle = document.getElementById("ask-search") as HTMLInputElement;
-const noThinkToggle = document.getElementById("ask-nothink") as HTMLInputElement;
-const noThinkMode = document.getElementById("ask-nothink-mode") as HTMLSelectElement;
-const noThinkTest = document.getElementById("ask-nothink-test") as HTMLButtonElement;
-const noThinkTestTarget = document.getElementById("ask-nothink-test-target")!;
-const noThinkTestResult = document.getElementById("ask-nothink-test-result")!;
+const reasoningToggle = document.getElementById("ask-reasoning") as HTMLInputElement;
+const reasoningMode = document.getElementById("ask-reasoning-mode") as HTMLSelectElement;
+const customInput = document.getElementById("ask-reasoning-custom-input") as HTMLInputElement;
+const customEdit = document.getElementById("ask-reasoning-edit")!;
 
-/** The value ids of the NoThink dropdown (settings.rs `NoThinkMode`) */
-const NOTHINK_MODES = ["none", "low", "disabled"];
-const PROVIDER_NAMES: Record<Provider, string> = {
-  gemini: "Gemini",
-  mistral: "Mistral",
-  groq: "Groq",
-  polza: "Polza",
-};
-
-type TestResult =
-  | { kind: "none" }
-  | { kind: "reasoning" | "noReasoning" }
-  | { kind: "error"; error: string };
+/** The value ids of the reasoning presets (settings.rs `ReasoningMode`) */
+const REASONING_MODES = ["none", "low", "medium", "high", "custom"];
 
 let host: QuickAskHost | undefined;
 let picker: ModelPicker | undefined;
-let testingNoThink = false;
-let testRevision = 0;
-let testResult: TestResult = { kind: "none" };
+let editingCustom = false;
 
-function currentProvider(): Provider {
-  const provider = host!.settings().quickAsk.provider as Provider;
-  return PROVIDER_NAMES[provider] ? provider : "gemini";
-}
-
-/** The exact combination the next test will use, and its latest result. */
-function renderNoThinkTester() {
+/** The parameter select and its custom option follow the settings. */
+function renderReasoning() {
   if (!host) return;
   const config = host.settings().quickAsk;
-  const provider = currentProvider();
-  const model = config[provider].model.trim() || t("post.modelNone");
-  const subProvider = provider === "polza" ? config.polza.providerId?.trim() || t("ask.noThinkAutoProvider") : "";
-  const target = [PROVIDER_NAMES[provider], model, subProvider].filter(Boolean).join(" · ");
-  noThinkTestTarget.textContent = target;
-  noThinkTestTarget.title = target;
-
-  noThinkTest.disabled = testingNoThink;
-  noThinkTest.textContent = t(testingNoThink ? "ask.noThinkTesting" : "ask.noThinkTestButton");
-  noThinkTestResult.classList.toggle("reasoning", testResult.kind === "reasoning" || testResult.kind === "error");
-  noThinkTestResult.classList.toggle("no-reasoning", testResult.kind === "noReasoning");
-  switch (testResult.kind) {
-    case "none":
-      noThinkTestResult.textContent = "";
-      break;
-    case "reasoning":
-      noThinkTestResult.textContent = t("ask.noThinkReasoning");
-      break;
-    case "noReasoning":
-      noThinkTestResult.textContent = t("ask.noThinkNoReasoning");
-      break;
-    case "error":
-      noThinkTestResult.textContent = t("ask.noThinkTestFailed", { error: testResult.error });
-      break;
-  }
+  reasoningMode.value = REASONING_MODES.includes(config.reasoningMode) ? config.reasoningMode : "none";
+  // The custom option carries the parameter as its text, so the trigger and
+  // its list row show what will be sent
+  const option = reasoningMode.querySelector<HTMLOptionElement>('option[value="custom"]')!;
+  option.text = config.reasoningCustom.trim() || "custom";
+  syncSelect(reasoningMode);
+  const custom = reasoningMode.value === "custom";
+  reasoningMode.closest(".dropdown")!.classList.toggle("editing", custom && editingCustom);
+  customInput.classList.toggle("hidden", !(custom && editingCustom));
+  customEdit.classList.toggle("hidden", !custom || editingCustom);
 }
 
-/** A result belongs only to the combination that produced it. */
-function resetNoThinkTest() {
-  testRevision += 1;
-  testResult = { kind: "none" };
-  renderNoThinkTester();
+/** Marks the custom list row with the parameter's grey "custom" label while
+ *  another preset is chosen. The list renders on every open. */
+function markCustomRow(list: HTMLElement) {
+  const value = host?.settings().quickAsk.reasoningCustom.trim();
+  if (!value || reasoningMode.value === "custom") return;
+  const row = list.lastElementChild as HTMLElement | null;
+  if (!row || row.querySelector(".dropdown-option-hint")) return;
+  const hint = document.createElement("span");
+  hint.className = "dropdown-option-hint";
+  hint.textContent = "custom";
+  row.append(hint);
 }
 
-async function runNoThinkTest() {
-  if (testingNoThink) return;
-  const config = host!.settings().quickAsk;
-  const provider = currentProvider();
-  const revision = ++testRevision;
-  testingNoThink = true;
-  testResult = { kind: "none" };
-  renderNoThinkTester();
-  try {
-    const reasoning = await invoke<boolean>("test_no_think", {
-      provider,
-      apiKey: keyOf(provider),
-      model: config[provider].model,
-      subProvider: provider === "polza" ? config.polza.providerId || "" : "",
-      mode: NOTHINK_MODES.includes(config.noThinkMode) ? config.noThinkMode : "none",
-    });
-    if (revision === testRevision) testResult = { kind: reasoning ? "reasoning" : "noReasoning" };
-  } catch (error) {
-    if (revision === testRevision) testResult = { kind: "error", error: String(error) };
-  } finally {
-    testingNoThink = false;
-    renderNoThinkTester();
-  }
+function startCustomEdit() {
+  if (editingCustom) return;
+  editingCustom = true;
+  customInput.value = host!.settings().quickAsk.reasoningCustom;
+  renderReasoning();
+  customInput.focus();
+  customInput.select();
+}
+
+function commitCustomEdit() {
+  if (!editingCustom) return;
+  editingCustom = false;
+  host!.settings().quickAsk.reasoningCustom = customInput.value.trim();
+  host!.save();
+  renderReasoning();
 }
 
 export function initQuickAsk(appHost: QuickAskHost) {
@@ -133,7 +96,6 @@ export function initQuickAsk(appHost: QuickAskHost) {
     prefix: "ask",
     config: () => host!.settings().quickAsk,
     save: () => host!.save(),
-    changed: resetNoThinkTest,
   });
 
   enabledToggle.addEventListener("change", () => {
@@ -152,20 +114,54 @@ export function initQuickAsk(appHost: QuickAskHost) {
     host!.save();
   });
 
-  enhanceSelect(noThinkMode);
-
-  noThinkToggle.addEventListener("change", () => {
-    host!.settings().quickAsk.noThink = noThinkToggle.checked;
+  reasoningToggle.addEventListener("change", () => {
+    host!.settings().quickAsk.reasoning = reasoningToggle.checked;
     host!.save();
   });
 
-  noThinkMode.addEventListener("change", () => {
-    host!.settings().quickAsk.noThinkMode = noThinkMode.value;
+  enhanceSelect(reasoningMode);
+  // The parameter field lives inside the dropdown, taking the trigger's
+  // place while it is edited
+  const dropdownRoot = reasoningMode.closest(".dropdown")!;
+  dropdownRoot.append(customInput);
+
+  // The list renders on every open: the custom row gets its grey label then
+  const list = dropdownRoot.querySelector<HTMLElement>(".dropdown-list")!;
+  new MutationObserver(() => markCustomRow(list)).observe(list, { childList: true });
+
+  reasoningMode.addEventListener("change", () => {
+    host!.settings().quickAsk.reasoningMode = reasoningMode.value;
     host!.save();
-    resetNoThinkTest();
+    // A custom parameter without a value opens its field for typing right
+    // away; with one, the pencil brings the field back
+    if (reasoningMode.value === "custom" && !host!.settings().quickAsk.reasoningCustom.trim()) startCustomEdit();
+    else renderReasoning();
   });
 
-  noThinkTest.addEventListener("click", () => void runNoThinkTest());
+  customEdit.addEventListener("click", () => startCustomEdit());
+
+  customInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitCustomEdit();
+      reasoningMode
+        .closest(".dropdown")!
+        .querySelector<HTMLButtonElement>(".dropdown-trigger")!
+        .focus();
+    } else if (event.key === "Escape") {
+      // Cancels the edit; the Settings window takes Escape otherwise
+      event.stopPropagation();
+      editingCustom = false;
+      renderReasoning();
+      reasoningMode
+        .closest(".dropdown")!
+        .querySelector<HTMLButtonElement>(".dropdown-trigger")!
+        .focus();
+    }
+  });
+
+  // A click away from the field saves what it holds
+  customInput.addEventListener("blur", () => commitCustomEdit());
 }
 
 /** "… {hotkey} opens the window …", with the hotkey as a key cap */
@@ -183,12 +179,11 @@ export function fillQuickAsk() {
   const quickAsk = host!.settings().quickAsk;
   enabledToggle.checked = Boolean(quickAsk.enabled);
   searchToggle.checked = Boolean(quickAsk.webSearch);
-  noThinkToggle.checked = Boolean(quickAsk.noThink);
-  noThinkMode.value = NOTHINK_MODES.includes(quickAsk.noThinkMode) ? quickAsk.noThinkMode : "none";
-  syncSelect(noThinkMode);
+  reasoningToggle.checked = Boolean(quickAsk.reasoning);
+  editingCustom = false;
+  renderReasoning();
   renderAskHint();
   picker?.fill();
-  resetNoThinkTest();
 }
 
 /** The section was opened: load the model list if it isn't there yet. */
@@ -200,5 +195,4 @@ export function showQuickAsk() {
 export function translateQuickAsk() {
   picker?.translate();
   renderAskHint();
-  renderNoThinkTester();
 }

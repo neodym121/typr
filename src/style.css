@@ -512,10 +512,8 @@ button {
   margin-top: 12px;
 }
 
-/* Quick ask and post-processing: the NoThink parameter and its tester flow
+/* Post-processing and Select&Edit: the NoThink parameter and its tester flow
    into the grey note without the lines that separate setting rows */
-#ask-nothink-mode-row,
-#ask-nothink-test-row,
 #post-nothink-mode-row,
 #post-nothink-test-row,
 #se-nothink-mode-row,
@@ -523,25 +521,21 @@ button {
   border-bottom: none;
 }
 
-#ask-nothink-test-row,
 #post-nothink-test-row,
 #se-nothink-test-row {
   padding-top: 0;
 }
 
-#ask-nothink-test-row .pref-control,
 #post-nothink-test-row .pref-control,
 #se-nothink-test-row .pref-control {
   flex: 0 0 auto;
 }
 
-#ask-nothink-test-target,
 #post-nothink-test-target,
 #se-nothink-test-target {
   overflow-wrap: anywhere;
 }
 
-#ask-nothink-test:disabled,
 #post-nothink-test:disabled,
 #se-nothink-test:disabled {
   opacity: 0.55;
@@ -549,7 +543,6 @@ button {
 }
 
 /* A compact version of the Developer's obsidian-black console */
-.ask-nothink-test-result,
 .post-nothink-test-result,
 .select-nothink-test-result {
   min-height: 76px;
@@ -569,20 +562,17 @@ button {
   -webkit-user-select: text;
 }
 
-.ask-nothink-test-result.reasoning,
 .post-nothink-test-result.reasoning,
 .select-nothink-test-result.reasoning {
   color: var(--accent-light);
 }
 
-.ask-nothink-test-result.no-reasoning,
 .post-nothink-test-result.no-reasoning,
 .select-nothink-test-result.no-reasoning {
   color: var(--success);
 }
 
-/* Quick ask and post-processing: the grey note at the bottom of the NoThink box */
-.ask-nothink-note,
+/* Post-processing and Select&Edit: the grey note at the bottom of the NoThink box */
 .post-nothink-note,
 .select-nothink-note {
   margin: 0 0 14px;
@@ -1109,6 +1099,47 @@ kbd.inline-kbd:hover {
 .dropdown.open .dropdown-trigger {
   border-color: var(--border-focus);
   box-shadow: var(--focus-halo);
+}
+
+/* Quick ask → Reasoning: while the custom parameter is typed, the field
+   takes the trigger's place and the list stays away */
+.dropdown.editing .dropdown-trigger,
+.dropdown.editing .dropdown-list {
+  display: none;
+}
+
+/* The pencil left of the dropdown brings the custom parameter field back */
+.reasoning-edit {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--ease);
+}
+
+.reasoning-edit:hover {
+  color: var(--text-primary);
+}
+
+/* The same narrower width with the pencil and without it */
+#ask-reasoning-mode-row .dropdown {
+  max-width: 222px;
+}
+
+/* The saved parameter marks the custom row while another preset is chosen */
+.dropdown-option-hint {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--text-small);
 }
 
 .dropdown-label {

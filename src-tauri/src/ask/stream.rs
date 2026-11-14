@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::net;
 use crate::postprocess::{openai_base, provider_label, GEMINI_URL};
-use crate::settings::{NoThinkMode, PostProvider};
+use crate::settings::PostProvider;
 
 /// A long answer may take a while; the shared client's 2 minutes are for
 /// whole requests, not streams.
@@ -50,6 +50,34 @@ pub enum Tools {
     AnswerNow,
 }
 
+/// The reasoning a quick ask request asks the model for: a preset level, or
+/// the user's own value (`Custom`). `Disabled` is the explicit disable flag
+/// the NoThink testers of Post-processing and Select&Edit still send.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reasoning {
+    None,
+    Low,
+    Medium,
+    High,
+    Disabled,
+    Custom(String),
+}
+
+impl Reasoning {
+    /// The value the effort field carries (OpenAI-compatible
+    /// `reasoning_effort`, Polza's `reasoning.effort`, Gemini's `thinkingLevel`)
+    fn effort(&self) -> &str {
+        match self {
+            Reasoning::None => "none",
+            Reasoning::Low => "low",
+            Reasoning::Medium => "medium",
+            Reasoning::High => "high",
+            Reasoning::Disabled => "disabled",
+            Reasoning::Custom(value) => value,
+        }
+    }
+}
+
 pub struct Request<'a> {
     pub provider: PostProvider,
     pub api_key: &'a str,
@@ -59,8 +87,8 @@ pub struct Request<'a> {
     pub system: &'a str,
     pub messages: &'a [ChatMessage],
     pub tools: Tools,
-    /// The selected NoThink parameter; `None` leaves reasoning at the model's default
-    pub no_think: Option<NoThinkMode>,
+    /// The selected reasoning parameter; `None` leaves reasoning at the model's default
+    pub reasoning: Option<Reasoning>,
     /// This answer's earlier searches and their results, in the provider's
     /// format (`tool_exchange`), after the messages
     pub exchange: &'a [Value],
@@ -96,6 +124,8 @@ pub struct Round {
 pub trait Sink {
     /// A piece of the answer (reasoning already left out)
     fn text(&mut self, text: &str);
+    /// The model is emitting its reasoning right now, before the answer
+    fn thinking(&mut self);
     /// Called regularly while the answer is written, also between pieces
     fn tick(&mut self);
 }
@@ -144,6 +174,8 @@ pub async fn stream(request: &Request<'_>, sink: &mut impl Sink) -> Result<Round
     let mut round = Round::default();
     // OpenAI-compatible tool calls arrive in pieces, by index
     let mut pieces: BTreeMap<u64, ToolCall> = BTreeMap::new();
+    // The window is told about the thinking once per round
+    let mut thinking_told = false;
     let mut body = response.bytes_stream();
     let mut tick = tokio::time::interval(TICK);
 
@@ -161,9 +193,19 @@ pub async fn stream(request: &Request<'_>, sink: &mut impl Sink) -> Result<Round
                     match event {
                         Event::Text(text) => {
                             let text = filter.push(&text);
+                            if filter.took_open() && !thinking_told {
+                                thinking_told = true;
+                                sink.thinking();
+                            }
                             if !text.is_empty() {
                                 round.text.push_str(&text);
                                 sink.text(&text);
+                            }
+                        }
+                        Event::Thought => {
+                            if !thinking_told {
+                                thinking_told = true;
+                                sink.thinking();
                             }
                         }
                         Event::CallPiece { index, id, name, arguments } => {
@@ -354,15 +396,15 @@ fn openai_body(request: &Request) -> Value {
         }]);
         body["tool_choice"] = json!(if request.tools == Tools::Search { "auto" } else { "none" });
     }
-    if let Some(mode) = request.no_think {
+    if let Some(reasoning) = &request.reasoning {
         match request.provider {
             PostProvider::Polza => {
-                body["reasoning"] = match mode {
-                    NoThinkMode::Disabled => json!({ "enabled": false }),
-                    NoThinkMode::None | NoThinkMode::Low => json!({ "effort": mode.id() }),
+                body["reasoning"] = match reasoning {
+                    Reasoning::Disabled => json!({ "enabled": false }),
+                    other => json!({ "effort": other.effort() }),
                 };
             }
-            _ => body["reasoning_effort"] = json!(mode.id()),
+            _ => body["reasoning_effort"] = json!(reasoning.effort()),
         }
     }
     if !request.sub_provider.trim().is_empty() {
@@ -402,10 +444,10 @@ fn gemini_body(request: &Request) -> Value {
             "functionCallingConfig": { "mode": if request.tools == Tools::Search { "AUTO" } else { "NONE" } },
         });
     }
-    if let Some(mode) = request.no_think {
-        body["generationConfig"]["thinkingConfig"] = match mode {
-            NoThinkMode::Low => json!({ "thinkingLevel": "low" }),
-            NoThinkMode::None | NoThinkMode::Disabled => json!({ "thinkingBudget": 0 }),
+    if let Some(reasoning) = &request.reasoning {
+        body["generationConfig"]["thinkingConfig"] = match reasoning {
+            Reasoning::None | Reasoning::Disabled => json!({ "thinkingBudget": 0 }),
+            other => json!({ "thinkingLevel": other.effort() }),
         };
     }
     body
@@ -461,6 +503,9 @@ pub fn tool_exchange(provider: PostProvider, text: &str, calls: &[ToolCall], res
 #[derive(Debug, PartialEq)]
 enum Event {
     Text(String),
+    /// The model is streaming its reasoning aside from the answer (Gemini's
+    /// thought parts, an OpenAI-compatible reasoning delta)
+    Thought,
     /// A piece of an OpenAI-compatible tool call
     CallPiece {
         index: u64,
@@ -547,6 +592,13 @@ impl EventParser {
         if !text.is_empty() {
             events.push(Event::Text(text));
         }
+        // Reasoning models stream their thoughts next to the answer
+        if ["reasoning_content", "reasoning", "thinking"]
+            .iter()
+            .any(|field| choice["delta"][field].as_str().is_some_and(|piece| !piece.is_empty()))
+        {
+            events.push(Event::Thought);
+        }
         for (position, call) in choice["delta"]["tool_calls"].as_array().into_iter().flatten().enumerate() {
             events.push(Event::CallPiece {
                 index: call["index"].as_u64().unwrap_or(position as u64),
@@ -576,11 +628,13 @@ impl EventParser {
                     arguments: call["args"].to_string(),
                     raw: part.clone(),
                 }));
-            } else if part["thought"].as_bool() != Some(true) {
+            } else if part["thought"].as_bool() == Some(true) {
                 // Thinking models also send their thoughts, as parts marked "thought"
-                if let Some(piece) = part["text"].as_str() {
-                    text.push_str(piece);
+                if part["text"].as_str().is_some_and(|piece| !piece.is_empty()) {
+                    events.push(Event::Thought);
                 }
+            } else if let Some(piece) = part["text"].as_str() {
+                text.push_str(piece);
             }
         }
         if !text.is_empty() {
@@ -605,6 +659,8 @@ const THINK_CLOSE: &str = "</think>";
 #[derive(Default)]
 pub struct ThinkFilter {
     inside: bool,
+    /// Whether the last `push` entered a think block (read with `took_open`)
+    opened: bool,
     held: String,
     started: bool,
 }
@@ -627,6 +683,7 @@ impl ThinkFilter {
                     out.push_str(&self.held[..start]);
                     self.held.drain(..start + THINK_OPEN.len());
                     self.inside = true;
+                    self.opened = true;
                     continue;
                 }
                 let keep = partial_tag(&self.held, THINK_OPEN);
@@ -637,6 +694,11 @@ impl ThinkFilter {
             break;
         }
         self.trim_start(out)
+    }
+
+    /// Whether the last `push` entered a think block
+    pub fn took_open(&mut self) -> bool {
+        std::mem::take(&mut self.opened)
     }
 
     /// What is still held back once the answer is complete.
@@ -734,6 +796,31 @@ mod tests {
     }
 
     #[test]
+    fn test_thinking_is_seen_in_the_stream() {
+        // An OpenAI-compatible reasoning delta next to the content
+        let mut parser = EventParser::new(false);
+        let events = parser.push(
+            b"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"6 * 7\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"42\"}}]}\n\n",
+        );
+        assert_eq!(events, vec![Event::Thought, Event::Text("42".to_string())]);
+
+        // Gemini's thought parts
+        let mut parser = EventParser::new(true);
+        let events = parser.push(
+            b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hmm\",\"thought\":true}]}}]}\n\n",
+        );
+        assert_eq!(events, vec![Event::Thought]);
+
+        // A <think> block opening in the answer itself
+        let mut filter = ThinkFilter::default();
+        assert!(!filter.took_open());
+        assert_eq!(filter.push("<think>hush"), "");
+        assert!(filter.took_open());
+        assert!(!filter.took_open());
+        assert_eq!(filter.push(" more</think>answer"), "answer");
+    }
+
+    #[test]
     fn test_request_bodies() {
         let messages = vec![
             ChatMessage { role: Role::User, content: "q1".into() },
@@ -748,7 +835,7 @@ mod tests {
             system: "sys",
             messages: &messages,
             tools: Tools::Off,
-            no_think: None,
+            reasoning: None,
             exchange: &[],
         };
         let body = openai_body(&request);
@@ -765,24 +852,38 @@ mod tests {
         assert_eq!(body["systemInstruction"]["parts"][0]["text"], "sys");
         assert!(body.get("tools").is_none());
 
-        request.no_think = Some(NoThinkMode::None);
+        request.reasoning = Some(Reasoning::None);
         assert_eq!(openai_body(&request)["reasoning"]["effort"], "none");
-        request.no_think = Some(NoThinkMode::Low);
+        request.reasoning = Some(Reasoning::Low);
         assert_eq!(openai_body(&request)["reasoning"]["effort"], "low");
-        request.no_think = Some(NoThinkMode::Disabled);
+        request.reasoning = Some(Reasoning::Medium);
+        assert_eq!(openai_body(&request)["reasoning"]["effort"], "medium");
+        request.reasoning = Some(Reasoning::High);
+        assert_eq!(openai_body(&request)["reasoning"]["effort"], "high");
+        request.reasoning = Some(Reasoning::Custom("detailed".into()));
+        assert_eq!(openai_body(&request)["reasoning"]["effort"], "detailed");
+        request.reasoning = Some(Reasoning::Disabled);
         assert_eq!(openai_body(&request)["reasoning"]["enabled"], false);
 
         request.provider = PostProvider::Groq;
-        request.no_think = Some(NoThinkMode::Low);
+        request.reasoning = Some(Reasoning::Low);
         assert_eq!(openai_body(&request)["reasoning_effort"], "low");
-        request.no_think = Some(NoThinkMode::Disabled);
+        request.reasoning = Some(Reasoning::Custom("xhigh".into()));
+        assert_eq!(openai_body(&request)["reasoning_effort"], "xhigh");
+        request.reasoning = Some(Reasoning::Disabled);
         assert_eq!(openai_body(&request)["reasoning_effort"], "disabled");
         request.provider = PostProvider::Gemini;
-        request.no_think = Some(NoThinkMode::Low);
+        request.reasoning = Some(Reasoning::Low);
         assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low");
-        request.no_think = Some(NoThinkMode::None);
+        request.reasoning = Some(Reasoning::Medium);
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingLevel"], "medium");
+        request.reasoning = Some(Reasoning::High);
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+        request.reasoning = Some(Reasoning::Custom("8192".into()));
+        assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingLevel"], "8192");
+        request.reasoning = Some(Reasoning::None);
         assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
-        request.no_think = Some(NoThinkMode::Disabled);
+        request.reasoning = Some(Reasoning::Disabled);
         assert_eq!(gemini_body(&request)["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
     }
 
@@ -831,7 +932,7 @@ mod tests {
             system: "sys",
             messages: &messages,
             tools: Tools::Search,
-            no_think: None,
+            reasoning: None,
             exchange: &exchange,
         };
         let body = openai_body(&request);

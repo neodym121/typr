@@ -168,6 +168,25 @@ string_enum! {
     }
 }
 
+string_enum! {
+    /// How much reasoning quick ask asks the model for (Reasoning): which
+    /// request field carries the value depends on the provider.
+    ReasoningMode (default None) {
+        /// No reasoning at all: `reasoning_effort: "none"` (Groq, Mistral),
+        /// Polza `reasoning: {effort: "none"}`, Gemini `thinkingBudget: 0`
+        None = "none",
+        /// `reasoning_effort: "low"`
+        Low = "low",
+        /// `reasoning_effort: "medium"`
+        Medium = "medium",
+        /// `reasoning_effort: "high"`
+        High = "high",
+        /// The user's own parameter (`reasoningCustom`), sent as the effort
+        /// value verbatim
+        Custom = "custom",
+    }
+}
+
 /// Languages offered for recognition; empty means detect automatically.
 pub const RECOGNITION_LANGUAGES: &[&str] = &["ru", "en", "uk", "de", "fr", "es", "it", "pt", "pl"];
 
@@ -279,6 +298,31 @@ fn migrate_local_model(config: &mut Value) {
     };
     if root.get("localModel").and_then(Value::as_str) == Some("parakeet-tdt-0.6b-v3") {
         root.insert("localModel".to_string(), Value::String("parakeet-ultra".to_string()));
+    }
+}
+
+/// Quick ask asks for a set amount of reasoning now (Reasoning), NoThink
+/// asked against it: the old switch and parameter move to the new names,
+/// "disabled" counting as "none".
+fn migrate_quick_ask_reasoning(config: &mut Value) {
+    let Some(quick_ask) = config
+        .as_object_mut()
+        .and_then(|root| root.get_mut("quickAsk"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(mode) = quick_ask.remove("noThinkMode") {
+        if !quick_ask.contains_key("reasoningMode") {
+            let mode = mode.as_str().unwrap_or_default();
+            let mode = if mode == "disabled" { "none" } else { mode };
+            quick_ask.insert("reasoningMode".to_string(), Value::String(mode.to_string()));
+        }
+    }
+    if let Some(no_think) = quick_ask.remove("noThink") {
+        if !quick_ask.contains_key("reasoning") {
+            quick_ask.insert("reasoning".to_string(), no_think);
+        }
     }
 }
 
@@ -401,12 +445,15 @@ pub struct QuickAsk {
     /// The model may search the web (Exa) when a question needs it
     #[serde(rename = "webSearch")]
     pub web_search: bool,
-    /// Ask the model not to reason, or to reason minimally (NoThink)
-    #[serde(rename = "noThink")]
-    pub no_think: bool,
-    /// How the NoThink request is passed
-    #[serde(rename = "noThinkMode")]
-    pub no_think_mode: NoThinkMode,
+    /// Ask the model for a set amount of reasoning (Reasoning)
+    #[serde(rename = "reasoning")]
+    pub reasoning: bool,
+    /// How much reasoning the request asks for
+    #[serde(rename = "reasoningMode")]
+    pub reasoning_mode: ReasoningMode,
+    /// The parameter of the "custom" reasoning mode
+    #[serde(rename = "reasoningCustom")]
+    pub reasoning_custom: String,
 }
 
 impl QuickAsk {
@@ -602,15 +649,16 @@ impl Settings {
         fs::read_to_string(Self::file_in(dir)).map_or_else(|_| Self::default(), |json| Self::from_json(&json))
     }
 
-    /// Reads config.json, moving the keys of an older one into `apiKeys`
-    /// and its quick chat into quick ask. A file that isn't JSON gives the
-    /// defaults.
+    /// Reads config.json, moving the keys of an older one into `apiKeys`,
+    /// its quick chat into quick ask and its NoThink into Reasoning. A file
+    /// that isn't JSON gives the defaults.
     pub fn from_json(contents: &str) -> Self {
         match serde_json::from_str::<Value>(contents) {
             Ok(mut config) => {
                 migrate_keys(&mut config);
                 migrate_quick_chat(&mut config);
                 migrate_local_model(&mut config);
+                migrate_quick_ask_reasoning(&mut config);
                 serde_json::from_value(config).unwrap_or_default()
             }
             Err(_) => Self::default(),
@@ -701,14 +749,14 @@ impl Settings {
         let qa = &self.quick_ask;
         let model = qa.provider_settings(qa.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, key {}, web search {}, nothink {}/{}, Exa key {})",
+            "{} (provider {}, model {}, key {}, web search {}, reasoning {}/{}, Exa key {})",
             if qa.enabled { "on" } else { "off" },
             qa.provider,
             if model.is_empty() { "none" } else { model },
             key_state(self.api_keys.model(qa.provider)),
             if qa.web_search { "on" } else { "off" },
-            if qa.no_think { "on" } else { "off" },
-            qa.no_think_mode,
+            if qa.reasoning { "on" } else { "off" },
+            qa.reasoning_mode,
             key_state(self.api_keys.exa())
         )
     }
@@ -783,8 +831,9 @@ impl Settings {
         changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
         changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
         changed("quickAsk.webSearch", &qa_old.web_search, &qa_new.web_search);
-        changed("quickAsk.noThink", &qa_old.no_think, &qa_new.no_think);
-        changed("quickAsk.noThinkMode", &qa_old.no_think_mode, &qa_new.no_think_mode);
+        changed("quickAsk.reasoning", &qa_old.reasoning, &qa_new.reasoning);
+        changed("quickAsk.reasoningMode", &qa_old.reasoning_mode, &qa_new.reasoning_mode);
+        changed("quickAsk.reasoningCustom", &qa_old.reasoning_custom, &qa_new.reasoning_custom);
         for ((provider, before), (_, after)) in qa_old.providers().zip(qa_new.providers()) {
             changed(&format!("quickAsk.{}.model", provider), &before.model, &after.model);
             changed(
@@ -1190,6 +1239,24 @@ mod tests {
     }
 
     #[test]
+    fn test_no_think_becomes_reasoning() {
+        let settings = Settings::from_json(r#"{"quickAsk":{"noThink":true,"noThinkMode":"low"}}"#);
+        assert!(settings.quick_ask.reasoning);
+        assert_eq!(settings.quick_ask.reasoning_mode, ReasoningMode::Low);
+        // Post-processing and Select&Edit keep their NoThink, quick ask doesn't
+        let saved = serde_json::to_string(&settings).unwrap();
+        assert!(saved.contains("\"reasoning\":true"));
+        assert!(!saved.contains("\"noThink\":true"));
+
+        // The explicit disable flag counts as "none"
+        let settings = Settings::from_json(r#"{"quickAsk":{"noThinkMode":"disabled"}}"#);
+        assert_eq!(settings.quick_ask.reasoning_mode, ReasoningMode::None);
+        // A mode already saved under the new name stays
+        let settings = Settings::from_json(r#"{"quickAsk":{"noThinkMode":"low","reasoningMode":"high"}}"#);
+        assert_eq!(settings.quick_ask.reasoning_mode, ReasoningMode::High);
+    }
+
+    #[test]
     fn test_quick_ask_changes_are_logged_without_keys() {
         let old = Settings::default();
         let mut new = Settings::default();
@@ -1200,8 +1267,9 @@ mod tests {
         new.api_keys.polza = "pk_secret".to_string();
         new.quick_ask.web_search = true;
         new.api_keys.exa = "exa_secret".to_string();
-        new.quick_ask.no_think = true;
-        new.quick_ask.no_think_mode = NoThinkMode::Disabled;
+        new.quick_ask.reasoning = true;
+        new.quick_ask.reasoning_mode = ReasoningMode::Custom;
+        new.quick_ask.reasoning_custom = "xhigh".to_string();
 
         let changes = new.describe_changes(&old).join("; ");
         assert!(changes.contains("quickAsk.enabled: 'false' → 'true'"));
@@ -1211,11 +1279,12 @@ mod tests {
         assert!(changes.contains("apiKeys.polza updated (set)"));
         assert!(changes.contains("quickAsk.webSearch: 'false' → 'true'"));
         assert!(changes.contains("apiKeys.exa updated (set)"));
-        assert!(changes.contains("quickAsk.noThink: 'false' → 'true'"));
-        assert!(changes.contains("quickAsk.noThinkMode: 'none' → 'disabled'"));
+        assert!(changes.contains("quickAsk.reasoning: 'false' → 'true'"));
+        assert!(changes.contains("quickAsk.reasoningMode: 'none' → 'custom'"));
+        assert!(changes.contains("quickAsk.reasoningCustom: '' → 'xhigh'"));
         let summary = new.summary();
         assert!(summary.contains(
-            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, nothink on/disabled, Exa key set)"
+            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, reasoning on/custom, Exa key set)"
         ));
         for secret in ["pk_secret", "exa_secret"] {
             assert!(!changes.contains(secret));

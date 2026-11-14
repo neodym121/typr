@@ -501,6 +501,11 @@ async fn test_no_think(
         role: ask::stream::Role::User,
         content: "What is 237 × 481? Reply with only the number.".to_string(),
     }];
+    let reasoning = match mode {
+        NoThinkMode::None => ask::stream::Reasoning::None,
+        NoThinkMode::Low => ask::stream::Reasoning::Low,
+        NoThinkMode::Disabled => ask::stream::Reasoning::Disabled,
+    };
     let request = ask::stream::Request {
         provider,
         api_key: &api_key,
@@ -509,7 +514,7 @@ async fn test_no_think(
         system: "Answer the arithmetic question.",
         messages: &messages,
         tools: ask::stream::Tools::Off,
-        no_think: Some(mode),
+        reasoning: Some(reasoning),
         exchange: &[],
     };
     let reasoning = ask::stream::test_no_think(&request).await.map_err(|e| {

@@ -7,11 +7,12 @@
 //! The questions are shown on the right in a box, under the start of the
 //! text they are about, and can't be copied. A click on an answer copies it,
 //! a click on a link in it opens the page, and the button in the corner of a
-//! code block copies that code alone. While the model searches the web,
-//! "Search…" blinks slowly where the answer will be. While the window is
-//! open, every recording is a follow-up: the dot turns orange and pulses
-//! while the user speaks. The cross folds the card back into the dot, which
-//! slides behind the edge of the screen, and the window closes.
+//! code block copies that code alone. While the model searches the web or
+//! thinks before the answer, "Search…" or "Thinking…" blinks slowly where
+//! the answer will be. While the window is open, every recording is a
+//! follow-up: the dot turns orange and pulses while the user speaks. The
+//! cross folds the card back into the dot, which slides behind the edge of
+//! the screen, and the window closes.
 //!
 //! Opened empty by the quick ask hotkey, the dot slides in from behind the
 //! edge and unfolds into a card that says how to ask.
@@ -40,6 +41,7 @@ pub struct Strings {
     pub copied: &'static str,
     pub code_copied: &'static str,
     pub searching: &'static str,
+    pub thinking: &'static str,
     pub empty: &'static str,
     pub empty_ptt: &'static str,
     pub field_placeholder: &'static str,
@@ -54,6 +56,7 @@ const EN: Strings = Strings {
     copied: "Copied",
     code_copied: "Code copied",
     searching: "Search…",
+    thinking: "Thinking…",
     empty: "Press {hotkey} and ask out loud",
     empty_ptt: "Hold {hotkey} and ask out loud",
     field_placeholder: "Type or dictate a question",
@@ -68,6 +71,7 @@ const RU: Strings = Strings {
     copied: "Скопировано",
     code_copied: "Код скопирован",
     searching: "Поиск…",
+    thinking: "Думает…",
     empty: "Нажмите {hotkey} и задайте вопрос вслух",
     empty_ptt: "Удерживайте {hotkey} и задайте вопрос вслух",
     field_placeholder: "Напишите или продиктуйте вопрос",
@@ -256,6 +260,7 @@ impl View {
         ui.set_dot_shadow(shadow::dot(g.scale as f32));
         ui.set_dot_shadow_reach(shadow::DOT_REACH);
         ui.set_searching_label(strings.searching.into());
+        ui.set_thinking_label(strings.thinking.into());
         ui.set_stopped_label(strings.stopped.into());
         ui.set_field_placeholder(strings.field_placeholder.into());
 
@@ -387,6 +392,7 @@ impl View {
             Command::Question { id, text, selection } => view.borrow_mut().on_question(id, &text, selection),
             Command::Answer { id } => view.borrow_mut().on_answer(id),
             Command::Search { id } => view.borrow_mut().on_search(id),
+            Command::Thinking { id } => view.borrow_mut().on_thinking(id),
             Command::Delta { id, text } => view.borrow_mut().on_delta(id, &text),
             Command::Done { id, text, stopped } => view.borrow_mut().on_done(id, text, stopped),
             Command::Error { id, message } => view.borrow_mut().on_error(id, &message),
@@ -708,6 +714,16 @@ impl View {
             return;
         }
         self.update_row(id, |message| message.status = 1);
+        self.after_answer(Phase::Thinking);
+    }
+
+    /// The model thinks before the answer, like it searches
+    fn on_thinking(&mut self, id: u64) {
+        self.awaiting_first = false;
+        if !self.answer_for(id).pending {
+            return;
+        }
+        self.update_row(id, |message| message.status = 2);
         self.after_answer(Phase::Thinking);
     }
 

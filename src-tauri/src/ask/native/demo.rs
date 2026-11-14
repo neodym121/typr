@@ -232,6 +232,8 @@ pub fn run_demo(args: &[String]) {
         send(Command::Answer { id: 3 });
         send(Command::Recording(Recording::Ready));
         sleep(500);
+        send(Command::Thinking { id: 3 });
+        sleep(1100);
         send(Command::Search { id: 3 });
         sleep(900);
         snapshot("08-search");

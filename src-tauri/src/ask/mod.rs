@@ -35,7 +35,7 @@ use crate::overlay;
 use crate::postprocess::{self, provider_label};
 use crate::recorder::RecordingState;
 use crate::selection;
-use crate::settings::{NoThinkMode, PostProvider, Settings};
+use crate::settings::{PostProvider, QuickAsk, ReasoningMode, Settings};
 use serde_json::Value;
 use stream::{ChatMessage, Role, Tools};
 use window::{Command, Recording};
@@ -447,6 +447,24 @@ pub fn recording_error(message: &str) {
     tell(Command::RecordingError(message.to_string()));
 }
 
+/// The reasoning the quick ask settings ask for; a custom parameter that is
+/// empty sends nothing.
+fn reasoning_of(config: &QuickAsk) -> Option<stream::Reasoning> {
+    if !config.reasoning {
+        return None;
+    }
+    match config.reasoning_mode {
+        ReasoningMode::None => Some(stream::Reasoning::None),
+        ReasoningMode::Low => Some(stream::Reasoning::Low),
+        ReasoningMode::Medium => Some(stream::Reasoning::Medium),
+        ReasoningMode::High => Some(stream::Reasoning::High),
+        ReasoningMode::Custom => {
+            let value = config.reasoning_custom.trim();
+            (!value.is_empty()).then(|| stream::Reasoning::Custom(value.to_string()))
+        }
+    }
+}
+
 fn start_answer(
     settings: &Settings,
     id: u64,
@@ -461,7 +479,7 @@ fn start_answer(
         PostProvider::Polza => config.polza.provider_id.trim().to_string(),
         _ => String::new(),
     };
-    let no_think = config.no_think.then_some(config.no_think_mode);
+    let reasoning = reasoning_of(config);
     let search_key = settings.api_keys.exa().to_string();
     let search = config.web_search && !search_key.is_empty();
     if config.web_search && !search {
@@ -501,7 +519,7 @@ fn start_answer(
             api_key: &api_key,
             model: &model,
             sub_provider: &sub_provider,
-            no_think,
+            reasoning,
             system: &system,
             messages: &messages,
             search_key: search.then_some(search_key.as_str()),
@@ -534,7 +552,7 @@ struct Answer<'a> {
     api_key: &'a str,
     model: &'a str,
     sub_provider: &'a str,
-    no_think: Option<NoThinkMode>,
+    reasoning: Option<stream::Reasoning>,
     system: &'a str,
     messages: &'a [ChatMessage],
     /// The Exa key while web search is on
@@ -556,7 +574,7 @@ impl Answer<'_> {
                 system: self.system,
                 messages: self.messages,
                 tools,
-                no_think: self.no_think,
+                reasoning: self.reasoning.clone(),
                 exchange: &exchange,
             };
             let round = match stream::stream(&request, outbox).await {
@@ -634,6 +652,14 @@ impl Outbox {
 }
 
 impl stream::Sink for Outbox {
+    /// The model thinks before the answer: the window says so until the
+    /// answer comes, like with a search.
+    fn thinking(&mut self) {
+        log::debug!("Quick ask window shows thinking");
+        self.flush(true);
+        tell(Command::Thinking { id: self.id });
+    }
+
     fn text(&mut self, text: &str) {
         self.partial.lock().unwrap().push_str(text);
         self.pending.push_str(text);

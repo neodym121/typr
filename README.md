@@ -35,7 +35,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 - **Quick Ask:** select text in any app, press the dictation hotkey and ask about it out loud, or press its own hotkey to ask about anything.
 - **Select&Edit:** select text, hold its hotkey and say what to do with it, "translate this into English". The model rewrites the text in place, replacing the selection; every request starts fresh, with no memory of the previous ones.
 - **Web search:** with an [Exa](https://exa.ai/) key, the model searches the web when a question needs fresh facts.
-- **NoThink:** in Quick Ask, Select&Edit and Post-processing, ask the model not to reason or to reason minimally, and test the selected parameter with the exact provider, model and Polza sub-provider you plan to use.
+- **Reasoning:** in Quick Ask, choose how much the model reasons before it answers: none, low, medium, high, or your own parameter.
+- **NoThink:** in Select&Edit and Post-processing, ask the model not to reason or to reason minimally, and test the selected parameter with the exact provider, model and Polza sub-provider you plan to use.
 
 ### App
 
@@ -48,8 +49,8 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.6.0
-git push origin v3.6.0
+git tag v3.6.1
+git push origin v3.6.1
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

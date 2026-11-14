@@ -134,6 +134,8 @@ pub enum Command {
     Answer { id: u64 },
     /// The model searches the web
     Search { id: u64 },
+    /// The model is thinking before the answer
+    Thinking { id: u64 },
     Delta { id: u64, text: String },
     /// The whole answer; `stopped` when a new question cut it short
     Done { id: u64, text: String, stopped: bool },

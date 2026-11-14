@@ -34,7 +34,7 @@ export struct Message {
     // The start of the selection the question is about
     quote: string,
     blocks: [Block],
-    // Before the first words: 0 the typing dots, 1 "Search…"
+    // Before the first words: 0 the typing dots, 1 "Search…", 2 "Thinking…"
     status: int,
     // The first words arrived: the status folds away
     settled: bool,
@@ -336,6 +336,7 @@ component AnswerView inherits TouchArea {
     in property <Message> msg;
     in property <length> column;
     in property <string> searching-label;
+    in property <string> thinking-label;
     in property <string> stopped-label;
     callback copy-code(int);
     callback link(string);
@@ -393,9 +394,9 @@ component AnswerView inherits TouchArea {
         padding-left: 8px;
         padding-right: 8px;
 
-        // Before the first words: the typing dots or "Search…", which fade
-        // and fold away once the answer starts
-        if root.msg.status <= 1: Rectangle {
+        // Before the first words: the typing dots, "Search…" or "Thinking…",
+        // which fade and fold away once the answer starts
+        if root.msg.status <= 2: Rectangle {
             property <length> natural: root.msg.status == 0 ? 19px : 25px;
             height: root.msg.settled ? 0px : self.natural;
             opacity: root.msg.settled ? 0 : 1;
@@ -414,6 +415,18 @@ component AnswerView inherits TouchArea {
                 color: Theme.text-muted;
                 opacity: 1 - 0.7 * self.blink;
                 wave := Wave {
+                    period: 1800ms;
+                }
+            }
+            if root.msg.status == 2: Text {
+                property <float> blink: think-wave.value;
+                x: 0;
+                y: 3px;
+                text: root.thinking-label;
+                font-size: 13px;
+                color: Theme.text-muted;
+                opacity: 1 - 0.7 * self.blink;
+                think-wave := Wave {
                     period: 1800ms;
                 }
             }
@@ -549,6 +562,7 @@ export component AskWindow inherits Window {
     in property <string> toast;
     in property <bool> toast-visible;
     in property <string> searching-label: "Search…";
+    in property <string> thinking-label: "Thinking…";
     in property <string> stopped-label: "Stopped";
 
     // The text field. `typing`: the pencil fades, the dot moves aside and a
@@ -864,6 +878,7 @@ export component AskWindow inherits Window {
                             msg: msg;
                             column: root.column;
                             searching-label: root.searching-label;
+                            thinking-label: root.thinking-label;
                             stopped-label: root.stopped-label;
                             hover-changed(on) => {
                                 if on {
