@@ -47,7 +47,7 @@ pub struct Placement {
     pub logical_y: f64,
 }
 
-/// Square around the disc in logical pixels, with room for its shadow and halo
+/// Square around the disc in logical pixels, with room for its halo
 const INDICATOR_SIZE: f64 = 50.0;
 /// Top right: from the right edge of the screen to the left side of the square
 const OFFSET_FROM_RIGHT: f64 = 60.0;
@@ -234,7 +234,7 @@ fn render(look: Look, t: f32, width: usize, height: usize, center_y: f32, scale:
     let s = scale.max(0.5);
     let center_x = width as f32 / 2.0;
     let radius = 20.0 * s;
-    // Shadow and halo reach at most 4.5 logical px past the disc
+    // The halo reaches at most 4.5 logical px past the disc
     let reach = radius + 8.0 * s;
 
     let dark = paint(31, 30, 29, 0.94);
@@ -272,11 +272,6 @@ fn render(look: Look, t: f32, width: usize, height: usize, center_y: f32, scale:
             let dx = x - center_x;
             let dist = (dx * dx + dy * dy).sqrt();
             let mut pixel = [0.0f32; 4];
-
-            // Soft shadow, slightly below the disc
-            let shadow_dist = (dx * dx + (dy - 2.0 * s).powi(2)).sqrt();
-            let shadow = 0.28 * ((radius + 2.0 * s - shadow_dist) / (5.0 * s)).clamp(0.0, 1.0);
-            over(&mut pixel, [0.0, 0.0, 0.0], shadow);
 
             if let Some((glow, spread)) = halo {
                 over(&mut pixel, glow.rgb, glow.alpha * coverage(dist - (radius + spread * s)));
@@ -971,6 +966,8 @@ mod tests {
         assert_eq!(frame[3], 0);
         let inside = (35 * 50 + 10) * 4;
         assert!(frame[inside + 3] > 200);
+        let below_disc = (56 * 50 + 25) * 4;
+        assert_eq!(frame[below_disc + 3], 0);
     }
 
     #[test]

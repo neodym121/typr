@@ -17,7 +17,7 @@
             <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="brand-title">
               <span class="brand-name">Typr</span>
-              <span class="brand-version" id="version-text">v3.6.1</span>
+              <span class="brand-version" id="version-text">v3.7.0</span>
             </span>
           </div>
           <div id="status" data-state="ready" role="status" aria-live="polite">
@@ -46,6 +46,10 @@
           <button type="button" class="nav-link" data-section="selectedit">
             <i class="nav-link-icon" data-icon="pen-line"></i>
             <span data-i18n="nav.selectedit">Select&Edit</span>
+          </button>
+          <button type="button" class="nav-link" data-section="history">
+            <i class="nav-link-icon" data-icon="history"></i>
+            <span data-i18n="nav.history">History</span>
           </button>
         </nav>
         <div class="sidebar-bottom">
@@ -643,6 +647,31 @@
               <li data-i18n="select.step3">The model rewrites the selected text and the result replaces the selection. The text can stay selected and be edited again and again</li>
             </ol>
           </div>
+        </section>
+
+        <section id="section-history" class="page">
+          <header class="page-head">
+            <h1 class="page-title" data-i18n="history.title">History</h1>
+            <p class="page-lead" data-i18n="history.desc">Your latest dictations: what speech recognition heard and what post-processing made of it</p>
+          </header>
+          <div class="history-toolbar">
+            <div class="card history-keep">
+              <label class="pref-name" for="history-limit" data-i18n="history.keep">Keep recordings</label>
+              <select id="history-limit"></select>
+            </div>
+            <button type="button" class="btn btn-secondary" id="history-upload">
+              <i data-icon="upload" data-size="14"></i>
+              <span id="history-upload-label" data-i18n="history.upload">Upload file</span>
+            </button>
+          </div>
+          <p class="history-status hidden" id="history-status" role="status" aria-live="polite"></p>
+          <!-- Days and entries built by src/history.ts -->
+          <div id="history-list" class="history-list"></div>
+          <div class="card history-empty hidden" id="history-empty">
+            <span class="history-empty-title" data-i18n="history.empty">No dictations yet</span>
+            <span class="history-empty-hint" data-i18n="history.emptyHint">Dictate something and it shows up here, with the post-processed text below when post-processing was on. An audio file can be transcribed too.</span>
+          </div>
+          <input type="file" id="history-file" class="hidden" accept=".wav,.flac,.mp3,.m4a,.mp4,.ogg,.oga,.opus,.webm,audio/*" />
         </section>
       </main>
       </div>

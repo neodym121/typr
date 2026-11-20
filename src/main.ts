@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { fillApiKeys, initApiKeys, translateApiKeys, type ApiKeys } from "./apikeys";
 import { enhanceSelect, syncSelect } from "./dropdown";
+import { fillHistory, initHistory, showHistory, translateHistory } from "./history";
 import { fillHotkeys, initHotkeys, translateHotkeys } from "./hotkeys";
 import { fillLanguageOptions, getLanguage, setLanguage, t, type Lang, type MessageKey } from "./i18n";
 import { renderIcons } from "./icons";
@@ -61,6 +62,8 @@ interface Settings {
   indicatorPosition: string;
   /** "en", "ru", or empty to follow the system */
   language: string;
+  /** How many of the latest dictations History keeps: 5, 10 or 20 */
+  historyLimit: number;
   postProcess: PostProcessSettings;
   /** Select text and ask about it with the hotkey, or open the window with
    *  its own (src/quickask.ts) */
@@ -218,6 +221,7 @@ const pageShown: Record<string, () => void> = {
   postprocess: showPostProcess,
   ask: showQuickAsk,
   selectedit: showSelectEdit,
+  history: showHistory,
 };
 
 function showSection(name: string) {
@@ -384,6 +388,7 @@ initSelectEdit({
   showHotkeys: () => openSettings("hotkeys"),
 });
 initLocal({ settings: () => currentSettings, save: saveQuietly });
+initHistory({ settings: () => currentSettings, save: saveQuietly });
 initSetup({
   settings: () => currentSettings,
   save: saveSettings,
@@ -419,6 +424,7 @@ function applyLanguage(lang: Lang) {
   translateQuickAsk();
   translateSelectEdit();
   translateLocal();
+  translateHistory();
   fillLanguageOptions(recognitionLanguage);
   syncSelect(recognitionLanguage);
   renderUpdate();
@@ -540,6 +546,9 @@ function fillForm() {
 
   // Select&Edit
   fillSelectEdit();
+
+  // History
+  fillHistory();
 
   // Local engine
   fillLocal();

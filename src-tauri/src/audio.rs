@@ -171,12 +171,17 @@ fn mix_to_mono(interleaved: Vec<f32>, channels: u16) -> Vec<f32> {
         .collect()
 }
 
-/// How a recording is packed for a cloud service.
+/// How a recording is packed for a cloud service, and what an uploaded file
+/// may be.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioFormat {
     Wav,
     /// Lossless and about half the size of WAV, so it uploads faster
     Flac,
+    Mp3,
+    M4a,
+    Ogg,
+    Webm,
 }
 
 impl AudioFormat {
@@ -184,6 +189,10 @@ impl AudioFormat {
         match self {
             AudioFormat::Wav => "audio/wav",
             AudioFormat::Flac => "audio/flac",
+            AudioFormat::Mp3 => "audio/mpeg",
+            AudioFormat::M4a => "audio/mp4",
+            AudioFormat::Ogg => "audio/ogg",
+            AudioFormat::Webm => "audio/webm",
         }
     }
 
@@ -191,7 +200,38 @@ impl AudioFormat {
         match self {
             AudioFormat::Wav => "audio.wav",
             AudioFormat::Flac => "audio.flac",
+            AudioFormat::Mp3 => "audio.mp3",
+            AudioFormat::M4a => "audio.m4a",
+            AudioFormat::Ogg => "audio.ogg",
+            AudioFormat::Webm => "audio.webm",
         }
+    }
+
+    /// The extension a kept file gets, without the dot
+    pub fn extension(self) -> &'static str {
+        match self {
+            AudioFormat::Wav => "wav",
+            AudioFormat::Flac => "flac",
+            AudioFormat::Mp3 => "mp3",
+            AudioFormat::M4a => "m4a",
+            AudioFormat::Ogg => "ogg",
+            AudioFormat::Webm => "webm",
+        }
+    }
+}
+
+/// The format of an uploaded file, by its extension; `None` for a file the
+/// engines can't take.
+pub fn format_for_file(name: &str) -> Option<AudioFormat> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "wav" => Some(AudioFormat::Wav),
+        "flac" => Some(AudioFormat::Flac),
+        "mp3" | "mpeg" | "mpga" => Some(AudioFormat::Mp3),
+        "m4a" | "mp4" => Some(AudioFormat::M4a),
+        "ogg" | "oga" | "opus" => Some(AudioFormat::Ogg),
+        "webm" => Some(AudioFormat::Webm),
+        _ => None,
     }
 }
 
@@ -220,6 +260,8 @@ pub fn encode(samples: &[f32], format: AudioFormat) -> Result<EncodedAudio, Stri
             }
         },
         AudioFormat::Wav => EncodedAudio { bytes: encode_wav(samples)?, format },
+        // Only WAV and FLAC are ever packed; an uploaded file keeps its own bytes
+        _ => EncodedAudio { bytes: encode_wav(samples)?, format: AudioFormat::Wav },
     };
     log::debug!(
         "Audio packed as {:?}: {} KB in {} ms",
@@ -268,6 +310,44 @@ pub fn encode_flac(samples: &[f32]) -> Result<Vec<u8>, String> {
         .write(&mut sink)
         .map_err(|e| format!("FLAC writing failed: {:?}", e))?;
     Ok(sink.into_inner())
+}
+
+/// The samples of a WAV file, mono at 16 kHz like a recording: any rate,
+/// 8–32-bit PCM or float.
+pub fn decode_wav(bytes: &[u8]) -> Result<Vec<f32>, String> {
+    let mut reader = hound::WavReader::new(Cursor::new(bytes))
+        .map_err(|e| format!("The file isn't a WAV file Typr can read: {}", e))?;
+    let spec = reader.spec();
+    let channels = spec.channels.max(1);
+    let mono = match spec.sample_format {
+        SampleFormat::Float => {
+            let samples: Result<Vec<f32>, _> = reader.samples::<f32>().collect();
+            mix_to_mono(
+                samples.map_err(|e| format!("Failed to read the WAV samples: {}", e))?,
+                channels,
+            )
+        }
+        SampleFormat::Int => {
+            // 8-bit WAV is unsigned, but hound hands it out signed
+            let scale = (1i64 << spec.bits_per_sample.saturating_sub(1).min(31)) as f32;
+            let samples: Result<Vec<f32>, _> = reader
+                .samples::<i32>()
+                .map(|sample| sample.map(|value| value as f32 / scale))
+                .collect();
+            mix_to_mono(
+                samples.map_err(|e| format!("Failed to read the WAV samples: {}", e))?,
+                channels,
+            )
+        }
+    };
+    let rate = spec.sample_rate.max(1);
+    log::info!(
+        "WAV file: {} Hz, {} channel(s), {:.1} s",
+        rate,
+        channels,
+        mono.len() as f32 / rate as f32
+    );
+    Ok(resample(&mono, rate, TARGET_SAMPLE_RATE))
 }
 
 fn to_dbfs(amplitude: f32) -> f32 {
@@ -354,6 +434,33 @@ mod tests {
         assert_eq!(&flac.bytes[..4], b"fLaC");
         assert!(flac.bytes.len() < encode_wav(&samples).unwrap().len() * 3 / 4);
         assert_eq!(flac.format.mime(), "audio/flac");
+    }
+
+    #[test]
+    fn test_wav_files_are_read_back_as_samples() {
+        let samples = tone();
+        let wav = encode_wav(&samples).unwrap();
+        let decoded = decode_wav(&wav).unwrap();
+        assert_eq!(decoded.len(), samples.len());
+        // 16-bit PCM: within one step of the original
+        assert!(decoded.iter().zip(&samples).all(|(a, b)| (a - b).abs() < 2.0 / 32767.0));
+        assert!(decode_wav(b"not a wav file").is_err());
+    }
+
+    #[test]
+    fn test_uploaded_file_formats() {
+        assert_eq!(format_for_file("note.WAV"), Some(AudioFormat::Wav));
+        assert_eq!(format_for_file("voice.mp3"), Some(AudioFormat::Mp3));
+        assert_eq!(format_for_file("clip.m4a"), Some(AudioFormat::M4a));
+        assert_eq!(format_for_file("memo.ogg"), Some(AudioFormat::Ogg));
+        assert_eq!(format_for_file("voice.OPUS"), Some(AudioFormat::Ogg));
+        assert_eq!(format_for_file("meeting.webm"), Some(AudioFormat::Webm));
+        assert_eq!(format_for_file("notes.txt"), None);
+        assert_eq!(format_for_file("no-extension"), None);
+        assert_eq!(AudioFormat::Mp3.file_name(), "audio.mp3");
+        assert_eq!(AudioFormat::Ogg.file_name(), "audio.ogg");
+        assert_eq!(AudioFormat::Ogg.mime(), "audio/ogg");
+        assert_eq!(AudioFormat::M4a.mime(), "audio/mp4");
     }
 
     #[test]

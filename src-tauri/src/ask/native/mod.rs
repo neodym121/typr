@@ -7,7 +7,6 @@
 
 mod markdown;
 pub mod platform;
-mod shadow;
 mod view;
 pub mod demo;
 

@@ -33,7 +33,6 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, Vec
 
 use super::markdown::{self, Ink, Kind};
 use super::platform::{self, NativeWindow};
-use super::shadow;
 use super::{AskWindow, Block, Message, Theme};
 use crate::ask::window::{Command, Event, Layout, Recording, CARD_WIDTH, ORB_INSET};
 
@@ -257,8 +256,6 @@ impl View {
         ui.set_orb_inset(ORB_INSET as f32);
         ui.set_card_width(CARD_WIDTH as f32);
         ui.set_card_max_height(g.max_height as f32);
-        ui.set_dot_shadow(shadow::dot(g.scale as f32));
-        ui.set_dot_shadow_reach(shadow::DOT_REACH);
         ui.set_searching_label(strings.searching.into());
         ui.set_thinking_label(strings.thinking.into());
         ui.set_stopped_label(strings.stopped.into());

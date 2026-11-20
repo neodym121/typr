@@ -19,6 +19,7 @@ pub mod translate;
 pub mod ask;
 pub mod selection;
 pub mod recorder;
+pub mod history;
 pub mod autostart;
 pub mod updates;
 pub mod links;

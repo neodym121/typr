@@ -16,7 +16,7 @@ use typr_lib::postprocess::{self, ModelInfo};
 use typr_lib::recorder::{self, Outcome, Purpose, Recorder, RecordingState};
 use typr_lib::settings::{Engine, NoThinkMode, PostProvider, RecordingMode, Settings};
 use typr_lib::updates::{self, UpdateInfo};
-use typr_lib::{ask, audio, autostart, i18n, links, modifier_hotkey, mouse, overlay, paste};
+use typr_lib::{ask, audio, autostart, cleanup, history, i18n, links, modifier_hotkey, mouse, overlay, paste};
 
 /// First check a little after startup, then this often
 const UPDATE_CHECK_DELAY: Duration = Duration::from_secs(15);
@@ -286,6 +286,10 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     let new_position = (settings.indicator_position != old.indicator_position).then_some(settings.indicator_position);
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
     let updates_turned_on = settings.check_updates && !old.check_updates;
+    // History drops what is over the new limit
+    if settings.history_limit() != old.history_limit() {
+        history::set_limit(app, settings.history_limit());
+    }
     app.state::<LocalEngine>().settings_changed(&old, &settings);
     *state.settings.lock().unwrap() = settings;
     if indicator_changed {
@@ -556,6 +560,88 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, 
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     links::open(&url)
+}
+
+// ── History ─────────────────────────────────────────
+
+#[tauri::command]
+fn get_history() -> Vec<history::Entry> {
+    history::entries()
+}
+
+#[tauri::command]
+fn delete_history_entry(app: tauri::AppHandle, id: u64) -> Vec<history::Entry> {
+    let entries = history::delete(&app, id);
+    log::info!("History entry {} deleted, {} left", id, entries.len());
+    entries
+}
+
+/// The recording of an entry, base64, for playback in the window.
+#[tauri::command]
+fn get_history_audio(id: u64) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    let Some(bytes) = history::audio(id)? else {
+        return Ok(None);
+    };
+    Ok(Some(base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// Runs the post-processed text of an entry through the model again, with
+/// the style and provider chosen in Post-processing.
+#[tauri::command]
+async fn postprocess_history_entry(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<Vec<history::Entry>, String> {
+    let settings = state.settings();
+    let Some(entry) = history::entries().into_iter().find(|entry| entry.id == id) else {
+        return Err("This History entry is gone".to_string());
+    };
+    log::info!("Post-processing a History entry ({} characters)", entry.text.chars().count());
+    let processed = postprocess::process(&settings, &entry.text, None).await.map_err(|e| {
+        log::warn!("Post-processing a History entry failed: {}", e);
+        e
+    })?;
+    history::set_processed(&app, id, processed).ok_or_else(|| "This History entry is gone".to_string())
+}
+
+/// Transcribes an uploaded audio file with the engine chosen in Engine
+/// settings and puts it at the top of History. `data` is the file, base64.
+/// The window converts MP3/Opus to WAV for engines that need it and marks
+/// that with `converted_to_wav`; the entry keeps the original file name.
+#[tauri::command]
+async fn transcribe_history_file(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+    data: String,
+    converted_to_wav: Option<bool>,
+) -> Result<Vec<history::Entry>, String> {
+    use base64::Engine as _;
+    let settings = state.settings();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|e| format!("The file couldn't be read: {}", e))?;
+    log::info!("Uploaded file '{}' ({} KB) for transcription", name, bytes.len() / 1024);
+    let upload_name = if converted_to_wav == Some(true) { "audio.wav" } else { name.as_str() };
+    let format = audio::format_for_file(upload_name);
+    let (text, duration) = recorder::transcribe_file(&app, &settings, upload_name, &bytes)
+        .await
+        .map_err(|e| {
+            log::warn!("Uploaded file '{}' couldn't be transcribed: {}", name, e);
+            e
+        })?;
+    let text = cleanup::cleanup_text(&text);
+    if text.is_empty() {
+        return Err(format!("Nothing was recognized in '{}'", name));
+    }
+    let audio = history::Audio {
+        bytes,
+        extension: format.map_or_else(|| "wav".to_string(), |format| format.extension().to_string()),
+    };
+    let entry = history::Entry::uploaded(name, duration, text, history::model_label(&settings));
+    Ok(history::add(&app, entry, Some(audio), settings.history_limit()))
 }
 
 // ── Local recognition ───────────────────────────────
@@ -1047,6 +1133,8 @@ fn main() {
             list_postprocess_models, test_no_think,
             // General, updates and links
             get_autostart, set_autostart, get_update, check_for_updates, open_link,
+            // History
+            get_history, get_history_audio, delete_history_entry, postprocess_history_entry, transcribe_history_file,
             // Local recognition
             local_status, local_download_model, local_download_runtime, local_cancel_download,
             local_delete_model,
@@ -1068,6 +1156,8 @@ fn main() {
         .setup(move |app| {
             logger::attach_app(app.handle().clone());
             app.state::<LocalEngine>().attach(app.handle().clone());
+            // The latest dictations, kept between runs
+            history::init(startup_dir.clone(), startup_settings.history_limit());
             // Parakeet TDT 0.6B v3 became Parakeet Ultra: an old download is
             // removed silently and the new model downloads in its place
             if app.state::<LocalEngine>().remove_retired_model() {

@@ -11,7 +11,7 @@ use crate::overlay::{self, Indicator};
 use crate::selection;
 use crate::settings::{Engine, Settings};
 use crate::{
-    ask, net, paste, postprocess, transcribe_assemblyai, transcribe_groq, transcribe_local, transcribe_polza,
+    ask, history, net, paste, postprocess, transcribe_assemblyai, transcribe_groq, transcribe_local, transcribe_polza,
     translate,
 };
 
@@ -20,6 +20,8 @@ use crate::{
 const MIN_RECORDING_SECS: f32 = 0.3;
 /// How long a Select&Edit recording waits for the selection to be read
 const SELECTION_WAIT: Duration = Duration::from_millis(1500);
+/// The largest audio file History takes for transcription
+pub const MAX_FILE_BYTES: usize = 24 * 1024 * 1024;
 
 /// Where the dictation is; the window shows it as the status, the indicator
 /// follows it.
@@ -275,6 +277,12 @@ async fn process(
     }
 
     log::info!("Transcribing with engine '{}'", settings.engine);
+    let duration = captured.duration_secs;
+    // The recording itself, for playback in History (a question is dropped)
+    let history_audio = (purpose == Purpose::Dictation)
+        .then(|| audio::encode_wav(&captured.samples).ok())
+        .flatten()
+        .map(|bytes| history::Audio { bytes, extension: "wav".to_string() });
     let raw_text = if settings.engine == Engine::Local {
         transcribe_local::transcribe(app, settings, &settings.local_model, captured.samples).await?
     } else {
@@ -283,6 +291,8 @@ async fn process(
     log::debug!("Raw transcription: {:?}", raw_text);
 
     let mut text = cleanup_text(&raw_text);
+    // What recognition heard, before post-processing touches it
+    let transcribed = text.clone();
 
     // Select&Edit: the speech tells the model what to do with the selected
     // text; the reply replaces the selection. No quick ask, no
@@ -334,11 +344,13 @@ async fn process(
     // A failed post-processing never loses the dictation: the text is
     // pasted as transcribed and the error is shown afterwards
     let mut post_process_error = None;
+    let mut processed = None;
     let step = if config.enabled { "Post-processing" } else { "Translation" };
     if config.enabled || translate_to.is_some() {
         match postprocess::process(settings, &text, translate_to).await {
             Ok(edited) => {
                 log::info!("{} result: {}", step, edited);
+                processed = Some(edited.clone());
                 text = edited;
             }
             Err(e) => {
@@ -347,6 +359,15 @@ async fn process(
             }
         }
     }
+
+    // History keeps both texts when post-processing ran, even if it changed
+    // nothing; the entry stays even if the paste fails
+    history::add(
+        app,
+        history::Entry::dictation(duration, transcribed, processed, history::model_label(settings)),
+        history_audio,
+        settings.history_limit(),
+    );
 
     // So the next dictation doesn't stick to this one
     if settings.append_space {
@@ -409,6 +430,69 @@ async fn transcribe_cloud(app: &AppHandle, settings: &Settings, samples: Vec<f32
             local_error
         )),
     }
+}
+
+/// Transcribes an uploaded file with the engine chosen in Engine settings:
+/// the local model and Polza read WAV (the window converts MP3/Opus first),
+/// the other cloud engines take the file as it is.
+/// Returns the text and, when it is known, the length in seconds.
+pub async fn transcribe_file(
+    app: &AppHandle,
+    settings: &Settings,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(String, f32), String> {
+    let Some(format) = audio::format_for_file(name) else {
+        return Err(format!(
+            "'{}' isn't an audio file Typr can transcribe (.wav, .flac, .mp3, .m4a, .ogg, .opus, .webm)",
+            name
+        ));
+    };
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(format!(
+            "The file is too big ({} MB, the limit is {} MB)",
+            bytes.len() / (1024 * 1024),
+            MAX_FILE_BYTES / (1024 * 1024)
+        ));
+    }
+
+    if settings.engine == Engine::Local {
+        if format != AudioFormat::Wav {
+            return Err(
+                "The local model reads WAV files only: choose a cloud engine in Engine for other formats"
+                    .to_string(),
+            );
+        }
+        let samples = audio::decode_wav(bytes)?;
+        if samples.is_empty() {
+            return Err("The file holds no audio".to_string());
+        }
+        let duration = samples.len() as f32 / audio::TARGET_SAMPLE_RATE as f32;
+        log::info!(
+            "Uploaded file '{}': {:.1} s, transcribing locally with {}",
+            name,
+            duration,
+            settings.local_model
+        );
+        let text = transcribe_local::transcribe(app, settings, &settings.local_model, samples).await?;
+        transcribe_local::dictation_ended(app, settings);
+        return Ok((text, duration));
+    }
+
+    if settings.engine == Engine::Polza && format != AudioFormat::Wav {
+        return Err("Polza takes WAV files only".to_string());
+    }
+    log::info!(
+        "Uploaded file '{}': transcribing with {} ({} KB {:?})",
+        name,
+        settings.engine.label(),
+        bytes.len() / 1024,
+        format
+    );
+    let encoded = EncodedAudio { bytes: bytes.to_vec(), format };
+    let text = transcribe(settings, &encoded).await?;
+    transcribe_local::dictation_ended(app, settings);
+    Ok((text, 0.0))
 }
 
 /// Sends the packed recording to the chosen cloud engine.

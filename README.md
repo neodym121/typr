@@ -29,6 +29,7 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 - **Local recognition** with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp): Parakeet Ultra, Whisper Large v3, Large v3 Turbo and Qwen3 ASR 0.6B run on your computer, the audio never leaves it. They run on the GPU through Vulkan or on the CPU.
 - **Cloud speech-to-text providers:** Groq, [AssemblyAI](https://www.assemblyai.com/) and [Polza.AI](https://polza.ai/). Recordings are sent as FLAC where the service takes it, over a connection opened while you speak.
 - **Post-processing:** an AI model polishes the text before it is pasted, in different styles. Also, translation of dictated text into many languages.
+- **History:** the latest dictations by day, with audio playback and both the original and post-processed text; a click copies the text, and an audio file can be uploaded and transcribed with the same engine. MP3 and Opus are converted to WAV when the selected engine needs it.
 
 ### AI assistant
 
@@ -42,15 +43,15 @@ Typr is a lightweight desktop dictation app for Windows. Press a global hotkey, 
 
 - **Tiny footprint:** up to 15 MB of RAM! The settings window's WebView is released when it's closed, and the recording indicator and the Quick Ask window are drawn natively.
 - **Developer mode:** a live log of everything the app does, for troubleshooting.
-- **English and Russian interface**, dark and minimal.
+- **English and Russian interface**, dark and minimal, with no shadows.
 
 ## Building
 
 GitHub Actions (`.github/workflows/build.yml`) builds one zip with the `.msi` installer and the portable `.exe` when a `v*` tag is pushed or the workflow is started manually:
 
 ```bash
-git tag v3.6.1
-git push origin v3.6.1
+git tag v3.7.0
+git push origin v3.7.0
 ```
 
 Local development needs [Rust](https://rustup.rs/) and [Node.js](https://nodejs.org/) 20+:

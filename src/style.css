@@ -36,7 +36,6 @@
   --border-strong: rgba(248, 248, 246, 0.14);
   --border-hover:  rgba(248, 248, 246, 0.24);
   --border-focus:  rgba(248, 248, 246, 0.40);
-  --focus-halo:    0 0 0 3px rgba(248, 248, 246, 0.10);
 
   /* Accent — decorative only, never a button fill */
   --accent:       var(--color-accent);
@@ -131,12 +130,11 @@ button {
   flex: none;
   height: var(--titlebar-height);
   background: var(--surface-canvas);
-  transition: box-shadow var(--ease);
 }
 
 /* The section is scrolled: a hairline under the strip */
 .titlebar.scrolled {
-  box-shadow: inset 0 -1px 0 var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .window-controls {
@@ -255,7 +253,7 @@ button {
   height: 8px;
   border-radius: 50%;
   background: var(--status-light);
-  transition: background var(--ease), box-shadow var(--ease);
+  transition: background var(--ease);
 }
 
 #status-label {
@@ -271,7 +269,6 @@ button {
 }
 
 #status[data-state="recording"] #status-light {
-  box-shadow: 0 0 0 4px var(--accent-soft);
   animation: breathe 1.2s ease-in-out infinite;
 }
 
@@ -292,7 +289,7 @@ button {
 }
 
 #status[data-state="error"] #status-light {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  border: 2px solid var(--accent);
 }
 
 /* The cloud failed and the local model transcribed instead */
@@ -309,7 +306,7 @@ button {
 }
 
 #status[data-state="paused"] #status-light {
-  box-shadow: inset 0 0 0 2px var(--text-faint);
+  border: 2px solid var(--text-faint);
 }
 
 @keyframes breathe {
@@ -818,7 +815,7 @@ kbd.inline-kbd:hover {
   font-size: var(--text-body);
   line-height: 1.45;
   outline: none;
-  transition: border-color var(--ease), box-shadow var(--ease);
+  transition: border-color var(--ease);
 }
 
 .custom-prompt textarea:hover {
@@ -827,7 +824,6 @@ kbd.inline-kbd:hover {
 
 .custom-prompt textarea:focus {
   border-color: var(--border-focus);
-  box-shadow: var(--focus-halo);
 }
 
 .custom-prompt textarea::placeholder {
@@ -858,7 +854,7 @@ kbd.inline-kbd:hover {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: color var(--ease), border-color var(--ease), box-shadow var(--ease);
+  transition: color var(--ease), border-color var(--ease);
 }
 
 .language-option span:last-child {
@@ -875,7 +871,6 @@ kbd.inline-kbd:hover {
 .language-option[aria-checked="true"] {
   color: var(--text-primary);
   border-color: var(--text-primary);
-  box-shadow: 0 0 0 1px var(--text-primary);
 }
 
 .language-flag {
@@ -1074,7 +1069,7 @@ kbd.inline-kbd:hover {
   text-align: left;
   cursor: pointer;
   outline: none;
-  transition: border-color var(--ease), box-shadow var(--ease);
+  transition: border-color var(--ease);
 }
 
 /* The arrow on the right */
@@ -1098,7 +1093,6 @@ kbd.inline-kbd:hover {
 .dropdown-trigger:focus-visible,
 .dropdown.open .dropdown-trigger {
   border-color: var(--border-focus);
-  box-shadow: var(--focus-halo);
 }
 
 /* Quick ask → Reasoning: while the custom parameter is typed, the field
@@ -1160,7 +1154,6 @@ kbd.inline-kbd:hover {
   background: var(--surface-raised);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   animation: dropdown-in 0.12s ease-out;
 }
 
@@ -1241,7 +1234,7 @@ input[type="search"] {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--text-body);
-  transition: border-color var(--ease), box-shadow var(--ease);
+  transition: border-color var(--ease);
 }
 
 select {
@@ -1261,7 +1254,6 @@ select option {
 
 :is(select, input[type="text"], input[type="password"], input[type="search"]):focus {
   border-color: var(--border-focus);
-  box-shadow: var(--focus-halo);
 }
 
 input::placeholder {
@@ -1298,7 +1290,7 @@ input[type="search"]::-webkit-search-cancel-button {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--ease), background var(--ease), box-shadow var(--ease);
+  transition: color var(--ease), background var(--ease);
 }
 
 .segment:hover {
@@ -1308,7 +1300,6 @@ input[type="search"]::-webkit-search-cancel-button {
 .segment.active {
   background: var(--surface-raised);
   color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(248, 248, 246, 0.06);
 }
 
 /* The light thumb (src/segmented.ts): one element under the segments that
@@ -1327,7 +1318,6 @@ input[type="search"]::-webkit-search-cancel-button {
   height: 28px;
   border-radius: 7px;
   background: var(--surface-raised);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(248, 248, 246, 0.06);
   pointer-events: none;
   will-change: transform, width;
 }
@@ -1339,7 +1329,6 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .segmented.has-thumb .segment.active {
   background: transparent;
-  box-shadow: none;
   cursor: grab;
   touch-action: none;
 }
@@ -1422,7 +1411,8 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .switch input:focus-visible + .switch-track {
-  box-shadow: 0 0 0 3px rgba(248, 248, 246, 0.18);
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 /* ── Buttons ────────────────────────────────────────── */
@@ -1489,7 +1479,7 @@ kbd {
   font-size: 12.5px;
   color: var(--text-secondary);
   letter-spacing: 0.02em;
-  transition: color var(--ease), border-color var(--ease), box-shadow var(--ease);
+  transition: color var(--ease), border-color var(--ease);
 }
 
 .hotkey-button:hover kbd {
@@ -1500,13 +1490,6 @@ kbd {
 .hotkey-button.recording kbd {
   color: var(--text-primary);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  animation: listening 1.4s ease-in-out infinite;
-}
-
-@keyframes listening {
-  0%, 100% { box-shadow: 0 0 0 3px var(--accent-soft); }
-  50% { box-shadow: 0 0 0 5px rgba(217, 119, 87, 0.06); }
 }
 
 /* ── Developer Log Console ──────────────────────────── */
@@ -1590,7 +1573,6 @@ input.log-search {
 
 .log-row.error {
   background: rgba(217, 119, 87, 0.10);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .log-time {
@@ -1669,7 +1651,6 @@ input.log-search {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 /* ── Settings window ────────────────────────────────── */
@@ -1704,7 +1685,6 @@ input.log-search {
   background: var(--surface-canvas);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   animation: settings-in 0.2s ease;
 }
@@ -1932,7 +1912,7 @@ input.log-search {
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--ease), background var(--ease), box-shadow var(--ease);
+  transition: border-color var(--ease), background var(--ease);
 }
 
 .setup-choice:hover {
@@ -1941,7 +1921,6 @@ input.log-search {
 
 .setup-choice[aria-checked="true"] {
   border-color: var(--text-primary);
-  box-shadow: 0 0 0 1px var(--text-primary);
 }
 
 .setup-choice:disabled {
@@ -2056,6 +2035,373 @@ input.log-search {
   min-width: 96px;
 }
 
+/* ── History ────────────────────────────────────────── */
+
+.history-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.history-keep {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 50px;
+}
+
+.history-keep .pref-name {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.history-toolbar .dropdown {
+  width: 84px;
+  flex: none;
+}
+
+#history-upload {
+  height: 50px;
+  border-color: var(--border);
+  border-radius: var(--radius-box);
+  background: var(--surface-card);
+  font-size: var(--text-body);
+}
+
+#history-upload.busy {
+  cursor: default;
+}
+
+.history-status {
+  margin: 0 2px 12px;
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.history-status.error {
+  color: var(--accent-light);
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.history-day {
+  display: grid;
+  gap: 6px;
+}
+
+/* The day of the entries under it, DD.MM.YYYY */
+.history-date {
+  margin: 2px 0 0 2px;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-entry {
+  padding: 8px 14px 9px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.history-time {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: var(--text-small);
+}
+
+/* An uploaded file: its name, with the upload icon */
+.history-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.history-file svg {
+  flex: none;
+}
+
+.history-head-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* "Copied" for a moment after a click on a text */
+.history-copied {
+  color: var(--accent-light);
+  font-size: var(--text-caption);
+  opacity: 0;
+  transition: opacity var(--ease);
+}
+
+.history-entry.copied .history-copied {
+  opacity: 1;
+}
+
+.history-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.history-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--ease), background var(--ease);
+}
+
+.history-action:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.history-action.danger:hover {
+  color: var(--accent-light);
+  background: var(--accent-soft);
+}
+
+.history-action:disabled {
+  cursor: default;
+}
+
+.history-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 3px 0 5px;
+  padding: 2px 0;
+}
+
+.history-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--ease), background var(--ease), border-color var(--ease);
+}
+
+.history-play:hover,
+.history-play.playing {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+
+.history-play:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.history-audio-slider {
+  --progress: 0%;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+}
+
+.history-audio-track {
+  position: absolute;
+  inset: 0 5px;
+  pointer-events: none;
+}
+
+.history-audio-track::before,
+.history-audio-fill {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  transform: translateY(-50%);
+}
+
+.history-audio-track::before {
+  right: 0;
+  background: var(--surface-raised);
+}
+
+.history-audio-fill {
+  width: var(--progress);
+  background: var(--text-secondary);
+}
+
+.history-audio-thumb {
+  position: absolute;
+  top: 50%;
+  left: var(--progress);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transform: translate(-50%, -50%);
+}
+
+.history-audio-seek {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.history-audio-seek::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  appearance: none;
+}
+
+.history-audio-seek::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+}
+
+.history-audio-slider:has(.history-audio-seek:focus-visible) {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-pill);
+}
+
+.history-audio-slider.disabled {
+  opacity: 0.55;
+}
+
+.history-audio-slider.disabled .history-audio-seek {
+  cursor: default;
+}
+
+.history-audio-time {
+  flex: none;
+  min-width: 76px;
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* A text: a click copies it, and the box flashes in the accent like a copied
+   answer in the quick ask window */
+.history-text {
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background var(--ease);
+}
+
+.history-text:hover {
+  background: rgba(248, 248, 246, 0.024);
+}
+
+.history-text.copied {
+  animation: history-copy 700ms ease-out;
+}
+
+@keyframes history-copy {
+  from { background: rgba(217, 119, 87, 0.16); }
+  to { background: transparent; }
+}
+
+.history-processed {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.history-processed.pending {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.history-processed-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 0;
+  color: var(--text-faint);
+  font-size: var(--text-caption);
+}
+
+.history-processed .history-text {
+  color: var(--text-primary);
+}
+
+.history-error {
+  margin-top: 8px;
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--accent-light);
+}
+
+.history-empty {
+  display: grid;
+  gap: 4px;
+  padding: 22px 16px;
+  text-align: center;
+}
+
+.history-empty-title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.history-empty-hint {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  line-height: 1.45;
+}
+
 /* ── Helpers ────────────────────────────────────────── */
 
 /* Wins over any display a component sets */
@@ -2120,6 +2466,14 @@ input.log-search {
 
   .pref-control {
     flex: 1 1 220px;
+  }
+
+  .history-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  #history-upload {
+    height: 44px;
   }
 
   /* Longer Russian labels still fit the engine tabs and log levels */

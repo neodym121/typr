@@ -536,10 +536,6 @@ export component AskWindow inherits Window {
     in property <length> orb-inset: 18px;
     in property <length> card-width: 440px;
     in property <length> card-max-height: 560px;
-    // The dot's shadow, as the indicator has it, and how far it reaches past
-    // the dot (the card has none)
-    in property <image> dot-shadow;
-    in property <length> dot-shadow-reach;
 
     // 0 the dot, 1 open, 2 closing
     in property <int> state: 0;
@@ -1011,17 +1007,6 @@ export component AskWindow inherits Window {
                     }
                 }
             }
-        }
-
-        // The dot's shadow, while it is the indicator
-        Image {
-            x: root.orb-x - 20px - root.dot-shadow-reach;
-            y: root.orb-y - 20px - root.dot-shadow-reach;
-            width: 40px + 2 * root.dot-shadow-reach;
-            height: self.width;
-            source: root.dot-shadow;
-            opacity: root.open ? 0 : 1;
-            animate opacity { duration: 260ms; }
         }
 
         // The recording indicator's dot: it becomes the card's status light

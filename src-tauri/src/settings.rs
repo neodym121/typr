@@ -572,6 +572,9 @@ pub struct Settings {
     pub indicator_position: IndicatorPosition,
     /// Interface language: "en", "ru", or empty to follow the system
     pub language: String,
+    /// How many of the latest dictations History keeps: 5, 10 or 20
+    #[serde(rename = "historyLimit")]
+    pub history_limit: usize,
     #[serde(rename = "postProcess")]
     pub post_process: PostProcess,
     #[serde(rename = "quickAsk")]
@@ -611,6 +614,7 @@ impl Default for Settings {
             show_indicator: true,
             indicator_position: IndicatorPosition::default(),
             language: String::new(),
+            history_limit: 20,
             post_process: PostProcess::default(),
             quick_ask: QuickAsk::default(),
             select_edit: SelectEdit::default(),
@@ -671,6 +675,11 @@ impl Settings {
         (!code.is_empty()).then_some(code)
     }
 
+    /// How many entries History keeps: one of its choices.
+    pub fn history_limit(&self) -> usize {
+        crate::history::normalize_limit(self.history_limit)
+    }
+
     /// Writes config.json into `dir`, making the folder first if needed.
     pub fn save(&self, dir: &Path) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self).map_err(|e| format!("Settings can't be written as JSON: {}", e))?;
@@ -684,7 +693,7 @@ impl Settings {
     /// only whether they are set.
     pub fn summary(&self) -> String {
         format!(
-            "engine={}, mode={}, hotkey={}, askHotkey={}, selectEditHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, postProcess={}, quickAsk={}, selectEdit={}, checkUpdates={}, developerMode={}",
+            "engine={}, mode={}, hotkey={}, askHotkey={}, selectEditHotkey={}, appendSpace={}, mic='{}', recognitionLanguage={}, fallbackLocal={}, apiKeys={}, groqModel={}, polzaModel={}, polzaProvider={}, assemblyaiModel={}, localModel={}, localBackend={}, localUnload={}, showIndicator={}, indicatorPosition={}, language={}, historyLimit={}, postProcess={}, quickAsk={}, selectEdit={}, checkUpdates={}, developerMode={}",
             self.engine,
             self.recording_mode,
             self.hotkey,
@@ -705,6 +714,7 @@ impl Settings {
             self.show_indicator,
             self.indicator_position,
             if self.language.is_empty() { "system" } else { self.language.as_str() },
+            self.history_limit(),
             self.post_process_summary(),
             self.quick_ask_summary(),
             self.select_edit_summary(),
@@ -801,6 +811,7 @@ impl Settings {
         changed("localBackend", &old.local_backend, &self.local_backend);
         changed("localUnload", &old.local_unload, &self.local_unload);
         changed("language", &old.language, &self.language);
+        changed("historyLimit", &old.history_limit(), &self.history_limit());
         changed("appendSpace", &old.append_space, &self.append_space);
         changed("showIndicator", &old.show_indicator, &self.show_indicator);
         changed("indicatorPosition", &old.indicator_position, &self.indicator_position);
@@ -934,6 +945,7 @@ mod tests {
         assert_eq!(settings.local_backend, "");
         assert_eq!(settings.local_unload, "5m");
         assert_eq!(settings.language, "");
+        assert_eq!(settings.history_limit, 20);
         assert_eq!(settings.recording_mode, RecordingMode::PushToTalk);
         assert!(!settings.post_process.translate);
         assert_eq!(settings.post_process.translate_to, TranslationLanguage::English);
@@ -1303,6 +1315,24 @@ mod tests {
         assert!(changes.contains("postProcess.noThink: 'false' → 'true'"));
         assert!(changes.contains("postProcess.noThinkMode: 'none' → 'low'"));
         assert!(new.summary().contains("nothink on/low"));
+    }
+
+    #[test]
+    fn test_the_history_limit_stays_in_its_range() {
+        let settings = Settings::from_json(r#"{"historyLimit":10}"#);
+        assert_eq!(settings.history_limit, 10);
+        assert!(settings.summary().contains("historyLimit=10"));
+
+        // A config from before History, or a value out of the choices
+        assert_eq!(Settings::default().history_limit(), 20);
+        assert_eq!(Settings { history_limit: 2, ..Default::default() }.history_limit(), 5);
+        assert_eq!(Settings { history_limit: 7, ..Default::default() }.history_limit(), 10);
+        assert_eq!(Settings { history_limit: 30, ..Default::default() }.history_limit(), 20);
+
+        let changes = Settings { history_limit: 10, ..Default::default() }
+            .describe_changes(&Settings::default())
+            .join("; ");
+        assert!(changes.contains("historyLimit: '20' → '10'"));
     }
 
     #[test]

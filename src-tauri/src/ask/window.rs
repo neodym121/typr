@@ -29,8 +29,8 @@ const MAX_SCREEN_SHARE: f64 = 0.7;
 /// Centre of the card's status dot from the two card edges at the corner it
 /// grows from: the indicator's dot turns into it
 pub const ORB_INSET: f64 = 18.0;
-/// Room around the card for its shadow
-const SHADOW_ROOM: f64 = 28.0;
+/// Extra room around the card inside its window
+const CARD_MARGIN: f64 = 28.0;
 /// How long the native dot stays while the window draws its first frame
 const SHOWN_WAIT: Duration = Duration::from_millis(1500);
 
@@ -66,18 +66,18 @@ impl Geometry {
                 let card_right = dot_x + ORB_INSET * s;
                 let card_top = dot_y - ORB_INSET * s;
                 (
-                    card_right - (CARD_WIDTH + SHADOW_ROOM) * s,
+                    card_right - (CARD_WIDTH + CARD_MARGIN) * s,
                     work_area.y as f64,
                     (work_area.x + work_area.width) as f64,
-                    card_top + (max_height + SHADOW_ROOM) * s,
+                    card_top + (max_height + CARD_MARGIN) * s,
                 )
             }
             IndicatorPosition::BottomCenter => {
                 let card_bottom = dot_y + ORB_INSET * s;
-                let half = (CARD_WIDTH / 2.0 + SHADOW_ROOM) * s;
+                let half = (CARD_WIDTH / 2.0 + CARD_MARGIN) * s;
                 (
                     dot_x - half,
-                    card_bottom - (max_height + SHADOW_ROOM) * s,
+                    card_bottom - (max_height + CARD_MARGIN) * s,
                     dot_x + half,
                     (work_area.y + work_area.height) as f64,
                 )
@@ -318,8 +318,8 @@ mod tests {
         let g = Geometry::new(IndicatorPosition::BottomCenter, AREA, 1.25);
         assert_eq!(g.y + g.height as i32, 1032);
         assert!((g.orb_x - g.width as f64 / g.scale / 2.0).abs() < 1.0);
-        // The tallest card still has its shadow room above it
-        assert!(g.orb_y + ORB_INSET - g.max_height >= SHADOW_ROOM - 1.0);
+        // The tallest card still has its margin above it
+        assert!(g.orb_y + ORB_INSET - g.max_height >= CARD_MARGIN - 1.0);
     }
 
     #[test]
