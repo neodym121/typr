@@ -10,6 +10,8 @@ import { createModelPicker, type ModelPicker, type ProviderConfig } from "./mode
 
 export interface QuickAskSettings extends ProviderConfig {
   enabled: boolean;
+  /** Keep this chat in memory when its window closes (the switch is in Basics) */
+  saveChat: boolean;
   /** The model may search the web with Exa */
   webSearch: boolean;
   /** Ask the model for a set amount of reasoning (Reasoning) */

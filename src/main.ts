@@ -174,6 +174,7 @@ const micSelect = document.getElementById("mic-select") as HTMLSelectElement;
 const indicatorToggle = document.getElementById("indicator-toggle") as HTMLInputElement;
 const indicatorPositionRow = document.getElementById("indicator-position-row")!;
 const indicatorPositionButtons = document.querySelectorAll<HTMLButtonElement>("#indicator-position .segment");
+const saveChatToggle = document.getElementById("save-chat-toggle") as HTMLInputElement;
 const autostartToggle = document.getElementById("autostart-toggle") as HTMLInputElement;
 const updatesToggle = document.getElementById("updates-toggle") as HTMLInputElement;
 const updatesStatus = document.getElementById("updates-status")!;
@@ -512,6 +513,7 @@ function fillForm() {
   indicatorToggle.checked = currentSettings.showIndicator !== false;
   setIndicatorPosition(currentSettings.indicatorPosition === "bottom-center" ? "bottom-center" : "top-right");
   showIndicatorPosition();
+  saveChatToggle.checked = Boolean(currentSettings.quickAsk.saveChat);
   updatesToggle.checked = currentSettings.checkUpdates !== false;
   if (getLanguage() !== resolveLanguage(currentSettings.language || "")) {
     applyLanguage(resolveLanguage(currentSettings.language || ""));
@@ -634,6 +636,7 @@ bind(indicatorToggle, () => {
   showIndicatorPosition();
 });
 bind(groqModel, () => (currentSettings.groqModel = groqModel.value));
+bind(saveChatToggle, () => (currentSettings.quickAsk.saveChat = saveChatToggle.checked));
 bind(appendSpaceToggle, () => (currentSettings.appendSpace = appendSpaceToggle.checked));
 bind(polzaModel, () => (currentSettings.polzaModel = polzaModel.value.trim()));
 bind(polzaProvider, () => (currentSettings.polzaProvider = polzaProvider.value.trim()));

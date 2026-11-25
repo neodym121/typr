@@ -191,6 +191,38 @@ component CodeCopyButton inherits Rectangle {
     }
 }
 
+// A new chat. Two of these fade in their own places (next to the pencil, or
+// left of the open field): the plus never travels across the status strip.
+component NewChatButton inherits Rectangle {
+    in property <bool> shown;
+    in property <duration> fade-delay: 0ms;
+    callback clicked();
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: ta.has-hover && root.shown ? #f8f8f614 : transparent;
+    opacity: root.shown ? 1 : 0;
+    animate opacity {
+        delay: root.fade-delay;
+        duration: 160ms;
+    }
+    animate background { duration: 120ms; }
+    Icon {
+        size: 14px;
+        x: 5px;
+        y: 5px;
+        stroke: ta.has-hover ? Theme.text-strong : Theme.text-muted;
+        commands: "M5 12h14 M12 5v14";
+    }
+    ta := TouchArea {
+        enabled: root.shown;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 // Wrapping text is given its width explicitly, from the text column's:
 // a box layout measures a child's height before it has solved the child's
 // width, and wrapped lines would go uncounted.
@@ -531,6 +563,10 @@ export component AskWindow inherits Window {
     // Opened empty by the quick ask hotkey: the dot slides in, unfolds a
     // little faster and has no spinner
     in property <bool> empty;
+    // Keep this chat on closing, and show the plus that starts another
+    in property <bool> save-chat;
+    // There is at least one message: only then does a new chat make sense
+    in property <bool> has-chat;
     in property <length> orb-x;
     in property <length> orb-y;
     in property <length> orb-inset: 18px;
@@ -581,6 +617,8 @@ export component AskWindow inherits Window {
     // field, otherwise the window
     callback close-clicked();
     callback edit-clicked();
+    // The plus starts a chat with no old messages or model context
+    callback new-chat-clicked();
     // The send button, or Enter in the field (Shift+Enter starts a new line)
     callback send-clicked();
 
@@ -613,6 +651,8 @@ export component AskWindow inherits Window {
     // The field in the card: from right of the dot (moved to the left end at
     // the bottom of the screen) or the card's edge, to left of the cross
     property <length> field-right: root.close-cx - 18px - root.open-left;
+    // With Save chat the open field leaves room for its plus at the bottom of
+    // the screen, where the plus sits on its left
     property <length> field-left: root.bottom ? root.orb-inset + 16px : 12px;
     // Tall enough for its text, from two lines to about seven, then it scrolls
     property <length> field-want: max(56px, min(150px, input.preferred-height + 16px));
@@ -1077,6 +1117,17 @@ export component AskWindow inherits Window {
             }
         }
 
+        // Next to the pencil while the field is closed. The other plus below
+        // takes over once the field is open; only their opacity is animated.
+        NewChatButton {
+            x: root.pencil-cx - 40px;
+            y: root.orb-y - 12px;
+            shown: root.save-chat && root.has-chat && root.content-in && !root.typing;
+            clicked => {
+                root.new-chat-clicked();
+            }
+        }
+
         // The pencil opens the text field. It comes in with the cross; it
         // fades as the field grows out of its place and comes back once the
         // field has folded into it
@@ -1110,6 +1161,18 @@ export component AskWindow inherits Window {
                 }
             }
         }
+        // Left of the open field at the bottom of the screen; in the corner
+        // it sits right of the send button, under the dot
+        NewChatButton {
+            x: root.bottom ? root.open-left + 6px : root.orb-x - 12px;
+            y: root.orb-y - 12px + (root.bottom ? -30px : 30px);
+            shown: root.save-chat && root.has-chat && root.content-in && root.field-tall;
+            fade-delay: 60ms;
+            clicked => {
+                root.new-chat-clicked();
+            }
+        }
+
         // Sends what the field holds. It comes out of the cross as the field
         // grows, and fades where it is as the field folds
         Rectangle {

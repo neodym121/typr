@@ -1,9 +1,10 @@
 //! Trying and measuring the native quick ask window without the rest of
 //! Typr (no Tauri, no microphone, no model):
 //!
-//! * `typr --ask-demo [empty] [bottom] [ru] [long|code|type]` plays sample
+//! * `typr --ask-demo [empty] [bottom] [ru] [long|code|type] [save]` plays sample
 //!   questions and answers in it, as the old page's browser demo did
-//!   (`empty`: opened by the quick ask hotkey; `long`: a first answer taller
+//!   (`empty`: opened by the quick ask hotkey; `save`: the new-chat plus;
+//!   `long`: a first answer taller
 //!   than the card; `code`: code blocks inside list items; `type`, with
 //!   `empty`: the text field opening, dictation into it, closing, then the
 //!   rest with the field open). A question typed into the field gets a
@@ -25,7 +26,7 @@ pub const DEMO_ARG: &str = "--ask-demo";
 pub const BENCH_ARG: &str = "--ask-bench";
 pub const CHILD_ARG: &str = "--ask-child";
 
-fn layout(empty: bool, bottom: bool, language: &'static str) -> Layout {
+fn layout(empty: bool, bottom: bool, language: &'static str, save_chat: bool) -> Layout {
     let (area, scale) = crate::overlay::primary_screen().unwrap_or((
         ScreenRect {
             x: 0,
@@ -47,6 +48,7 @@ fn layout(empty: bool, bottom: bool, language: &'static str) -> Layout {
         empty,
         hotkey: "Ctrl+Shift+Space".to_string(),
         push_to_talk: false,
+        save_chat,
     }
 }
 
@@ -109,13 +111,13 @@ const THIRD_RU: &str = "По данным [Exa](https://exa.ai), последн�
 const LET_CONST_EN: &str = "`const` can't be **reassigned**, `let` can. Both live only inside their block `{}`.\n\n- **`let`** is for values that change: counters, flags, intermediate results.\n- **`const`** is for everything else: it shows the value won't be swapped.\n- **`var`** is best avoided: it is seen in the whole function and hoisted to its top.\n\nAn object in a `const` can still change: only giving the variable another value is forbidden.\n\n```js\nconst user = { name: \"Anna\" };\nuser.name = \"Maria\"; // fine\nuser = {}; // error\n```";
 const LET_CONST_RU: &str = "`const` нельзя **переназначить**, а `let` можно. Оба видны только внутри блока `{}`.\n\n- **`let`** — для значений, которые меняются: счётчики, флаги, промежуточные результаты.\n- **`const`** — для всего остального: сразу видно, что значение не подменят.\n- **`var`** лучше не использовать: он виден во всей функции и поднимается наверх.\n\nОбъект в `const` при этом менять можно: запрещено только присвоить переменной другое значение.\n\n```js\nconst user = { name: \"Анна\" };\nuser.name = \"Мария\"; // можно\nuser = {}; // ошибка\n```";
 
-/// `typr --ask-demo [empty] [bottom] [ru] [long|code|type]`
+/// `typr --ask-demo [empty] [bottom] [ru] [long|code|type] [save]`
 pub fn run_demo(args: &[String]) {
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let ru = has("ru");
     let empty = has("empty");
     let events = start_window();
-    send(Command::Open(layout(empty, has("bottom"), if ru { "ru" } else { "en" })));
+    send(Command::Open(layout(empty, has("bottom"), if ru { "ru" } else { "en" }, has("save"))));
     sleep(300);
     send(Command::Reveal);
     wait_shown(&events);
@@ -257,6 +259,7 @@ pub fn run_demo(args: &[String]) {
     loop {
         match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok((Event::Closed, _)) => break,
+            Ok((Event::NewChat, _)) => send(Command::NewChat),
             // A question typed into the field
             Ok((Event::Submit(text), _)) => {
                 next_id += 1;
@@ -451,7 +454,7 @@ pub fn run_bench() {
     // Cold: the thread, Slint and the fonts start with the first window
     let sent = Instant::now();
     let events = start_window();
-    send(Command::Open(layout(false, false, "en")));
+    send(Command::Open(layout(false, false, "en", false)));
     send(Command::Reveal);
     let cold = wait_shown(&events) - sent;
 
@@ -511,7 +514,7 @@ pub fn run_bench() {
     let mut warm = Vec::new();
     for _ in 0..10 {
         let sent = Instant::now();
-        send(Command::Open(layout(false, false, "en")));
+        send(Command::Open(layout(false, false, "en", false)));
         send(Command::Reveal);
         warm.push((wait_shown(&events) - sent).as_secs_f64() * 1000.0);
         sleep(250);
@@ -573,7 +576,7 @@ pub fn run_bench() {
 /// memory the process holds once it unfolded, and exits.
 pub fn run_child() {
     let events = start_window();
-    send(Command::Open(layout(false, false, "en")));
+    send(Command::Open(layout(false, false, "en", false)));
     send(Command::Reveal);
     wait_shown(&events);
     println!("shown");

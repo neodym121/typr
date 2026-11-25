@@ -282,6 +282,8 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
 
     // Quick ask turned off: its window goes
     let close_ask_window = ask::is_open() && old.quick_ask.enabled && !settings.quick_ask.enabled;
+    let save_chat_changed = settings.quick_ask.save_chat != old.quick_ask.save_chat;
+    let save_chat = settings.quick_ask.save_chat;
     let indicator_changed = settings.show_indicator != old.show_indicator;
     let new_position = (settings.indicator_position != old.indicator_position).then_some(settings.indicator_position);
     let tray_changed = settings.language != old.language || settings.engine != old.engine;
@@ -300,6 +302,9 @@ fn apply_settings(app: &tauri::AppHandle, settings: Settings) -> Result<(), Stri
     }
     if tray_changed {
         update_tray_menu(app);
+    }
+    if save_chat_changed {
+        ask::save_chat_changed(save_chat);
     }
     if close_ask_window {
         ask::close(app);

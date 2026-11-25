@@ -437,6 +437,10 @@ impl PostProcess {
 #[serde(default)]
 pub struct QuickAsk {
     pub enabled: bool,
+    /// Keep the current conversation in memory when its window closes;
+    /// the window's plus starts a new one
+    #[serde(rename = "saveChat")]
+    pub save_chat: bool,
     pub provider: PostProvider,
     pub gemini: ProviderModel,
     pub mistral: ProviderModel,
@@ -759,12 +763,13 @@ impl Settings {
         let qa = &self.quick_ask;
         let model = qa.provider_settings(qa.provider).model.as_str();
         format!(
-            "{} (provider {}, model {}, key {}, web search {}, reasoning {}/{}, Exa key {})",
+            "{} (provider {}, model {}, key {}, web search {}, save chat {}, reasoning {}/{}, Exa key {})",
             if qa.enabled { "on" } else { "off" },
             qa.provider,
             if model.is_empty() { "none" } else { model },
             key_state(self.api_keys.model(qa.provider)),
             if qa.web_search { "on" } else { "off" },
+            if qa.save_chat { "on" } else { "off" },
             if qa.reasoning { "on" } else { "off" },
             qa.reasoning_mode,
             key_state(self.api_keys.exa())
@@ -840,6 +845,7 @@ impl Settings {
         let qa_old = &old.quick_ask;
         let qa_new = &self.quick_ask;
         changed("quickAsk.enabled", &qa_old.enabled, &qa_new.enabled);
+        changed("quickAsk.saveChat", &qa_old.save_chat, &qa_new.save_chat);
         changed("quickAsk.provider", &qa_old.provider, &qa_new.provider);
         changed("quickAsk.webSearch", &qa_old.web_search, &qa_new.web_search);
         changed("quickAsk.reasoning", &qa_old.reasoning, &qa_new.reasoning);
@@ -1181,13 +1187,15 @@ mod tests {
     fn test_quick_ask_is_off_by_default_and_reads_from_the_file() {
         let defaults = QuickAsk::default();
         assert!(!defaults.enabled);
+        assert!(!defaults.save_chat);
         assert_eq!(defaults.provider, PostProvider::Gemini);
 
         let settings: Settings = serde_json::from_str(
-            r#"{"quickAsk":{"enabled":true,"provider":"groq","groq":{"model":"m"}}}"#,
+            r#"{"quickAsk":{"enabled":true,"saveChat":true,"provider":"groq","groq":{"model":"m"}}}"#,
         )
         .unwrap();
         assert!(settings.quick_ask.enabled);
+        assert!(settings.quick_ask.save_chat);
         assert_eq!(settings.quick_ask.provider, PostProvider::Groq);
         assert_eq!(settings.quick_ask.groq.model, "m");
         assert!(serde_json::to_string(&settings).unwrap().contains(r#""quickAsk":{"enabled":true"#));
@@ -1278,6 +1286,7 @@ mod tests {
         new.quick_ask.polza.model = "openai/gpt-5-mini".to_string();
         new.api_keys.polza = "pk_secret".to_string();
         new.quick_ask.web_search = true;
+        new.quick_ask.save_chat = true;
         new.api_keys.exa = "exa_secret".to_string();
         new.quick_ask.reasoning = true;
         new.quick_ask.reasoning_mode = ReasoningMode::Custom;
@@ -1290,13 +1299,14 @@ mod tests {
         assert!(changes.contains("askHotkey: 'Ctrl+Alt' → 'Ctrl+Shift'"));
         assert!(changes.contains("apiKeys.polza updated (set)"));
         assert!(changes.contains("quickAsk.webSearch: 'false' → 'true'"));
+        assert!(changes.contains("quickAsk.saveChat: 'false' → 'true'"));
         assert!(changes.contains("apiKeys.exa updated (set)"));
         assert!(changes.contains("quickAsk.reasoning: 'false' → 'true'"));
         assert!(changes.contains("quickAsk.reasoningMode: 'none' → 'custom'"));
         assert!(changes.contains("quickAsk.reasoningCustom: '' → 'xhigh'"));
         let summary = new.summary();
         assert!(summary.contains(
-            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, reasoning on/custom, Exa key set)"
+            "quickAsk=on (provider polza, model openai/gpt-5-mini, key set, web search on, save chat on, reasoning on/custom, Exa key set)"
         ));
         for secret in ["pk_secret", "exa_secret"] {
             assert!(!changes.contains(secret));

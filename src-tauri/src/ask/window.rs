@@ -112,6 +112,17 @@ pub struct Layout {
     /// The dictation hotkey, for the empty window to name
     pub hotkey: String,
     pub push_to_talk: bool,
+    /// Keep this conversation when the window closes; the plus starts a new one
+    pub save_chat: bool,
+}
+
+/// One exchange as the window shows it, kept to restore a saved conversation.
+/// The model's own history lives beside it in `ask::Conversation`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisplayMessage {
+    Question { id: u64, text: String, selection: Option<String> },
+    Answer { id: u64, text: String, stopped: bool },
+    Error { id: u64, message: String },
 }
 
 /// What the recorder is doing, while the window is open
@@ -128,6 +139,12 @@ pub enum Command {
     Open(Layout),
     /// On screen: the dot unfolds (an empty window's slides in first)
     Reveal,
+    /// The saved conversation, before the window unfolds again
+    Restore(Vec<DisplayMessage>),
+    /// The plus: forget this conversation and show an empty card
+    NewChat,
+    /// Save chat was switched in Basics while the window is open
+    SaveChat(bool),
     /// A question, with the start of the text it is about
     Question { id: u64, text: String, selection: Option<String> },
     /// An answer is coming
@@ -171,6 +188,8 @@ pub enum Event {
     Typing(bool),
     /// A question typed into the field
     Submit(String),
+    /// The plus starts another conversation in the same window
+    NewChat,
 }
 
 /// What the window's thread has done, for the demo's measurements
@@ -227,6 +246,7 @@ pub fn open(app: &AppHandle, settings: &Settings, empty: bool) -> Result<(), Str
         Event::Closed => super::close(&handle),
         Event::Typing(on) => super::set_typing(on),
         Event::Submit(text) => super::submit(&handle, text),
+        Event::NewChat => super::new_chat(),
     })?;
 
     let (work_area, scale) = screen();
@@ -249,6 +269,7 @@ pub fn open(app: &AppHandle, settings: &Settings, empty: bool) -> Result<(), Str
         empty,
         hotkey: settings.hotkey.clone(),
         push_to_talk: settings.recording_mode == RecordingMode::PushToTalk,
+        save_chat: settings.quick_ask.save_chat,
     }));
     Ok(())
 }

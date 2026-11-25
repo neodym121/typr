@@ -23,6 +23,10 @@
 //! holds; dictation goes into it at the caret instead of being asked, to be
 //! edited before sending. The cross (or Escape) folds the field back and
 //! gives the keyboard back to the window that had it.
+//!
+//! With Save chat, closing keeps the conversation for the next window. A plus
+//! left of the pencil starts a new one; with the field open another plus fades
+//! in on its left, so no button travels across the strip.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -34,7 +38,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, Vec
 use super::markdown::{self, Ink, Kind};
 use super::platform::{self, NativeWindow};
 use super::{AskWindow, Block, Message, Theme};
-use crate::ask::window::{Command, Event, Layout, Recording, CARD_WIDTH, ORB_INSET};
+use crate::ask::window::{Command, DisplayMessage, Event, Layout, Recording, CARD_WIDTH, ORB_INSET};
 
 pub struct Strings {
     pub copied: &'static str,
@@ -251,6 +255,7 @@ impl View {
         ui.global::<Theme>().set_mono(mono.into());
         ui.set_bottom(layout.bottom);
         ui.set_empty(layout.empty);
+        ui.set_save_chat(layout.save_chat);
         ui.set_orb_x(g.orb_x as f32);
         ui.set_orb_y(g.orb_y as f32);
         ui.set_orb_inset(ORB_INSET as f32);
@@ -342,6 +347,17 @@ impl View {
             }
         });
         let weak = Rc::downgrade(&view);
+        ui.on_new_chat_clicked(move || {
+            if let Some(view) = weak.upgrade() {
+                let on_event = {
+                    let mut v = view.borrow_mut();
+                    v.click_taken = true;
+                    v.on_event.clone()
+                };
+                on_event(Event::NewChat);
+            }
+        });
+        let weak = Rc::downgrade(&view);
         ui.on_edit_clicked(move || {
             if let Some(view) = weak.upgrade() {
                 view.borrow_mut().click_taken = true;
@@ -386,6 +402,9 @@ impl View {
         match command {
             Command::Reveal => View::reveal(view),
             Command::Fold => View::close(view),
+            Command::Restore(messages) => view.borrow_mut().on_restore(messages),
+            Command::NewChat => view.borrow_mut().on_new_chat(),
+            Command::SaveChat(save) => view.borrow().ui.set_save_chat(save),
             Command::Question { id, text, selection } => view.borrow_mut().on_question(id, &text, selection),
             Command::Answer { id } => view.borrow_mut().on_answer(id),
             Command::Search { id } => view.borrow_mut().on_search(id),
@@ -593,6 +612,47 @@ impl View {
 
     // ── Messages ─────────────────────────────────────────
 
+    /// A saved conversation, restored before the card unfolds again. Every
+    /// answer is already settled: closing the last window stopped any stream.
+    fn on_restore(&mut self, messages: Vec<DisplayMessage>) {
+        self.messages.set_vec(Vec::new());
+        self.answers.clear();
+        for message in messages {
+            match message {
+                DisplayMessage::Question { id, text, selection } => self.on_question(id, &text, selection),
+                DisplayMessage::Answer { id, text, stopped } => {
+                    self.on_answer(id);
+                    self.on_done(id, text, stopped);
+                }
+                DisplayMessage::Error { id, message } => {
+                    self.on_answer(id);
+                    self.on_error(id, &message);
+                }
+            }
+        }
+        self.awaiting_first = false;
+        self.set_phase(Phase::Idle);
+        self.ui.set_stick(true);
+        self.render_empty();
+    }
+
+    /// The plus: an empty card in the same window. If its field is open it
+    /// stays ready for the first question of the new chat, with no old text.
+    fn on_new_chat(&mut self) {
+        self.messages.set_vec(Vec::new());
+        self.answers.clear();
+        self.layout.empty = true;
+        self.awaiting_first = false;
+        self.hide_notice();
+        self.toast_timer.stop();
+        self.ui.set_toast_visible(false);
+        self.ui.set_empty(true);
+        self.ui.set_field_text(SharedString::new());
+        self.ui.set_stick(true);
+        self.set_phase(Phase::Idle);
+        self.render_empty();
+    }
+
     fn row_of(&self, id: u64) -> Option<usize> {
         (0..self.messages.row_count()).find(|&row| {
             self.messages
@@ -706,6 +766,9 @@ impl View {
     }
 
     fn on_search(&mut self, id: u64) {
+        if !self.answers.contains_key(&id) {
+            return;
+        }
         self.awaiting_first = false;
         if !self.answer_for(id).pending {
             return;
@@ -716,6 +779,9 @@ impl View {
 
     /// The model thinks before the answer, like it searches
     fn on_thinking(&mut self, id: u64) {
+        if !self.answers.contains_key(&id) {
+            return;
+        }
         self.awaiting_first = false;
         if !self.answer_for(id).pending {
             return;
@@ -725,6 +791,10 @@ impl View {
     }
 
     fn on_delta(&mut self, id: u64, text: &str) {
+        // A stream whose chat was cleared can't recreate its answer row
+        if !self.answers.contains_key(&id) {
+            return;
+        }
         self.awaiting_first = false;
         self.settle(id);
         let answer = self.answer_for(id);
@@ -734,6 +804,9 @@ impl View {
     }
 
     fn on_done(&mut self, id: u64, text: String, stopped: bool) {
+        if !self.answers.contains_key(&id) {
+            return;
+        }
         self.awaiting_first = false;
         self.settle(id);
         let answer = self.answer_for(id);
@@ -747,6 +820,9 @@ impl View {
     }
 
     fn on_error(&mut self, id: u64, message: &str) {
+        if !self.answers.contains_key(&id) {
+            return;
+        }
         self.awaiting_first = false;
         self.settle(id);
         let answer = self.answer_for(id);
@@ -817,6 +893,9 @@ impl View {
     fn render_empty(&self) {
         let empty = self.layout.empty && self.messages.row_count() == 0;
         self.ui.set_show_empty(empty);
+        // The plus starts a new chat: with nothing shown yet there is nothing
+        // to start over, so it stays away
+        self.ui.set_has_chat(self.messages.row_count() > 0);
         if !empty {
             return;
         }

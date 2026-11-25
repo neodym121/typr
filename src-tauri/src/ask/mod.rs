@@ -18,6 +18,10 @@
 //! anything; that hotkey or the cross closes it. Its pencil opens a text
 //! field: what is typed there is asked on Enter ([`submit`]), and while the
 //! field is open the dictation hotkey types into it instead of asking.
+//!
+//! Save chat keeps the conversation and its displayed messages in memory when
+//! the window closes and restores both on the next opening; its plus starts a
+//! new conversation without closing the window.
 
 #[cfg(target_os = "windows")]
 pub mod native;
@@ -38,7 +42,7 @@ use crate::selection;
 use crate::settings::{PostProvider, QuickAsk, ReasoningMode, Settings};
 use serde_json::Value;
 use stream::{ChatMessage, Role, Tools};
-use window::{Command, Recording};
+use window::{Command, DisplayMessage, Recording};
 
 /// How long transcribed speech waits for the selection to be read
 const SELECTION_WAIT: Duration = Duration::from_millis(1500);
@@ -113,10 +117,11 @@ struct Conversation {
     shown: bool,
     /// Tells this window from the next one
     generation: u64,
+    /// The model's context, and what the window shows beside it
     messages: Vec<ChatMessage>,
+    display: Vec<DisplayMessage>,
     /// Sent once; the same selection again adds nothing
     last_selection: Option<String>,
-    next_id: u64,
     running: Option<Running>,
     /// The window's text field is open: dictation goes into it
     typing: bool,
@@ -129,8 +134,8 @@ impl Conversation {
             shown: false,
             generation: 0,
             messages: Vec::new(),
+            display: Vec::new(),
             last_selection: None,
-            next_id: 0,
             running: None,
             typing: false,
         }
@@ -140,6 +145,14 @@ impl Conversation {
     fn drop_question(&mut self) {
         if self.messages.last().is_some_and(|m| m.role == Role::User) {
             self.messages.pop();
+        }
+    }
+
+    /// A question stopped before any answer leaves the window too. A failed
+    /// answer stays visible as an error, so only its model message is dropped.
+    fn drop_display_question(&mut self) {
+        if matches!(self.display.last(), Some(DisplayMessage::Question { .. })) {
+            self.display.pop();
         }
     }
 }
@@ -158,6 +171,9 @@ static STATE: Mutex<Conversation> = Mutex::new(Conversation::new());
 static READY: AtomicBool = AtomicBool::new(false);
 static SELECTION_GENERATION: AtomicU64 = AtomicU64::new(0);
 static WINDOW_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Question/answer ids are never reused while Typr runs, so a late stream can
+/// never complete a different answer that happens to have the same id.
+static NEXT_MESSAGE_ID: AtomicU64 = AtomicU64::new(0);
 /// Reads the settings as they are now (main.rs keeps them): a question typed
 /// into the window's field comes with no recording to bring them
 static READ_SETTINGS: OnceLock<fn(&AppHandle) -> Settings> = OnceLock::new();
@@ -167,13 +183,22 @@ pub fn read_settings_with(read: fn(&AppHandle) -> Settings) {
     let _ = READ_SETTINGS.set(read);
 }
 
-/// A new conversation in a window about to open.
-fn start_conversation(state: &mut Conversation) -> u64 {
-    *state = Conversation::new();
+/// A window about to open. With Save chat, the conversation left by the last
+/// window comes back, both for the model and for the user; otherwise it goes.
+/// Returns the display history to restore before any new question is shown.
+fn start_conversation(state: &mut Conversation, keep: bool) -> (u64, Vec<DisplayMessage>) {
+    let display = if keep {
+        state.display.clone()
+    } else {
+        *state = Conversation::new();
+        Vec::new()
+    };
     state.open = true;
+    state.shown = false;
+    state.typing = false;
     state.generation = WINDOW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     READY.store(false, Ordering::SeqCst);
-    state.generation
+    (state.generation, display)
 }
 
 /// The window of conversation `generation` has taken its place on screen.
@@ -193,6 +218,16 @@ fn still_open(generation: u64) -> bool {
 fn tell(command: Command) {
     if READY.load(Ordering::SeqCst) {
         window::send(command);
+    }
+}
+
+/// A command from the answer being written. Holding the state lock until it
+/// is queued orders it before a stop, a new chat or a close; after one of
+/// those, the id no longer matches and the late command goes nowhere.
+fn tell_answer(id: u64, command: Command) {
+    let state = STATE.lock().unwrap();
+    if state.running.as_ref().is_some_and(|running| running.id == id) {
+        tell(command);
     }
 }
 
@@ -315,12 +350,14 @@ pub(crate) fn submit(app: &AppHandle, text: String) {
 
 /// Asks `text`, opening the window for a first question.
 async fn answer(app: &AppHandle, settings: &Settings, question: Question, text: &str) -> Result<(), String> {
-    let (id, messages, first, generation, shown) = {
+    let (id, messages, first, generation, shown, restored) = {
         let mut state = STATE.lock().unwrap();
         let first = !state.open;
-        if first {
-            start_conversation(&mut state);
-        }
+        let restored = if first {
+            start_conversation(&mut state, settings.quick_ask.save_chat).1
+        } else {
+            Vec::new()
+        };
         // Opened empty by its hotkey: the first question is no follow-up
         let follow_up = !state.messages.is_empty();
         let selection = question
@@ -334,7 +371,7 @@ async fn answer(app: &AppHandle, settings: &Settings, question: Question, text: 
             content: compose(selection.as_deref(), text),
         });
         trim_history(&mut state.messages);
-        state.next_id += 1;
+        let id = NEXT_MESSAGE_ID.fetch_add(1, Ordering::SeqCst) + 1;
         log::info!(
             "Quick ask: {} ({})",
             if follow_up { "a follow-up question" } else { "a new question" },
@@ -344,12 +381,25 @@ async fn answer(app: &AppHandle, settings: &Settings, question: Question, text: 
             }
         );
         // The window shows the question, and the start of what it is about
-        let shown = Command::Question {
-            id: state.next_id,
+        let preview = selection.as_deref().map(selection_preview);
+        state.display.push(DisplayMessage::Question {
+            id,
             text: text.to_string(),
-            selection: selection.as_deref().map(selection_preview),
+            selection: preview.clone(),
+        });
+        let shown = Command::Question {
+            id,
+            text: text.to_string(),
+            selection: preview,
         };
-        (state.next_id, state.messages.clone(), first, state.generation, shown)
+        (
+            id,
+            state.messages.clone(),
+            first,
+            state.generation,
+            shown,
+            restored,
+        )
     };
 
     if first {
@@ -357,9 +407,12 @@ async fn answer(app: &AppHandle, settings: &Settings, question: Question, text: 
             close(app);
             return Err(e);
         }
+        if !restored.is_empty() {
+            tell(Command::Restore(restored));
+        }
     }
 
-    start_answer(settings, id, messages, shown);
+    start_answer(settings, id, messages, shown, generation);
 
     if first {
         window::reveal(app).await;
@@ -395,8 +448,17 @@ pub async fn toggle(app: &AppHandle, settings: &Settings) {
         None => {}
     }
 
-    let generation = start_conversation(&mut STATE.lock().unwrap());
-    log::info!("Quick ask opened empty");
+    let (generation, restored) = {
+        let mut state = STATE.lock().unwrap();
+        let keep = settings.quick_ask.save_chat && !state.display.is_empty();
+        let opened = start_conversation(&mut state, keep);
+        if keep {
+            log::info!("Quick ask reopened with its saved conversation");
+        } else {
+            log::info!("Quick ask opened empty");
+        }
+        opened
+    };
     // The first question goes there: the connections open meanwhile
     net::warm_up(postprocess::host(settings.quick_ask.provider).to_string());
     if settings.quick_ask.web_search && !settings.api_keys.exa().is_empty() {
@@ -407,6 +469,9 @@ pub async fn toggle(app: &AppHandle, settings: &Settings) {
         log::error!("{}", e);
         close(app);
         return;
+    }
+    if !restored.is_empty() {
+        tell(Command::Restore(restored));
     }
     window::reveal(app).await;
     mark_shown(generation);
@@ -470,6 +535,7 @@ fn start_answer(
     id: u64,
     messages: Vec<ChatMessage>,
     question: Command,
+    generation: u64,
 ) {
     let config = &settings.quick_ask;
     let provider = config.provider;
@@ -487,17 +553,26 @@ fn start_answer(
     }
 
     let partial = Arc::new(Mutex::new(String::new()));
-    // In place before the task can finish, so it always finds itself
-    STATE.lock().unwrap().running = Some(Running {
-        id,
-        task: None,
-        partial: partial.clone(),
-    });
+    // In place before the task can finish, so it always finds itself. The
+    // generation rules out a question taken before the plus or a close: it
+    // belongs to neither the window's chat nor a window at all.
+    {
+        let mut state = STATE.lock().unwrap();
+        if !state.open || state.generation != generation {
+            log::info!("Quick ask: the question was dropped before its answer started");
+            return;
+        }
+        state.running = Some(Running {
+            id,
+            task: None,
+            partial: partial.clone(),
+        });
+    }
 
     // The window shows the question and the answer coming before the
-    // recorder reports it is done
-    tell(question);
-    tell(Command::Answer { id });
+    // recorder reports it is done. A new chat may already have cancelled it
+    tell_answer(id, question);
+    tell_answer(id, Command::Answer { id });
 
     let task = tauri::async_runtime::spawn(async move {
         let started = Instant::now();
@@ -540,8 +615,8 @@ fn start_answer(
     let mut state = STATE.lock().unwrap();
     match state.running.as_mut() {
         Some(running) if running.id == id => running.task = Some(task),
-        // Already finished
-        _ => {}
+        // Already finished, stopped or replaced by a new chat
+        _ => task.abort(),
     }
 }
 
@@ -636,14 +711,14 @@ impl Outbox {
     fn searching(&mut self, query: &str) {
         log::debug!("Quick ask window shows a search for {:?}", query);
         self.flush(true);
-        tell(Command::Search { id: self.id });
+        tell_answer(self.id, Command::Search { id: self.id });
     }
 
     fn flush(&mut self, force: bool) {
         if self.pending.is_empty() || (!force && self.last_flush.elapsed() < FLUSH_EVERY) {
             return;
         }
-        tell(Command::Delta {
+        tell_answer(self.id, Command::Delta {
             id: self.id,
             text: std::mem::take(&mut self.pending),
         });
@@ -657,7 +732,7 @@ impl stream::Sink for Outbox {
     fn thinking(&mut self) {
         log::debug!("Quick ask window shows thinking");
         self.flush(true);
-        tell(Command::Thinking { id: self.id });
+        tell_answer(self.id, Command::Thinking { id: self.id });
     }
 
     fn text(&mut self, text: &str) {
@@ -687,7 +762,11 @@ fn finish(id: u64, result: Result<String, String>) {
                 role: Role::Assistant,
                 content: answer.clone(),
             });
-            drop(state);
+            state.display.push(DisplayMessage::Answer {
+                id,
+                text: answer.clone(),
+                stopped: false,
+            });
             tell(Command::Done {
                 id,
                 text: answer,
@@ -696,39 +775,51 @@ fn finish(id: u64, result: Result<String, String>) {
         }
         Err(message) => {
             state.drop_question();
-            drop(state);
+            state.display.push(DisplayMessage::Error {
+                id,
+                message: message.clone(),
+            });
             tell(Command::Error { id, message });
         }
     }
 }
 
-/// Stops the answer being written; what it said so far stays.
-fn stop_answer() {
-    let Some(running) = STATE.lock().unwrap().running.take() else {
+/// Stops the answer being written under the caller's state lock; what it said
+/// so far stays. The lock also orders its last window command before whatever
+/// the caller does next (a new question, a new chat or closing).
+fn stop_answer_locked(state: &mut Conversation) {
+    let Some(running) = state.running.take() else {
         return;
     };
     if let Some(task) = running.task {
         task.abort();
     }
     let text = running.partial.lock().unwrap().trim().to_string();
-    let mut state = STATE.lock().unwrap();
     if text.is_empty() {
         state.drop_question();
-        drop(state);
+        state.drop_display_question();
         tell(Command::Cancel { id: running.id });
     } else {
         state.messages.push(ChatMessage {
             role: Role::Assistant,
             content: text.clone(),
         });
-        drop(state);
+        state.display.push(DisplayMessage::Answer {
+            id: running.id,
+            text: text.clone(),
+            stopped: true,
+        });
         tell(Command::Done {
             id: running.id,
             text,
             stopped: true,
         });
     }
-    log::info!("Quick ask: the answer being written was stopped by a new question");
+    log::info!("Quick ask: the answer being written was stopped");
+}
+
+fn stop_answer() {
+    stop_answer_locked(&mut STATE.lock().unwrap());
 }
 
 /// Debug builds: asks `question` about the selection in front, as if it had
@@ -748,30 +839,72 @@ pub async fn preview(app: &AppHandle, settings: &Settings, question: &str) {
     }
 }
 
-/// Closes the window and forgets the conversation.
+/// The plus: the same open window starts with no messages and no context.
+pub(crate) fn new_chat() {
+    {
+        let mut state = STATE.lock().unwrap();
+        // One transition: no question can slip between stopping the old
+        // answer, clearing its context and clearing what the window shows
+        stop_answer_locked(&mut state);
+        state.messages.clear();
+        state.display.clear();
+        state.last_selection = None;
+        // A submission that was between its state update and start_answer is
+        // no longer part of this chat either
+        state.generation = WINDOW_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+        tell(Command::NewChat);
+    }
+    log::info!("Quick ask: a new chat started");
+}
+
+/// Save chat changed in Basics. The open window's plus follows at once; a
+/// conversation already put away is forgotten as soon as saving is turned off.
+pub fn save_chat_changed(save: bool) {
+    if !save {
+        let mut state = STATE.lock().unwrap();
+        if !state.open {
+            *state = Conversation::new();
+        }
+    }
+    tell(Command::SaveChat(save));
+}
+
+/// Closes the window. With Save chat it keeps the conversation in memory for
+/// the next opening; otherwise the conversation is forgotten as before.
 pub fn close(app: &AppHandle) {
-    let was_open = forget_conversation();
+    let keep = READ_SETTINGS.get().is_some_and(|read| {
+        let settings = read(app);
+        settings.quick_ask.enabled && settings.quick_ask.save_chat
+    });
+    let was_open = {
+        let mut state = STATE.lock().unwrap();
+        // The whole close is one transition, just like the plus's new chat
+        stop_answer_locked(&mut state);
+        // Opening the window may have failed before its answer started: an
+        // unanswered question isn't a conversation to restore.
+        if matches!(state.display.last(), Some(DisplayMessage::Question { .. })) {
+            state.drop_question();
+            state.drop_display_question();
+        }
+        let was_open = state.open;
+        if keep && !state.display.is_empty() {
+            state.open = false;
+            state.shown = false;
+            state.typing = false;
+        } else {
+            *state = Conversation::new();
+        }
+        READY.store(false, Ordering::SeqCst);
+        was_open
+    };
     window::destroy();
     overlay::set_suppressed(app, false);
     if was_open {
-        log::info!("Quick ask closed, the conversation is forgotten");
+        log::info!(
+            "Quick ask closed, the conversation is {}",
+            if keep { "saved for the next opening" } else { "forgotten" }
+        );
     }
-}
-
-/// Returns whether there was a conversation.
-fn forget_conversation() -> bool {
-    let (was_open, running) = {
-        let mut state = STATE.lock().unwrap();
-        let was_open = state.open;
-        let running = state.running.take();
-        *state = Conversation::new();
-        (was_open, running)
-    };
-    if let Some(task) = running.and_then(|running| running.task) {
-        task.abort();
-    }
-    READY.store(false, Ordering::SeqCst);
-    was_open
 }
 
 #[cfg(test)]
@@ -845,5 +978,53 @@ mod tests {
         // An answer is never dropped this way
         conversation.drop_question();
         assert_eq!(conversation.messages.len(), 2);
+    }
+
+    #[test]
+    fn test_save_chat_restores_the_model_context_and_the_shown_messages() {
+        let mut conversation = Conversation::new();
+        conversation.messages = vec![message(Role::User, "q1"), message(Role::Assistant, "a1")];
+        conversation.display = vec![
+            DisplayMessage::Question {
+                id: 1,
+                text: "q1".to_string(),
+                selection: Some("selected".to_string()),
+            },
+            DisplayMessage::Answer {
+                id: 1,
+                text: "a1".to_string(),
+                stopped: false,
+            },
+        ];
+        conversation.last_selection = Some("selected".to_string());
+
+        let (_, restored) = start_conversation(&mut conversation, true);
+        assert!(conversation.open);
+        assert!(!conversation.shown);
+        assert_eq!(conversation.messages.len(), 2);
+        assert_eq!(conversation.last_selection.as_deref(), Some("selected"));
+        assert_eq!(restored, conversation.display);
+
+        conversation.open = false;
+        let (_, restored) = start_conversation(&mut conversation, false);
+        assert!(restored.is_empty());
+        assert!(conversation.messages.is_empty());
+        assert!(conversation.display.is_empty());
+        assert_eq!(conversation.last_selection, None);
+    }
+
+    #[test]
+    fn test_an_unanswered_question_leaves_the_display_too() {
+        let mut conversation = Conversation::new();
+        conversation.messages = vec![message(Role::User, "q1")];
+        conversation.display = vec![DisplayMessage::Question {
+            id: 1,
+            text: "q1".to_string(),
+            selection: None,
+        }];
+        conversation.drop_question();
+        conversation.drop_display_question();
+        assert!(conversation.messages.is_empty());
+        assert!(conversation.display.is_empty());
     }
 }

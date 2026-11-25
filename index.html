@@ -17,7 +17,7 @@
             <img class="brand-mark" src="/assets/logo.svg" width="30" height="30" alt="" />
             <span class="brand-title">
               <span class="brand-name">Typr</span>
-              <span class="brand-version" id="version-text">v3.7.0</span>
+              <span class="brand-version" id="version-text">v3.7.1</span>
             </span>
           </div>
           <div id="status" data-state="ready" role="status" aria-live="polite">
@@ -106,6 +106,18 @@
                   <button type="button" class="segment" data-position="top-right" data-i18n="general.indicatorTopRight">Top right</button>
                   <button type="button" class="segment" data-position="bottom-center" data-i18n="general.indicatorBottomCenter">Bottom center</button>
                 </div>
+              </div>
+            </div>
+            <div class="pref">
+              <div class="pref-text">
+                <label class="pref-name" for="save-chat-toggle" data-i18n="general.saveChat">Save chat</label>
+                <span class="pref-hint" data-i18n="general.saveChatHint">Keep the current Quick Ask conversation when its window closes; + starts a new one</span>
+              </div>
+              <div class="pref-control">
+                <label class="switch">
+                  <input type="checkbox" id="save-chat-toggle" role="switch" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                </label>
               </div>
             </div>
             <div class="pref">
